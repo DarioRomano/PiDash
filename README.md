@@ -753,13 +753,15 @@ app's own quit shortcut, or tap **Back to dashboard** on the phone remote.
 #### Emulators
 
 The settings page offers these emulators by name under **Add an app**. All of
-them run well on a Pi 5:
+them run well on a Pi 5, except that Dolphin only manages the lighter games
+at full speed:
 
 | Emulator | Plays | Install on the Pi |
 |----------|-------|-------------------|
 | RetroArch | Many classic consoles, from the NES and Mega Drive to the first PlayStation | `sudo apt install retroarch` |
 | PPSSPP | PlayStation Portable | `flatpak install flathub org.ppsspp.PPSSPP` |
 | Mupen64Plus | Nintendo 64 | `sudo apt install mupen64plus-qt` |
+| Dolphin | GameCube and Wii | `flatpak install flathub org.DolphinEmu.dolphin-emu` |
 | ScummVM | Point-and-click adventures | `sudo apt install scummvm` |
 | DOSBox | DOS games | `sudo apt install dosbox` |
 | MAME | Arcade machines | `sudo apt install mame` |

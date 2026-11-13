@@ -396,6 +396,8 @@ const list: Record<string, string> = {
   "Pause movement while the Pi is hot": "Bewegung pausieren, solange der Pi heiß ist",
   "The background stands still and photos stop moving until the Pi has cooled down.": "Der Hintergrund steht still und Fotos bewegen sich nicht, bis der Pi abgekühlt ist.",
   "classic consoles": "klassische Konsolen",
+  "GameCube and Wii": "GameCube und Wii",
+  "GameCube and Wii games. Only the lighter ones run at full speed on a Pi 5. Made for a game controller.": "GameCube- und Wii-Spiele. Nur die weniger anspruchsvollen laufen auf einem Pi 5 in voller Geschwindigkeit. Für einen Gamecontroller gemacht.",
   "adventure games": "Adventure-Spiele",
   "DOS games": "DOS-Spiele",
   "arcade machines": "Spielautomaten",

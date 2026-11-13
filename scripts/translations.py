@@ -302,6 +302,8 @@ ROWS = [
 ("Pause movement while the Pi is hot", "Bewegung pausieren, solange der Pi heiß ist", "Mettre les mouvements en pause quand le Pi est chaud", "Metti in pausa i movimenti quando il Pi è caldo"),
 ("The background stands still and photos stop moving until the Pi has cooled down.", "Der Hintergrund steht still und Fotos bewegen sich nicht, bis der Pi abgekühlt ist.", "L’arrière-plan reste fixe et les photos cessent de bouger jusqu’à ce que le Pi ait refroidi.", "Lo sfondo resta fermo e le foto smettono di muoversi finché il Pi non si è raffreddato."),
 ("classic consoles", "klassische Konsolen", "consoles classiques", "console classiche"),
+("GameCube and Wii", "GameCube und Wii", "GameCube et Wii", "GameCube e Wii"),
+("GameCube and Wii games. Only the lighter ones run at full speed on a Pi 5. Made for a game controller.", "GameCube- und Wii-Spiele. Nur die weniger anspruchsvollen laufen auf einem Pi 5 in voller Geschwindigkeit. Für einen Gamecontroller gemacht.", "Jeux GameCube et Wii. Seuls les moins exigeants tournent à pleine vitesse sur un Pi 5. Conçu pour une manette.", "Giochi per GameCube e Wii. Solo i meno impegnativi girano a piena velocità su un Pi 5. Pensato per un controller."),
 ("adventure games", "Adventure-Spiele", "jeux d’aventure", "avventure grafiche"),
 ("DOS games", "DOS-Spiele", "jeux DOS", "giochi DOS"),
 ("arcade machines", "Spielautomaten", "bornes d’arcade", "giochi arcade"),

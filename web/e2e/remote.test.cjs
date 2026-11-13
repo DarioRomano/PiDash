@@ -285,7 +285,7 @@ test("settings: emulators are offered, with how to install one that is missing",
   const page = await openPage(pi.base, "/settings");
   await page.waitForSelector("#add-kind option", { state: "attached" });
   const choices = await page.evaluate(() => [...document.querySelectorAll("#add-kind option")].map((o) => o.textContent));
-  for (const emulator of ["RetroArch", "PPSSPP", "ScummVM"]) assert.ok(choices.some((c) => c.startsWith(emulator)), `${emulator} is not offered: ${choices}`);
+  for (const emulator of ["RetroArch", "PPSSPP", "Dolphin", "ScummVM"]) assert.ok(choices.some((c) => c.startsWith(emulator)), `${emulator} is not offered: ${choices}`);
   // Nothing is installed on the machine running the tests.
   await page.selectOption("#add-kind", "__emulator:retroarch");
   assert.match(await page.locator("#add-desc").innerText(), /sudo apt install retroarch/);
