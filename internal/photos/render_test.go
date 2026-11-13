@@ -271,3 +271,112 @@ func TestWholeLayoutLeavesRoomToZoomWithoutCuttingThePhoto(t *testing.T) {
 		}
 	}
 }
+
+func TestIsPortraitLooksAtTheUprightShape(t *testing.T) {
+	upright := encodePNG(t, quadrants(900, 1200))
+	flat := encodePNG(t, quadrants(1200, 900))
+	square := encodePNG(t, quadrants(1000, 1000))
+	// A phone photo: stored lying flat, with a tag that says "turn me".
+	turned := withExifOrientation(jpegBytes(uniform(800, 600, red)), 6, binary.BigEndian)
+
+	for name, c := range map[string]struct {
+		data    []byte
+		upright bool
+		want    bool
+	}{
+		"upright": {upright, false, true}, "flat": {flat, false, false}, "square": {square, false, false},
+		"turned by its tag": {turned, false, true}, "tag already applied by the source": {turned, true, false},
+	} {
+		got, err := IsPortrait(c.data, c.upright)
+		if err != nil || got != c.want {
+			t.Errorf("%s: portrait = %v, err %v; want %v", name, got, err, c.want)
+		}
+	}
+	if _, err := IsPortrait([]byte("not an image"), false); err == nil {
+		t.Error("no error for something that is not an image")
+	}
+}
+
+func TestTwoPortraitsShareTheFrame(t *testing.T) {
+	first := encodePNG(t, quadrants(900, 1200))  // 3:4, close enough to half a screen to fill it
+	second := encodePNG(t, quadrants(900, 1600)) // 9:16, too narrow: shown whole
+	pair := NewPairRenderer(LayoutFill)
+	if _, err := pair.JPEG(); err == nil {
+		t.Error("an empty pair was rendered")
+	}
+	if err := pair.Add(first, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := pair.Add([]byte("broken"), true); err == nil {
+		t.Error("broken data was accepted")
+	}
+	if err := pair.Add(second, true); err != nil { // the failed attempt must not have used up the place
+		t.Fatal(err)
+	}
+	out, err := pair.JPEG()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := decodeFrame(t, out)
+	mid := FrameW / 2
+
+	// Left: fills its half, corner to corner.
+	if !near(f.At(8, 8), red) || !near(f.At(mid-12, 8), green) || !near(f.At(8, FrameH-8), blue) || !near(f.At(mid-12, FrameH-8), white) {
+		t.Errorf("left photo does not fill its half: %v %v %v %v", f.At(8, 8), f.At(mid-12, 8), f.At(8, FrameH-8), f.At(mid-12, FrameH-8))
+	}
+	// A dark line parts the two.
+	if r, g, b, _ := f.At(mid, FrameH/2).RGBA(); r>>8 > 40 || g>>8 > 40 || b>>8 > 40 {
+		t.Errorf("no dark line between the photos: %v", f.At(mid, FrameH/2))
+	}
+	// Right: 9:16 is 607 wide, centred in its half (x 963..1920): 1138 to 1745.
+	if !near(f.At(1146, 8), red) || !near(f.At(1737, 8), green) || !near(f.At(1146, FrameH-8), blue) || !near(f.At(1737, FrameH-8), white) {
+		t.Errorf("right photo is not whole and centred: %v %v %v %v", f.At(1146, 8), f.At(1737, 8), f.At(1146, FrameH-8), f.At(1737, FrameH-8))
+	}
+	// Beside it its own blurred copy, not the neighbour's and not black.
+	if c := f.At(mid+40, 40); near(c, red) {
+		t.Errorf("no backdrop beside the narrow photo: %v", c)
+	} else if r, g, b, _ := c.RGBA(); r>>8 < 5 && g>>8 < 5 && b>>8 < 5 {
+		t.Errorf("the backdrop beside the narrow photo is black")
+	}
+}
+
+func TestTwoPortraitsStayInViewWhenPhotosMove(t *testing.T) {
+	pair := NewPairRenderer(LayoutWhole)
+	for _, size := range [][2]int{{900, 1200}, {900, 1600}} {
+		if err := pair.Add(encodePNG(t, quadrants(size[0], size[1])), true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := pair.JPEG()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := decodeFrame(t, out)
+	room := 1 - 1/float64(WholeZoom)
+	left, top := int(float64(FrameW)*room/2), int(float64(FrameH)*room/2)
+	right, bottom := FrameW-left, FrameH-top
+
+	// Each half holds one whole photo, inside the part that stays on screen.
+	for half, x0 := range []int{0, FrameW / 2} {
+		minX, minY, maxX, maxY := FrameW, FrameH, -1, -1
+		for y := 0; y < FrameH; y += 2 {
+			for x := x0; x < x0+FrameW/2; x += 2 {
+				c := f.At(x, y)
+				if near(c, red) || near(c, green) || near(c, blue) || near(c, white) {
+					minX, minY, maxX, maxY = min(minX, x), min(minY, y), max(maxX, x), max(maxY, y)
+				}
+			}
+		}
+		if maxX < 0 || minX < left-2 || minY < top-2 || maxX > right+2 || maxY > bottom+2 {
+			t.Errorf("half %d: photo spans x %d..%d, y %d..%d; must stay within x %d..%d, y %d..%d", half, minX, maxX, minY, maxY, left, right, top, bottom)
+			continue
+		}
+		if !near(f.At(minX+6, minY+6), red) || !near(f.At(maxX-6, minY+6), green) || !near(f.At(minX+6, maxY-6), blue) || !near(f.At(maxX-6, maxY-6), white) {
+			t.Errorf("half %d: the photo's corners are not all visible", half)
+		}
+		// It does not reach into the other half.
+		if (half == 0 && maxX >= FrameW/2) || (half == 1 && minX < FrameW/2) {
+			t.Errorf("half %d: photo crosses the middle (x %d..%d)", half, minX, maxX)
+		}
+	}
+}

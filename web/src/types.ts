@@ -86,6 +86,8 @@ export interface PhotosStatus {
   motion?: "off" | "whole" | "fill";
   /** The largest zoom at which a photo prepared for "whole" still fits the screen. */
   motionZoom?: number;
+  /** Changes when more photos can be shown two at a time. */
+  pairs?: number;
 }
 
 export interface PhotoItem {

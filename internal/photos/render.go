@@ -53,23 +53,34 @@ var errTooLarge = errors.New("image is too large to process")
 // rotates the image according to its EXIF orientation tag; pass false when the
 // source has already rotated it (pre-made thumbnails).
 func Render(data []byte, applyExif bool, layout Layout) ([]byte, error) {
+	src, orientation, err := decode(data, applyExif)
+	if err != nil {
+		return nil, err
+	}
+	return encode(compose(src, orientation, layout))
+}
+
+// decode reads an image and the EXIF orientation to apply to it.
+func decode(data []byte, applyExif bool) (image.Image, int, error) {
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
-		return nil, fmt.Errorf("unsupported image: %w", err)
+		return nil, 0, fmt.Errorf("unsupported image: %w", err)
 	}
 	if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width*cfg.Height > maxSourcePixels {
-		return nil, errTooLarge
+		return nil, 0, errTooLarge
 	}
 	src, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
-		return nil, fmt.Errorf("decode: %w", err)
+		return nil, 0, fmt.Errorf("decode: %w", err)
 	}
 	orientation := 1
 	if applyExif {
 		orientation = exifOrientation(data)
 	}
-	frame := compose(src, orientation, layout)
+	return src, orientation, nil
+}
 
+func encode(frame *image.RGBA) ([]byte, error) {
 	var out bytes.Buffer
 	if err := jpeg.Encode(&out, frame, &jpeg.Options{Quality: 88}); err != nil {
 		return nil, err
@@ -77,42 +88,140 @@ func Render(data []byte, applyExif bool, layout Layout) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
+// portraitAspect is the width-to-height ratio below which a photo counts as
+// upright enough to share the screen with a second one.
+const portraitAspect = 0.85
+
+// IsPortrait reports whether encoded image data is an upright photo. It reads
+// only the image's header. upright says the data is already rotated correctly.
+func IsPortrait(data []byte, upright bool) (bool, error) {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 {
+		return false, errors.New("unsupported image")
+	}
+	w, h := cfg.Width, cfg.Height
+	if !upright && exifOrientation(data) >= 5 {
+		w, h = h, w
+	}
+	return float64(w)/float64(h) < portraitAspect, nil
+}
+
+// pairGap is the dark line between two photos that fill their halves, and
+// pairInset how far two whole photos keep from the middle, in pixels.
+const (
+	pairGap   = 6
+	pairInset = 10
+)
+
+// pairAreas returns, for the left and the right photo of a pair, the part of
+// the frame it owns and the box inside it the photo itself must stay in.
+func pairAreas(layout Layout) (areas, boxes [2]image.Rectangle) {
+	mid := FrameW / 2
+	if layout == LayoutWhole {
+		// Both photos stay inside the part of the frame that is still on
+		// screen at the largest zoom.
+		c := wholeBox()
+		areas = [2]image.Rectangle{image.Rect(0, 0, mid, FrameH), image.Rect(mid, 0, FrameW, FrameH)}
+		boxes = [2]image.Rectangle{
+			image.Rect(c.Min.X, c.Min.Y, mid-pairInset, c.Max.Y),
+			image.Rect(mid+pairInset, c.Min.Y, c.Max.X, c.Max.Y),
+		}
+		return areas, boxes
+	}
+	areas = [2]image.Rectangle{image.Rect(0, 0, mid-pairGap/2, FrameH), image.Rect(mid+pairGap/2, 0, FrameW, FrameH)}
+	return areas, areas
+}
+
+// wholeBox is the middle of the frame that stays on screen at WholeZoom.
+func wholeBox() image.Rectangle {
+	w, h := int(math.Floor(FrameW/WholeZoom)), int(math.Floor(FrameH/WholeZoom))
+	return image.Rect((FrameW-w)/2, (FrameH-h)/2, (FrameW-w)/2+w, (FrameH-h)/2+h)
+}
+
+// PairRenderer builds a frame showing two upright photos side by side. The
+// photos are added one after the other, so only one is in memory at a time.
+type PairRenderer struct {
+	frame  *image.RGBA
+	layout Layout
+	n      int
+}
+
+// NewPairRenderer starts an empty pair frame.
+func NewPairRenderer(layout Layout) *PairRenderer {
+	frame := image.NewRGBA(image.Rect(0, 0, FrameW, FrameH))
+	draw.Draw(frame, frame.Bounds(), image.Black, image.Point{}, draw.Src)
+	return &PairRenderer{frame: frame, layout: layout}
+}
+
+// Add places the next photo: the first on the left, the second on the right.
+func (p *PairRenderer) Add(data []byte, applyExif bool) error {
+	if p.n >= 2 {
+		return errors.New("a pair holds two photos")
+	}
+	src, orientation, err := decode(data, applyExif)
+	if err != nil {
+		return err
+	}
+	areas, boxes := pairAreas(p.layout)
+	place(p.frame, areas[p.n], boxes[p.n], src, orientation, p.layout == LayoutFill)
+	p.n++
+	return nil
+}
+
+// JPEG returns the finished frame.
+func (p *PairRenderer) JPEG() ([]byte, error) {
+	if p.n != 2 {
+		return nil, errors.New("a pair needs two photos")
+	}
+	return encode(p.frame)
+}
+
 // compose scales src into a frame, applying the EXIF orientation.
 func compose(src image.Image, orientation int, layout Layout) *image.RGBA {
+	frame := image.NewRGBA(image.Rect(0, 0, FrameW, FrameH))
+	box := frame.Bounds()
+	if layout == LayoutWhole {
+		box = wholeBox()
+	}
+	place(frame, frame.Bounds(), box, src, orientation, layout == LayoutFill)
+	return frame
+}
+
+// place draws one photo into the part of the frame called area. With crop,
+// the photo fills the area when little of it is lost that way. Otherwise the
+// whole photo is shown, as large as box (a part of area) allows and centred in
+// it, on a blurred, darkened copy of itself that fills the area.
+func place(frame *image.RGBA, area, box image.Rectangle, src image.Image, orientation int, crop bool) {
 	// Work out the layout in the photo's upright dimensions.
 	sb := src.Bounds()
 	w, h := sb.Dx(), sb.Dy()
 	if orientation >= 5 { // orientations 5-8 swap width and height
 		w, h = h, w
 	}
-	frame := image.NewRGBA(image.Rect(0, 0, FrameW, FrameH))
 
 	srcAspect := float64(w) / float64(h)
-	frameAspect := float64(FrameW) / float64(FrameH)
-	loss := 1 - srcAspect/frameAspect
-	if srcAspect > frameAspect {
-		loss = 1 - frameAspect/srcAspect
+	areaAspect := float64(area.Dx()) / float64(area.Dy())
+	loss := 1 - srcAspect/areaAspect
+	if srcAspect > areaAspect {
+		loss = 1 - areaAspect/srcAspect
 	}
 
-	if layout == LayoutFill && loss <= maxCropLoss {
-		// Fill the screen, cropping the centre.
-		cw, ch := w, int(float64(w)/frameAspect+0.5)
-		if srcAspect > frameAspect {
-			cw, ch = int(float64(h)*frameAspect+0.5), h
+	if crop && loss <= maxCropLoss {
+		// Fill the area, cropping the centre.
+		cw, ch := w, int(float64(w)/areaAspect+0.5)
+		if srcAspect > areaAspect {
+			cw, ch = int(float64(h)*areaAspect+0.5), h
 		}
-		crop := image.Rect((w-cw)/2, (h-ch)/2, (w-cw)/2+cw, (h-ch)/2+ch)
-		scaleOriented(frame, frame.Bounds(), src, crop, orientation)
-		return frame
+		cw, ch = max(1, min(cw, w)), max(1, min(ch, h))
+		rect := image.Rect((w-cw)/2, (h-ch)/2, (w-cw)/2+cw, (h-ch)/2+ch)
+		scaleOriented(frame, area, src, rect, orientation)
+		return
 	}
 
-	// Show the whole photo, centred, as large as its box allows: the frame,
-	// or the smaller middle part that stays on screen while zoomed.
-	boxW, boxH := FrameW, FrameH
-	if layout == LayoutWhole {
-		boxW, boxH = int(math.Floor(FrameW/WholeZoom)), int(math.Floor(FrameH/WholeZoom))
-	}
+	// Show the whole photo, centred, as large as its box allows.
+	boxW, boxH := box.Dx(), box.Dy()
 	fw, fh := boxW, int(float64(boxW)/srcAspect+0.5)
-	if srcAspect < frameAspect {
+	if srcAspect < float64(boxW)/float64(boxH) {
 		fw, fh = int(float64(boxH)*srcAspect+0.5), boxH
 	}
 	fw, fh = max(1, min(fw, boxW)), max(1, min(fh, boxH))
@@ -121,21 +230,21 @@ func compose(src image.Image, orientation int, layout Layout) *image.RGBA {
 
 	// Backdrop: the photo shrunk to a few pixels and blown up again, which is a
 	// cheap, smooth blur, then darkened so the photo stands out.
-	const tinyW, tinyH = 32, 18
+	tinyW, tinyH := max(8, 32*area.Dx()/FrameW), max(8, 18*area.Dy()/FrameH)
 	tiny := image.NewRGBA(image.Rect(0, 0, tinyW, tinyH))
 	// Cover-crop the fitted image into the tiny frame.
-	tcw, tch := fw, int(float64(fw)/frameAspect+0.5)
+	tcw, tch := fw, int(float64(fw)/areaAspect+0.5)
 	if tch > fh {
-		tcw, tch = int(float64(fh)*frameAspect+0.5), fh
+		tcw, tch = int(float64(fh)*areaAspect+0.5), fh
 	}
+	tcw, tch = max(1, tcw), max(1, tch)
 	tcrop := image.Rect((fw-tcw)/2, (fh-tch)/2, (fw-tcw)/2+tcw, (fh-tch)/2+tch)
 	draw.BiLinear.Scale(tiny, tiny.Bounds(), fitted, tcrop, draw.Src, nil)
-	draw.CatmullRom.Scale(frame, frame.Bounds(), tiny, tiny.Bounds(), draw.Src, nil)
-	darken(frame, 0.42)
+	draw.CatmullRom.Scale(frame, area, tiny, tiny.Bounds(), draw.Src, nil)
+	darken(frame, area, 0.42)
 
-	offset := image.Pt((FrameW-fw)/2, (FrameH-fh)/2)
+	offset := box.Min.Add(image.Pt((boxW-fw)/2, (boxH-fh)/2))
 	draw.Draw(frame, fitted.Bounds().Add(offset), fitted, image.Point{}, draw.Src)
-	return frame
 }
 
 // scaleOriented scales the upright rectangle `crop` of src (given in upright
@@ -214,13 +323,18 @@ func uprightToStored(r image.Rectangle, sw, sh, orientation int) image.Rectangle
 	return image.Rect(x0, y0, x1+1, y1+1)
 }
 
-func darken(img *image.RGBA, factor float64) {
+// darken dims the part r of img.
+func darken(img *image.RGBA, r image.Rectangle, factor float64) {
 	f := uint32(factor * 256)
-	for i := 0; i+3 < len(img.Pix); i += 4 {
-		img.Pix[i] = uint8(uint32(img.Pix[i]) * f >> 8)
-		img.Pix[i+1] = uint8(uint32(img.Pix[i+1]) * f >> 8)
-		img.Pix[i+2] = uint8(uint32(img.Pix[i+2]) * f >> 8)
-		img.Pix[i+3] = 0xff
+	r = r.Intersect(img.Bounds())
+	for y := r.Min.Y; y < r.Max.Y; y++ {
+		row := img.Pix[img.PixOffset(r.Min.X, y) : img.PixOffset(r.Max.X-1, y)+4]
+		for i := 0; i+3 < len(row); i += 4 {
+			row[i] = uint8(uint32(row[i]) * f >> 8)
+			row[i+1] = uint8(uint32(row[i+1]) * f >> 8)
+			row[i+2] = uint8(uint32(row[i+2]) * f >> 8)
+			row[i+3] = 0xff
+		}
 	}
 }
 

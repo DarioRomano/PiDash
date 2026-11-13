@@ -96,6 +96,9 @@ type Status struct {
 	// MotionZoom is the largest zoom at which a "whole" photo still fits.
 	Motion     string  `json:"motion"`
 	MotionZoom float64 `json:"motionZoom"`
+	// Pairs changes when more is known about which photos can be shown two
+	// at a time; the dashboard then fetches its upcoming photos again.
+	Pairs int `json:"pairs"`
 }
 
 // Options configure a Service.
@@ -107,6 +110,9 @@ type Options struct {
 	// PreferOriginal renders from the full file where possible (sharper) instead
 	// of the source's smaller preview.
 	PreferOriginal bool
+	// PairPortraits shows two upright photos side by side instead of one
+	// with empty space beside it.
+	PairPortraits bool
 	// Motion is "whole" to prepare photos for slow movement that never cuts
 	// them off, "fill" for movement over photos that fill the screen, or
 	// "off"/"" for photos that stand still.
@@ -138,6 +144,14 @@ type Service struct {
 
 	reindex chan struct{}
 
+	// shapes records which photos are upright, by shapeKey; pairs counts how
+	// often that knowledge grew. partners is the pairing worked out from it.
+	shapes      map[string]string
+	pairs       int
+	rescan      chan struct{}
+	partners    map[string]partner
+	partnersFor [2]int
+
 	renderSem chan struct{}
 	flightMu  sync.Mutex
 	flight    map[string]*flightCall
@@ -166,6 +180,7 @@ func New(opt Options) *Service {
 		byKey:     map[string]Item{},
 		onChange:  func(Status) {},
 		reindex:   make(chan struct{}, 1),
+		rescan:    make(chan struct{}, 1),
 		renderSem: make(chan struct{}, 1),
 		flight:    map[string]*flightCall{},
 	}
@@ -176,6 +191,7 @@ func New(opt Options) *Service {
 		sel = opt.Source.DefaultSelection()
 	}
 	s.selection = sel
+	s.loadShapes()
 	return s
 }
 
@@ -209,6 +225,7 @@ func (s *Service) statusLocked() Status {
 		Version:         s.version,
 		Motion:          s.motion(),
 		MotionZoom:      WholeZoom,
+		Pairs:           s.pairs,
 	}
 }
 
@@ -251,10 +268,27 @@ func (s *Service) Run(ctx context.Context) {
 		s.evict()
 	}
 
+	if s.opt.PairPortraits {
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-s.rescan:
+					s.scanShapes(ctx)
+				}
+			}
+		}()
+	}
+
 	refresh := time.NewTicker(s.opt.Refresh)
 	defer refresh.Stop()
 	for {
 		s.index(ctx)
+		select {
+		case s.rescan <- struct{}{}:
+		default:
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -465,6 +499,247 @@ func (s *Service) Playlist(limit int) (version int, items []Item) {
 	return s.version, items
 }
 
+// pairSep joins the keys of two photos shown side by side.
+const pairSep = "+"
+
+// Slide is what is on screen at one time: a photo, or two upright photos
+// side by side.
+type Slide struct {
+	// Key is the name in /photos/{key}.
+	Key   string
+	Items []Item
+}
+
+// Slides returns up to limit slides in random order. With PairPortraits,
+// upright photos appear together with their partner.
+func (s *Service) Slides(limit int) (version int, slides []Slide) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := len(s.items)
+	if limit <= 0 || limit > n {
+		limit = n
+	}
+	partners := s.partnersLocked()
+	used := make(map[string]bool, limit)
+	slides = make([]Slide, 0, limit)
+	for _, i := range rand.Perm(n) {
+		if len(slides) == limit {
+			break
+		}
+		item := s.items[i]
+		if used[item.Key] {
+			continue
+		}
+		used[item.Key] = true
+		if p, ok := partners[item.Key]; ok && !used[p.other.Key] {
+			used[p.other.Key] = true
+			left, right := item, p.other
+			if !p.first {
+				left, right = right, left
+			}
+			slides = append(slides, Slide{Key: left.Key + pairSep + right.Key, Items: []Item{left, right}})
+			continue
+		}
+		slides = append(slides, Slide{Key: item.Key, Items: []Item{item}})
+	}
+	return s.version, slides
+}
+
+type partner struct {
+	other Item
+	// first is true when this photo stands on the left.
+	first bool
+}
+
+// partnersLocked gives every upright photo that has one its partner. Pairs
+// are neighbours: photos from the same folder, in the order they were taken.
+// That keeps a pair from one occasion, and keeps pairs the same from one
+// shuffle to the next, so a prepared frame can be used again.
+func (s *Service) partnersLocked() map[string]partner {
+	if !s.opt.PairPortraits {
+		return nil
+	}
+	if s.partners != nil && s.partnersFor == [2]int{s.version, s.pairs} {
+		return s.partners
+	}
+	var upright []Item
+	for _, it := range s.items {
+		if s.shapes[shapeKey(it)] == shapePortrait {
+			upright = append(upright, it)
+		}
+	}
+	sort.Slice(upright, func(i, j int) bool {
+		a, b := upright[i], upright[j]
+		if a.Folder != b.Folder {
+			return a.Folder < b.Folder
+		}
+		if !a.Taken.Equal(b.Taken) {
+			return a.Taken.Before(b.Taken)
+		}
+		return a.Key < b.Key
+	})
+	out := make(map[string]partner, len(upright))
+	for i := 0; i+1 < len(upright); i++ {
+		a, b := upright[i], upright[i+1]
+		if a.Folder != b.Folder {
+			continue // the last one of a folder with an odd number stays alone
+		}
+		out[a.Key] = partner{other: b, first: true}
+		out[b.Key] = partner{other: a}
+		i++
+	}
+	s.partners, s.partnersFor = out, [2]int{s.version, s.pairs}
+	return out
+}
+
+// --- Which photos are upright ----------------------------------------------------
+
+const (
+	shapePortrait  = "p"
+	shapeLandscape = "l"
+)
+
+// shapeKey names a photo in the shape table; an edited photo is looked at again.
+func shapeKey(item Item) string { return item.Key + "|" + item.Version }
+
+// Peeker is implemented by sources that can return a small image of a photo,
+// enough to tell its shape, without transferring the whole file.
+type Peeker interface {
+	Peek(ctx context.Context, item Item) (data []byte, upright bool, err error)
+}
+
+// learnShape notes whether a photo is upright from image data that was
+// fetched anyway.
+func (s *Service) learnShape(item Item, data []byte, upright bool) {
+	if !s.opt.PairPortraits {
+		return
+	}
+	portrait, err := IsPortrait(data, upright)
+	if err != nil {
+		return
+	}
+	s.mu.Lock()
+	s.setShapeLocked(item, portrait)
+	s.mu.Unlock()
+}
+
+func (s *Service) setShapeLocked(item Item, portrait bool) {
+	shape := shapeLandscape
+	if portrait {
+		shape = shapePortrait
+	}
+	s.shapes[shapeKey(item)] = shape
+}
+
+func (s *Service) shapesPath() string {
+	if s.opt.CacheDir == "" {
+		return ""
+	}
+	return filepath.Join(s.opt.CacheDir, "shapes.json")
+}
+
+func (s *Service) loadShapes() {
+	s.shapes = map[string]string{}
+	if p := s.shapesPath(); p != "" && s.opt.PairPortraits {
+		if data, err := os.ReadFile(p); err == nil {
+			_ = json.Unmarshal(data, &s.shapes)
+		}
+	}
+}
+
+// saveShapes stores what is known, leaving out photos that are gone.
+func (s *Service) saveShapes() {
+	p := s.shapesPath()
+	if p == "" {
+		return
+	}
+	s.mu.Lock()
+	if len(s.items) > 0 {
+		current := make(map[string]string, len(s.items))
+		for _, it := range s.items {
+			if shape, ok := s.shapes[shapeKey(it)]; ok {
+				current[shapeKey(it)] = shape
+			}
+		}
+		s.shapes = current
+	}
+	data, err := json.Marshal(s.shapes)
+	s.mu.Unlock()
+	if err != nil {
+		return
+	}
+	if err := os.WriteFile(p+".tmp", data, 0o600); err == nil {
+		_ = os.Rename(p+".tmp", p)
+	}
+}
+
+// scanShapes looks at every photo whose shape is not known yet. It reads
+// only a small image of each, so a large library takes minutes, once.
+func (s *Service) scanShapes(ctx context.Context) {
+	s.mu.Lock()
+	var todo []Item
+	for _, it := range s.items {
+		if _, ok := s.shapes[shapeKey(it)]; !ok {
+			todo = append(todo, it)
+		}
+	}
+	s.mu.Unlock()
+	if len(todo) == 0 {
+		return
+	}
+	start := time.Now()
+	learned, failed := 0, 0
+	publish := func() {
+		s.saveShapes()
+		s.mu.Lock()
+		s.pairs++
+		s.mu.Unlock()
+		s.notify()
+	}
+	for _, it := range todo {
+		if ctx.Err() != nil {
+			return
+		}
+		portrait, err := s.peek(ctx, it)
+		if err != nil {
+			// The source is probably away; the next index tries again.
+			if failed++; failed >= 20 {
+				break
+			}
+			continue
+		}
+		failed = 0
+		s.mu.Lock()
+		s.setShapeLocked(it, portrait)
+		s.mu.Unlock()
+		// Let the dashboard start pairing early in a large library.
+		if learned++; learned%200 == 0 {
+			publish()
+		}
+	}
+	if learned%200 != 0 {
+		publish()
+	}
+	s.opt.Log.Info("looked at photo shapes", "photos", learned, "of", len(todo), "took", time.Since(start).Round(time.Millisecond))
+}
+
+func (s *Service) peek(ctx context.Context, item Item) (bool, error) {
+	if p, ok := s.opt.Source.(Peeker); ok {
+		if data, upright, err := p.Peek(ctx, item); err == nil {
+			if portrait, err := IsPortrait(data, upright); err == nil {
+				return portrait, nil
+			}
+		} else if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
+	}
+	data, upright, err := s.opt.Source.Fetch(ctx, item, false)
+	if err != nil {
+		return false, err
+	}
+	return IsPortrait(data, upright)
+}
+
 // ErrNotFound is returned for a photo that is not in the selected folders.
 var ErrNotFound = errors.New("photo not found")
 
@@ -472,13 +747,25 @@ var ErrNotFound = errors.New("photo not found")
 // caching it first if needed. Only photos in the current index can be
 // requested, so this cannot be used to read arbitrary files from the source.
 func (s *Service) Image(ctx context.Context, key string) (string, error) {
-	s.mu.Lock()
-	item, ok := s.byKey[key]
-	s.mu.Unlock()
-	if !ok {
+	// "a+b" asks for two photos side by side.
+	keys := strings.Split(key, pairSep)
+	if len(keys) > 2 || (len(keys) == 2 && keys[0] == keys[1]) {
 		return "", ErrNotFound
 	}
-	name := item.Key + "|" + item.Version
+	items := make([]Item, 0, 2)
+	name := ""
+	s.mu.Lock()
+	for _, k := range keys {
+		item, ok := s.byKey[k]
+		if !ok {
+			s.mu.Unlock()
+			return "", ErrNotFound
+		}
+		items = append(items, item)
+		name += item.Key + "|" + item.Version + "|"
+	}
+	s.mu.Unlock()
+	name = strings.TrimSuffix(name, "|")
 	if v := s.Variant(); v != "" {
 		name += "|" + v
 	}
@@ -512,7 +799,7 @@ func (s *Service) Image(ctx context.Context, key string) (string, error) {
 
 	// Finish the render even if this particular viewer goes away.
 	work, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
-	call.err = s.render(work, item, path)
+	call.err = s.render(work, items, path)
 	cancel()
 	if call.err == nil {
 		call.path = path
@@ -532,19 +819,37 @@ func decodable(name string) bool {
 	return false
 }
 
-func (s *Service) render(ctx context.Context, item Item, path string) error {
-	src := s.opt.Source
-	// Full files give the sharpest result, but only formats we can decode;
-	// HEIC and RAW photos use the source's preview instead.
-	useOriginal := !src.HasPreviews() || (s.opt.PreferOriginal && decodable(item.Name))
+// render prepares the frame for one photo, or for two side by side, and
+// stores it at path.
+func (s *Service) render(ctx context.Context, items []Item, path string) error {
+	// Decoding a large photo needs a lot of memory; do one frame at a time.
+	select {
+	case s.renderSem <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	defer func() { <-s.renderSem }()
 
-	frame, err := s.fetchAndRender(ctx, item, useOriginal)
-	if err != nil && useOriginal && src.HasPreviews() {
-		s.opt.Log.Debug("original not usable, using preview", "photo", item.Name, "err", err)
-		frame, err = s.fetchAndRender(ctx, item, false)
+	var frame []byte
+	var err error
+	if len(items) == 2 {
+		pair := NewPairRenderer(s.layout())
+		for _, item := range items {
+			err = s.withImage(ctx, item, pair.Add)
+			if err != nil {
+				return fmt.Errorf("%s: %w", item.Name, err)
+			}
+		}
+		frame, err = pair.JPEG()
+	} else {
+		err = s.withImage(ctx, items[0], func(data []byte, applyExif bool) error {
+			var err error
+			frame, err = Render(data, applyExif, s.layout())
+			return err
+		})
 	}
 	if err != nil {
-		return fmt.Errorf("%s: %w", item.Name, err)
+		return fmt.Errorf("%s: %w", items[0].Name, err)
 	}
 
 	tmp := path + ".part"
@@ -564,19 +869,27 @@ func (s *Service) render(ctx context.Context, item Item, path string) error {
 	return nil
 }
 
-func (s *Service) fetchAndRender(ctx context.Context, item Item, original bool) ([]byte, error) {
-	data, upright, err := s.opt.Source.Fetch(ctx, item, original)
-	if err != nil {
-		return nil, err
+// withImage fetches a photo and hands its data to use. Full files give the
+// sharpest result, but only in formats that can be decoded here; when use
+// cannot work with the full file (HEIC, RAW), it is given the source's
+// preview instead.
+func (s *Service) withImage(ctx context.Context, item Item, use func(data []byte, applyExif bool) error) error {
+	src := s.opt.Source
+	useOriginal := !src.HasPreviews() || (s.opt.PreferOriginal && decodable(item.Name))
+	try := func(original bool) error {
+		data, upright, err := src.Fetch(ctx, item, original)
+		if err != nil {
+			return err
+		}
+		s.learnShape(item, data, upright)
+		return use(data, !upright)
 	}
-	// Decoding a large photo needs a lot of memory; do one at a time.
-	select {
-	case s.renderSem <- struct{}{}:
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	err := try(useOriginal)
+	if err != nil && useOriginal && src.HasPreviews() && ctx.Err() == nil {
+		s.opt.Log.Debug("original not usable, using preview", "photo", item.Name, "err", err)
+		err = try(false)
 	}
-	defer func() { <-s.renderSem }()
-	return Render(data, !upright, s.layout())
+	return err
 }
 
 // evict keeps the frame cache under its size limit, removing the frames that

@@ -595,6 +595,18 @@ func (s *Synology) albumItems(ctx context.Context, id int, folder Folder) ([]Ite
 // Fetch implements Source. The preview is Synology's largest ready-made
 // thumbnail (1280 pixels on the long side), already rotated upright.
 func (s *Synology) Fetch(ctx context.Context, item Item, original bool) ([]byte, bool, error) {
+	if original {
+		return s.get(ctx, item, sizeOriginal)
+	}
+	return s.get(ctx, item, sizePreview)
+}
+
+// Peek implements Peeker with the smallest preview, a few kilobytes.
+func (s *Synology) Peek(ctx context.Context, item Item) ([]byte, bool, error) {
+	return s.get(ctx, item, sizeSmall)
+}
+
+func (s *Synology) get(ctx context.Context, item Item, size string) ([]byte, bool, error) {
 	// Item.ID is "<library>:<unit>", followed for a photo found in an album
 	// by ":<the album's passphrase, if it has one>".
 	parts := strings.SplitN(item.ID, ":", 3)
@@ -610,7 +622,7 @@ func (s *Synology) Fetch(ctx context.Context, item Item, original bool) ([]byte,
 		passphrase = parts[2]
 	}
 
-	body, err := s.fetch(ctx, space, unit, item.Version, passphrase, original)
+	body, err := s.fetch(ctx, space, unit, item.Version, passphrase, size)
 	var apiErr *synoError
 	if err != nil && fromAlbum && errors.As(err, &apiErr) {
 		// Which library a photo in an album belongs to is read from its owner,
@@ -619,20 +631,28 @@ func (s *Synology) Fetch(ctx context.Context, item Item, original bool) ([]byte,
 		if space == spacePersonal {
 			other = spaceShared
 		}
-		if alt, altErr := s.fetch(ctx, other, unit, item.Version, passphrase, original); altErr == nil {
+		if alt, altErr := s.fetch(ctx, other, unit, item.Version, passphrase, size); altErr == nil {
 			body, err = alt, nil
 		}
 	}
 	if err != nil {
 		return nil, false, err
 	}
-	return body, !original, nil
+	return body, size != sizeOriginal, nil
 }
 
-func (s *Synology) fetch(ctx context.Context, space string, unit int, cacheKey, passphrase string, original bool) ([]byte, error) {
+// What to fetch of a photo: the full file, or one of the previews the NAS
+// keeps (1280 and 240 pixels on the long side), which are already upright.
+const (
+	sizeOriginal = ""
+	sizePreview  = "xl"
+	sizeSmall    = "sm"
+)
+
+func (s *Synology) fetch(ctx context.Context, space string, unit int, cacheKey, passphrase, size string) ([]byte, error) {
 	var params url.Values
 	var limit int64
-	if original {
+	if size == sizeOriginal {
 		params = url.Values{
 			"api": {apiName(space, "Download")}, "version": {"1"}, "method": {"download"},
 			"unit_id": {"[" + strconv.Itoa(unit) + "]"},
@@ -641,7 +661,7 @@ func (s *Synology) fetch(ctx context.Context, space string, unit int, cacheKey, 
 	} else {
 		params = url.Values{
 			"api": {apiName(space, "Thumbnail")}, "version": {"1"}, "method": {"get"},
-			"mode": {"download"}, "type": {"unit"}, "size": {"xl"},
+			"mode": {"download"}, "type": {"unit"}, "size": {size},
 			"id": {strconv.Itoa(unit)}, "cache_key": {cacheKey},
 		}
 		limit = 32 << 20

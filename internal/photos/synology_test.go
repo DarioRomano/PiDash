@@ -43,6 +43,7 @@ type fakeNAS struct {
 	sid          int
 	logins       int
 	thumbs       int
+	peeks        int // of the thumbs, the small ones asked for to learn a photo's shape
 	downloads    int
 	breakFolders bool
 	// oldAlbums makes the NAS reject the combined album list, like an older version.
@@ -248,7 +249,8 @@ func (n *fakeNAS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		ok(map[string]any{"list": list})
 	case "Thumbnail/get":
-		if r.Form.Get("size") != "xl" || r.Form.Get("type") != "unit" || r.Form.Get("cache_key") == "" {
+		size := r.Form.Get("size")
+		if (size != "xl" && size != "sm") || r.Form.Get("type") != "unit" || r.Form.Get("cache_key") == "" {
 			fail(120)
 			return
 		}
@@ -259,7 +261,16 @@ func (n *fakeNAS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		n.thumbs++
 		w.Header().Set("Content-Type", "image/jpeg")
-		w.Write(jpegBytes(uniform(640, 480, color.RGBA{30, 200, 60, 255}))) // previews are green
+		// Previews are green. The Holiday photos (10-13) are upright, the rest lie flat.
+		tw, th := 640, 480
+		if id := atoi("id"); id >= 10 && id <= 13 {
+			tw, th = 480, 640
+		}
+		if size == "sm" {
+			n.peeks++
+			tw, th = tw/4, th/4
+		}
+		w.Write(jpegBytes(uniform(tw, th, color.RGBA{30, 200, 60, 255})))
 	case "Download/download":
 		id, _ := strconv.Atoi(strings.Trim(r.Form.Get("unit_id"), "[]"))
 		if private(id) || (n.viewerOnly && id >= 700 && id < 800) {

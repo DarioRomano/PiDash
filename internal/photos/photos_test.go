@@ -10,6 +10,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 )
@@ -229,6 +231,80 @@ func TestMotionSettingChangesHowPhotosArePrepared(t *testing.T) {
 	}
 	if c := frameColor(t, whole, FrameW/2, FrameH/2); !near(c, color.RGBA{220, 30, 30, 255}) {
 		t.Errorf("centre = %v, want the photo", c)
+	}
+}
+
+func slideKeys(slides []Slide) string {
+	var keys []string
+	for _, s := range slides {
+		keys = append(keys, s.Key)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, " ")
+}
+
+func TestUprightPhotosAreShownTwoAtATime(t *testing.T) {
+	nas, syn := newFakeNAS(t)
+	cache := t.TempDir()
+	svc, wait := startService(t, Options{Source: syn, PreferOriginal: true, CacheDir: cache, PairPortraits: true})
+
+	// Holiday has three upright photos (10, 11, 13); the Family photo lies flat.
+	svc.SetSelection(Selection{Folders: []Folder{{ID: "p:3", Name: "Holiday", Path: "Holiday"}, {ID: "s:101", Name: "Family", Path: "Family"}}})
+	wait("4 photos, all looked at", func(st Status) bool { return !st.Indexing && st.Count == 4 && st.Pairs > 0 })
+
+	// Neighbours pair up; the third upright photo and the flat one stay alone.
+	_, slides := svc.Slides(0)
+	if got, want := slideKeys(slides), "p-10+p-11 p-13 s-500"; got != want {
+		t.Fatalf("slides = %s, want %s", got, want)
+	}
+	if nas.peeks != 4 || nas.downloads != 0 {
+		t.Errorf("shapes were learned with %d small previews and %d downloads; want 4 and 0", nas.peeks, nas.downloads)
+	}
+	if _, few := svc.Slides(1); len(few) != 1 {
+		t.Errorf("limit 1 gave %d slides", len(few))
+	}
+
+	path, err := svc.Image(context.Background(), "p-10+p-11")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Both halves show a photo, with the dark line between them.
+	for _, x := range []int{FrameW / 4, FrameW * 3 / 4} {
+		if c := frameColor(t, path, x, FrameH/2); !near(c, color.RGBA{220, 30, 30, 255}) {
+			t.Errorf("x=%d: %v, want a photo", x, c)
+		}
+	}
+	if c := frameColor(t, path, FrameW/2, FrameH/2); near(c, color.RGBA{220, 30, 30, 255}) {
+		t.Errorf("the middle shows a photo, want the line between two: %v", c)
+	}
+	single, err := svc.Image(context.Background(), "p-10")
+	if err != nil || single == path {
+		t.Errorf("the single photo must have its own frame: %q, err %v", single, err)
+	}
+	for _, bad := range []string{"p-10+p-10", "p-10+nope", "p-10+p-11+p-13", "+p-10", "p-10+"} {
+		if _, err := svc.Image(context.Background(), bad); !errors.Is(err, ErrNotFound) {
+			t.Errorf("Image(%q): err = %v, want not found", bad, err)
+		}
+	}
+
+	// After a restart nothing has to be looked at again.
+	peeks := nas.peeks
+	again, wait2 := startService(t, Options{Source: syn, PreferOriginal: true, CacheDir: cache, PairPortraits: true})
+	again.SetSelection(Selection{Folders: []Folder{{ID: "p:3", Name: "Holiday", Path: "Holiday"}}})
+	wait2("3 photos", idle(3))
+	if _, slides := again.Slides(0); slideKeys(slides) != "p-10+p-11 p-13" {
+		t.Errorf("after a restart: slides = %s", slideKeys(slides))
+	}
+	if nas.peeks != peeks {
+		t.Errorf("%d photos were looked at again after a restart", nas.peeks-peeks)
+	}
+
+	// Switched off, every photo is on its own.
+	off, wait3 := startService(t, Options{Source: syn, CacheDir: cache})
+	off.SetSelection(Selection{Folders: []Folder{{ID: "p:3", Name: "Holiday", Path: "Holiday"}}})
+	wait3("3 photos", idle(3))
+	if _, slides := off.Slides(0); slideKeys(slides) != "p-10 p-11 p-13" {
+		t.Errorf("switched off: slides = %s", slideKeys(slides))
 	}
 }
 

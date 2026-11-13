@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -121,6 +122,22 @@ func (l *LocalDir) Items(_ context.Context, folder Folder) ([]Item, error) {
 		})
 	}
 	return out, nil
+}
+
+// Peek implements Peeker: the start of the file holds its size and rotation.
+// When that is not enough, the caller reads the whole file instead.
+func (l *LocalDir) Peek(_ context.Context, item Item) ([]byte, bool, error) {
+	p, err := l.abs(item.ID)
+	if err != nil {
+		return nil, false, err
+	}
+	f, err := os.Open(p)
+	if err != nil {
+		return nil, false, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, 256<<10))
+	return data, false, err
 }
 
 // Fetch implements Source.

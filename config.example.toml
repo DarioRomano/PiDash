@@ -98,6 +98,9 @@ interval = "30s"
 #   "fill"   movement over a photo that fills the screen; its edges may
 #            drift out of view
 motion = "off"
+# Show two upright (portrait) photos side by side instead of one with empty
+# space beside it. Partners are neighbours from the same folder.
+pair_portraits = false
 # How often the chosen folders are checked for new photos.
 refresh = "6h"
 # Disk space for prepared photos, in MB. The oldest are removed first.

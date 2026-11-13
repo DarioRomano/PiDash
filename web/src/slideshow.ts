@@ -29,6 +29,7 @@ export class Slideshow {
   private showing = false;
   private failures = 0;
   private loadToken = 0;
+  private pairs = -1;
   private motion: "off" | "whole" | "fill" = "off";
   private wholeZoom = 1.12;
   private lastMove = -1;
@@ -62,9 +63,13 @@ export class Slideshow {
     this.motion = st.motion ?? "off";
     if (st.motionZoom && st.motionZoom > 1) this.wholeZoom = st.motionZoom;
     if (!st.enabled) return;
+    const pairsChanged = this.pairs >= 0 && st.pairs !== undefined && st.pairs !== this.pairs;
+    this.pairs = st.pairs ?? this.pairs;
     if (st.version !== this.version) {
       this.version = st.version;
       void this.reload();
+    } else if (pairsChanged) {
+      void this.refreshUpcoming();
     }
   }
 
@@ -108,6 +113,23 @@ export class Slideshow {
       return;
     }
     await this.step(1);
+  }
+
+  /**
+   * The backend has learned which more photos are upright and can share the
+   * screen. Takes the photos still to come from a fresh list, without
+   * disturbing the one that is showing.
+   */
+  private async refreshUpcoming() {
+    const token = this.loadToken;
+    try {
+      const res = await fetch(`/api/photos/playlist?limit=${PLAYLIST_SIZE}`);
+      const data: { version: number; items: PhotoItem[] } = await res.json();
+      if (token !== this.loadToken || data.items.length === 0) return;
+      this.playlist = [...this.playlist.slice(0, this.index + 1), ...data.items];
+    } catch {
+      /* the list in hand keeps working */
+    }
   }
 
   private clear() {

@@ -173,7 +173,8 @@ What it covers:
   weather service found before you save.
 - **Background photos:** where photos come from, the connection to Synology
   Photos with a **Test connection** button, the picture quality, how long
-  each photo stays, and whether photos move (see below). After saving, **Choose folders and albums** takes you to
+  each photo stays, whether photos move, and whether two upright photos
+  share the screen (see below). After saving, **Choose folders and albums** takes you to
   the picker.
 - **Apps:** the app row. Add from a list of ready-made apps (YouTube, Netflix,
   Synology Photos, Plex, Moonlight, Kodi, Steam Link), any program installed
@@ -355,6 +356,23 @@ The movement is spread over the time a photo is shown, so a longer time per
 photo means slower movement. After changing the setting, photos are prepared
 again as they come up. If the system is set to reduce motion, photos stand
 still.
+
+**Two upright photos at a time.** With **Show two upright photos side by
+side** on the settings page (`pair_portraits = true` under `[photos]`), a
+portrait photo no longer stands alone with empty space beside it. It shares
+the screen with a second one.
+
+- Partners are neighbours: photos from the same folder or album, in the order
+  they were taken. So a pair usually comes from the same occasion, and the
+  same two appear together every time.
+- A portrait without a partner (an odd one out in its folder) is shown alone,
+  as before. Landscape photos are not affected.
+- To know which photos are upright, PiDash looks at a small preview of each
+  photo once, in the background. On a large library that takes a few minutes
+  the first time; pairs start to appear while it is still going.
+- A photo close to the shape of half a screen (3:4, 2:3) fills its half and
+  loses a little at the top and bottom. A narrower one (9:16 from a phone) is
+  shown whole. With **Gentle** movement both are shown whole.
 
 More settings, with their defaults:
 

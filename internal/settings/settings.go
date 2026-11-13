@@ -52,8 +52,11 @@ type Photos struct {
 	Source          string `json:"source"`
 	IntervalSeconds int    `json:"intervalSeconds"`
 	// Motion is "off", "whole" or "fill"; empty leaves config.toml in charge.
-	Motion   string   `json:"motion,omitempty"`
-	Synology Synology `json:"synology"`
+	Motion string `json:"motion,omitempty"`
+	// PairPortraits shows two upright photos side by side; absent leaves
+	// config.toml in charge.
+	PairPortraits *bool    `json:"pairPortraits,omitempty"`
+	Synology      Synology `json:"synology"`
 }
 
 // Synology is the connection to Synology Photos.
@@ -239,6 +242,9 @@ func apply(base config.Config, f File, installed []desktop.Entry) (config.Config
 		if p.Motion != "" {
 			cfg.Photos.Motion = p.Motion
 		}
+		if p.PairPortraits != nil {
+			cfg.Photos.PairPortraits = *p.PairPortraits
+		}
 		if p.Source == config.PhotoSourceSynology {
 			cfg.Photos.Synology.URL = p.Synology.URL
 			cfg.Photos.Synology.Username = p.Synology.Username
@@ -380,6 +386,7 @@ type PhotosView struct {
 	Source          string       `json:"source"`
 	IntervalSeconds int          `json:"intervalSeconds"`
 	Motion          string       `json:"motion"`
+	PairPortraits   bool         `json:"pairPortraits"`
 	Synology        SynologyView `json:"synology"`
 	// FolderPath is the folder configured in config.toml, if any.
 	FolderPath string `json:"folderPath"`
@@ -416,7 +423,7 @@ func (s *Store) View() View {
 			Coordinates: cfg.Weather.Latitude != nil},
 		Photos: PhotosView{
 			Source: cfg.Photos.Source, IntervalSeconds: int(cfg.Photos.Interval.Duration / time.Second),
-			Motion: cfg.Photos.Motion,
+			Motion: cfg.Photos.Motion, PairPortraits: cfg.Photos.PairPortraits,
 			Synology: SynologyView{URL: cfg.Photos.Synology.URL, Username: cfg.Photos.Synology.Username,
 				PasswordSet: cfg.Photos.Synology.Password != "", InsecureTLS: cfg.Photos.Synology.InsecureTLS,
 				Quality: cfg.Photos.Synology.Quality},

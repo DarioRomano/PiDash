@@ -644,11 +644,21 @@ func (s *Server) handlePhotoPlaylist(w http.ResponseWriter, r *http.Request) {
 		if limit <= 0 || limit > 1000 {
 			limit = 200
 		}
-		version, items := s.photos.Playlist(limit)
+		version, slides := s.photos.Slides(limit)
 		out.Version = version
-		for _, it := range items {
-			sum := sha1.Sum([]byte(it.Version + "|" + s.photos.Variant()))
-			out.Items = append(out.Items, playlistItem{Key: it.Key, Name: it.Name, Folder: it.Folder, Taken: it.Taken, V: hex.EncodeToString(sum[:4])})
+		for _, slide := range slides {
+			// A slide is one photo, or two upright ones side by side; the
+			// caption comes from the first.
+			first := slide.Items[0]
+			name, versions := first.Name, ""
+			for i, it := range slide.Items {
+				versions += it.Version + "|"
+				if i > 0 {
+					name += " + " + it.Name
+				}
+			}
+			sum := sha1.Sum([]byte(versions + s.photos.Variant()))
+			out.Items = append(out.Items, playlistItem{Key: slide.Key, Name: name, Folder: first.Folder, Taken: first.Taken, V: hex.EncodeToString(sum[:4])})
 		}
 	}
 	writeJSON(w, out)

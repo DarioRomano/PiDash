@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DarioRomano/PiDash/internal/config"
 	"github.com/DarioRomano/PiDash/internal/desktop"
@@ -309,5 +310,37 @@ func TestAnUninstalledProgramOnlyLosesItsTile(t *testing.T) {
 	}
 	if cfg, _ := s.Effective(); len(cfg.Apps) != 0 {
 		t.Errorf("apps = %+v", cfg.Apps)
+	}
+}
+
+func TestPhotoMovementAndPairsFromTheSettingsPage(t *testing.T) {
+	s, _ := open(t)
+	yes := true
+	err := s.Save(Update{Photos: &Photos{Source: "", IntervalSeconds: 30, Motion: "whole", PairPortraits: &yes}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := s.Effective()
+	if err != nil || cfg.Photos.Motion != "whole" || !cfg.Photos.PairPortraits {
+		t.Errorf("motion %q, pairs %v, err %v", cfg.Photos.Motion, cfg.Photos.PairPortraits, err)
+	}
+	if v := s.View(); v.Photos.Motion != "whole" || !v.Photos.PairPortraits {
+		t.Errorf("page shows motion %q, pairs %v", v.Photos.Motion, v.Photos.PairPortraits)
+	}
+	if err := s.Save(Update{Photos: &Photos{Motion: "sideways"}}); err == nil {
+		t.Error("an unknown kind of movement was accepted")
+	}
+
+	// A settings file written before these options existed leaves config.toml in charge of them.
+	withFile := base()
+	withFile.Photos.Motion, withFile.Photos.PairPortraits = "fill", true
+	path := filepath.Join(t.TempDir(), "settings.json")
+	os.WriteFile(path, []byte(`{"photos":{"source":"","intervalSeconds":45,"synology":{}}}`), 0o600)
+	old, err := Open(path, withFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg, err := old.Effective(); err != nil || cfg.Photos.Motion != "fill" || !cfg.Photos.PairPortraits || cfg.Photos.Interval.Duration != 45*time.Second {
+		t.Errorf("motion %q, pairs %v, interval %v, err %v", cfg.Photos.Motion, cfg.Photos.PairPortraits, cfg.Photos.Interval.Duration, err)
 	}
 }

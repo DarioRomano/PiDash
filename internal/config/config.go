@@ -155,6 +155,8 @@ type Photos struct {
 	// "whole" (the whole photo always stays on screen) or "fill" (the photo
 	// fills the screen and its edges may drift out of view).
 	Motion string `toml:"motion"`
+	// PairPortraits shows two upright photos side by side.
+	PairPortraits bool `toml:"pair_portraits"`
 	// CacheMB limits the disk space used for rendered photos.
 	CacheMB  int            `toml:"cache_mb"`
 	Synology SynologyPhotos `toml:"synology"`
