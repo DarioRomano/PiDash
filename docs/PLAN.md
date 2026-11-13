@@ -258,6 +258,24 @@ How it works:
   so the **phone remote shows "Back to dashboard"**. The app's own quit shortcut
   works too.
 
+## Input on the dashboard
+
+Every input source ends in the same small action vocabulary (`up`, `select`,
+`back`, `weather`, `help`, …), handled in one place, so all sources behave alike.
+
+- **Keys** (TV remote over CEC, keyboards) are mapped by `KeyboardEvent.code`
+  through a key map: built-in defaults plus additions from the settings, where
+  `"none"` removes one. Key presses with Ctrl, Alt or Meta are ignored so
+  desktop shortcuts keep working. Tab and Shift+Tab move along the app row.
+- **Mouse and touch**: the pointer and a control bar appear on movement and
+  fade after a few seconds. Bar buttons emit actions; they never take keyboard
+  focus, so Enter keeps meaning OK. A click on the screen toggles the app row,
+  a click on a tile activates it, hovering focuses it, right-click is Back, and
+  the wheel is left/right.
+- **Phone remote**: actions over the event stream.
+- **Help** (`H`, `F1`, the bar): a full-screen overview generated from the live
+  key map.
+
 ## Controlling apps: phone input and the TV remote
 
 While an app has the screen, the dashboard page receives no keys, so two

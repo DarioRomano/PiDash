@@ -1,9 +1,10 @@
 import { Clock } from "./clock";
+import { Help } from "./help";
 import { Input } from "./input";
 import { Rail, type RailItem } from "./rail";
 import { Slideshow } from "./slideshow";
 import { connect } from "./sse";
-import type { AppsStatus, ClientConfig, PhotoItem, PhotosStatus, StateEntry, SystemState, WeatherState } from "./types";
+import type { Action, AppsStatus, ClientConfig, PhotoItem, PhotosStatus, StateEntry, SystemState, WeatherState } from "./types";
 import { WeatherView } from "./weather";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
@@ -136,9 +137,23 @@ function updateSuspended() {
 
 const WEATHER_ID = "__weather";
 const weatherEl = $("#weather");
-const weather = new WeatherView(weatherEl, $("#weather-panel"), (open) => stage.classList.toggle("panel-open", open));
+const weather: WeatherView = new WeatherView(weatherEl, $("#weather-panel"), (open) =>
+  stage.classList.toggle("panel-open", open || help.isOpen),
+);
 // With a mouse or touch screen, clicking the summary opens the details too.
-weatherEl.addEventListener("click", () => weather.open());
+weatherEl.addEventListener("click", (e) => {
+  e.stopPropagation();
+  weather.open();
+});
+
+// --- Help ---------------------------------------------------------------------
+
+const help = new Help($("#help"), (open) => stage.classList.toggle("panel-open", open || weather.isOpen));
+
+function openHelp() {
+  const url = lanAddress ? `http://${lanAddress}:${location.port || "80"}/remote` : "";
+  help.open(input.keyMap, url);
+}
 
 // --- Panel rail and apps ------------------------------------------------------
 
@@ -301,6 +316,20 @@ input.on((action) => {
     exitToDesktop();
     return;
   }
+  if (help.handle(action)) return;
+  if (action === "help") {
+    openHelp();
+    return;
+  }
+  if (action === "weather") {
+    // A direct shortcut: toggles the details from anywhere.
+    if (weather.isOpen) weather.close();
+    else if (weather.hasData) {
+      rail.close();
+      weather.open();
+    } else toast("Weather is not set up. Add a location under [weather] in the settings.", 6000);
+    return;
+  }
   if (weather.handle(action)) return;
   if (rail.handle(action)) return;
   switch (action) {
@@ -328,9 +357,123 @@ input.on((action) => {
       break;
     case "playpause":
       if (slideshow.hasPhotos) toast(slideshow.togglePause() ? "Slideshow paused" : "Slideshow resumed", 2000);
+      refreshHud();
       break;
   }
 });
+
+// --- Mouse, touchpad and touch screen -------------------------------------------
+// The pointer and a small control bar appear when the mouse moves and fade away
+// again, so the ambient screen stays clean. Everything the bar does goes
+// through the same actions as the keys.
+
+const hud = $("#hud");
+const ICONS: Record<string, string> = {
+  left: '<path d="M15 5l-7 7 7 7"/>',
+  right: '<path d="M9 5l7 7-7 7"/>',
+  pause: '<path d="M8 5v14M16 5v14"/>',
+  play: '<path d="M7 5l12 7-12 7z"/>',
+  menu: '<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>',
+  weather: '<path d="M7 18h10a4 4 0 0 0 .5-7.97 6 6 0 0 0-11.6 1.2A3.5 3.5 0 0 0 7 18z"/>',
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 1 1 3.6 2.3c-.8.5-1.2 1-1.2 1.9M12 16.8v.2"/>',
+  exit: '<rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/>',
+};
+const icon = (name: string) =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
+
+const hudButtons: Partial<Record<string, HTMLButtonElement>> = {};
+function hudButton(action: Action, iconName: string, label: string, title: string) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.title = title;
+  b.setAttribute("aria-label", title);
+  b.innerHTML = icon(iconName) + (label ? `<span>${label}</span>` : "");
+  // Never take the keyboard focus: Enter must keep meaning "OK" on the dashboard.
+  b.addEventListener("pointerdown", (e) => e.preventDefault());
+  b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    input.emit(action);
+  });
+  hud.appendChild(b);
+  hudButtons[action] = b;
+}
+hudButton("left", "left", "", "Previous photo");
+hudButton("playpause", "pause", "", "Hold or resume the slideshow");
+hudButton("right", "right", "", "Next photo");
+hud.appendChild(Object.assign(document.createElement("span"), { className: "hud-sep" }));
+hudButton("menu", "menu", "Apps", "App row");
+hudButton("weather", "weather", "Weather", "Weather details");
+hudButton("help", "help", "Help", "All controls");
+hudButton("exit", "exit", "Desktop", "Return to the desktop");
+
+let hudShowsPaused = false;
+function refreshHud() {
+  const photos = slideshow.hasPhotos;
+  for (const a of ["left", "playpause", "right"]) hudButtons[a]!.hidden = !photos;
+  hud.querySelector<HTMLElement>(".hud-sep")!.hidden = !photos;
+  hudButtons.weather!.hidden = !weather.hasData;
+  // Redraw the icon only when it changes: replacing it while the mouse button
+  // is down would swallow the click.
+  if (slideshow.isPaused !== hudShowsPaused) {
+    hudShowsPaused = slideshow.isPaused;
+    hudButtons.playpause!.innerHTML = icon(hudShowsPaused ? "play" : "pause");
+  }
+}
+
+let pointerTimer = 0;
+let pointerTravel = 0;
+function pointerActive() {
+  refreshHud();
+  document.documentElement.classList.add("pointer-active");
+  clearTimeout(pointerTimer);
+  pointerTimer = window.setTimeout(() => {
+    // Stay while the pointer rests on the bar.
+    if (hud.matches(":hover")) pointerActive();
+    else document.documentElement.classList.remove("pointer-active");
+  }, 3500);
+}
+window.addEventListener("pointermove", (e) => {
+  // Ignore the jitter of a mouse lying still and the event browsers fire on load.
+  pointerTravel += Math.abs(e.movementX) + Math.abs(e.movementY);
+  if (e.pointerType !== "mouse" || pointerTravel > 6) {
+    pointerTravel = 0;
+    pointerActive();
+  }
+});
+window.addEventListener("pointerdown", pointerActive);
+
+// A click on the screen itself works like OK: it opens the app row, or closes
+// whatever is open.
+stage.addEventListener("click", (e) => {
+  if (help.isOpen) return help.close();
+  if (weather.isOpen) return weather.close();
+  if ((e.target as Element).closest("#hud")) return;
+  if (rail.isOpen) rail.close();
+  else rail.open();
+});
+
+// Right-click means Back, as in most TV interfaces driven by an air mouse.
+window.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+  input.emit("back");
+});
+
+// The wheel steps through photos, or along the app row while it is open.
+let lastWheel = 0;
+window.addEventListener(
+  "wheel",
+  (e) => {
+    e.preventDefault();
+    if (help.isOpen || weather.isOpen) return;
+    const now = performance.now();
+    if (now - lastWheel < (rail.isOpen ? 110 : 450)) return;
+    const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+    if (delta === 0) return;
+    lastWheel = now;
+    input.emit(delta > 0 ? "right" : "left");
+  },
+  { passive: false },
+);
 
 // --- Connect ----------------------------------------------------------------
 

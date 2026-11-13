@@ -67,6 +67,7 @@ What the installer does:
 | To… | Do this |
 |-----|---------|
 | Show the dashboard on the TV | Open **PiDash** from the desktop menu, tap **Show on TV** on the phone remote, or run `systemctl --user start pidash-kiosk` |
+| See every control | Press **H** or **F1**, or click **Help** on the control bar |
 | See the full forecast | Press **OK**, then **OK** again on the **Weather** tile. **Back** closes it |
 | Choose the background photos | Open `http://<pi-ip>:8080/photos`, or tap **Background photos** on the phone remote |
 | Flip through photos | ◀ ▶ on the dashboard. Play/pause holds the current photo. ▲ shows its folder and date |
@@ -84,6 +85,46 @@ The screen stays awake while the dashboard is showing; your normal screen
 blanking applies again once you exit. The layout scales to whatever resolution
 the desktop uses. For the smoothest result on a 4K TV, set the desktop to
 1920x1080 in *Preferences → Screen Configuration*.
+
+### Keyboard and mouse
+
+The dashboard works with a TV remote, a keyboard, a mouse, an air mouse, a touch
+screen, or the phone. Press **H** or **F1** at any time for an overview on the
+TV; it lists the keys as they are currently set.
+
+**Keyboard**
+
+| Key | Does |
+|-----|------|
+| Enter, Space | Open the app row, choose a tile |
+| Esc, Backspace | Close, go back. Hold 2 seconds to exit to the desktop |
+| ← → | Previous / next photo, or move along the app row |
+| Tab, Shift+Tab | Move along the app row |
+| ↑ ↓ | Show more / less information |
+| A | App row |
+| W | Weather details |
+| P | Hold or resume the slideshow |
+| 1 – 9 | Choose a tile in the app row |
+| H, F1, / | Show all controls |
+| F10 | Return to the desktop |
+
+Shortcuts of the desktop itself, such as Alt+F4 and anything with Ctrl, are
+left alone. To add or change keys, see `[input.keys]` in the settings: your
+entries are added to the built-in ones, and `"none"` switches one off.
+
+**Mouse**
+
+The pointer is hidden until the mouse moves. Then a control bar appears at the
+top with previous, pause and next for the photos, and Apps, Weather, Help and
+Desktop. Both fade away again after a few seconds.
+
+- **Click** anywhere to open or close the app row; click a tile to start it.
+- **Right-click** goes back.
+- **The wheel** steps through photos, or along the app row while it is open.
+- **Click the weather** in the corner for the details; click again to close.
+
+With the [phone as mouse](#phone-as-mouse-and-keyboard), the same works from the
+sofa.
 
 ### Weather
 

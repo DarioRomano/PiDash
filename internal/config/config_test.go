@@ -92,13 +92,26 @@ func TestInvalidConfigsAreRejected(t *testing.T) {
 	}
 }
 
-func TestKeyMapInFileReplacesDefaults(t *testing.T) {
-	cfg, err := load(t, "[input.keys]\nKeyA = \"select\"\n")
+func TestKeyMapInFileIsAddedToTheBuiltInKeys(t *testing.T) {
+	cfg, err := load(t, "[input.keys]\nKeyA = \"select\"\nColorF0Red = \"Exit\"\nKeyW = \"none\"\nF1 = \"\"\n")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Input.Keys) != 1 || cfg.Input.Keys["KeyA"] != "select" {
-		t.Errorf("keys = %v", cfg.Input.Keys)
+	keys := cfg.Input.Keys
+	if keys["KeyA"] != "select" {
+		t.Errorf("a key from the file should override the built-in one: %q", keys["KeyA"])
+	}
+	if keys["ColorF0Red"] != "exit" {
+		t.Errorf("a new key should be added, lower-cased: %q", keys["ColorF0Red"])
+	}
+	if keys["Enter"] != "select" || keys["ArrowUp"] != "up" || keys["KeyH"] != "help" {
+		t.Errorf("built-in keys must stay: %v", keys)
+	}
+	if _, ok := keys["KeyW"]; ok {
+		t.Error(`"none" should switch a built-in key off`)
+	}
+	if _, ok := keys["F1"]; ok {
+		t.Error("an empty value should switch a built-in key off")
 	}
 }
 

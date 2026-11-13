@@ -20,7 +20,7 @@ html, body {
   color: var(--fg);
   font-family: var(--font);
   font-feature-settings: "tnum" 1, "ss01" 1;
-  cursor: none;
+  cursor: none; /* shown only while the mouse is in use, see .pointer-active */
   user-select: none;
   -webkit-font-smoothing: antialiased;
 }
@@ -185,7 +185,7 @@ html, body {
   transition: opacity 0.25s ease, transform 0.35s ease;
   pointer-events: none;
 }
-#rail.open { opacity: 1; transform: translateY(0); }
+#rail.open { opacity: 1; transform: translateY(0); pointer-events: auto; }
 
 #rail-strip {
   display: flex;
@@ -326,6 +326,96 @@ html, body {
 }
 
 .wp-foot { display: flex; justify-content: space-between; margin-top: 18px; font-size: 21px; color: var(--fg-dim); white-space: pre; }
+
+/* --- Mouse: pointer and control bar ------------------------------------------- */
+
+html.pointer-active, html.pointer-active body { cursor: default; }
+html.pointer-active .tile, html.pointer-active #weather { cursor: pointer; }
+
+#hud {
+  position: absolute;
+  left: 50%;
+  top: var(--safe);
+  transform: translate(-50%, -16px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 22px;
+  background: rgba(14, 17, 25, 0.9);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+html.pointer-active #hud { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+#stage.panel-open #hud { opacity: 0; pointer-events: none; }
+#hud button {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 60px;
+  min-width: 60px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 15px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 24px;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+#hud button:hover { background: rgba(255, 255, 255, 0.14); }
+#hud button:active { background: rgba(255, 255, 255, 0.24); }
+#hud svg { width: 30px; height: 30px; flex: 0 0 auto; pointer-events: none; }
+#hud button span { pointer-events: none; }
+#hud [hidden] { display: none; }
+.hud-sep { width: 1px; height: 34px; margin: 0 6px; background: rgba(255, 255, 255, 0.18); }
+/* Messages appear below the bar while it is showing. */
+html.pointer-active #toast { top: calc(var(--safe) + 92px); }
+
+/* --- Help ---------------------------------------------------------------------- */
+
+#help {
+  position: absolute;
+  inset: 0;
+  padding: 70px 120px 44px;
+  background: rgba(12, 14, 20, 0.95);
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.25s ease, transform 0.3s ease;
+  pointer-events: none;
+}
+#help.open { opacity: 1; transform: translateY(0); pointer-events: auto; }
+#help h2 { font-size: 52px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 34px; }
+#help h3 { font-size: 26px; font-weight: 500; color: var(--fg-dim); margin-bottom: 12px; }
+.help-grid { flex: 1; display: grid; grid-template-columns: 1.15fr 1fr; gap: 90px; min-height: 0; }
+.help-row {
+  display: grid;
+  grid-template-columns: 330px 1fr;
+  align-items: center;
+  column-gap: 20px;
+  min-height: 56px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 26px;
+}
+.help-col h3 + .help-row { border-top: 0; }
+.help-keys { display: flex; flex-wrap: wrap; gap: 8px; }
+kbd {
+  font: inherit;
+  font-size: 22px;
+  padding: 4px 12px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.1);
+  white-space: nowrap;
+}
+.help-what { color: var(--fg-dim); line-height: 1.25; padding: 8px 0; }
+.help-gap { margin-top: 40px; }
+.help-text { font-size: 26px; color: var(--fg-dim); line-height: 1.35; }
+.help-foot { margin-top: 18px; font-size: 21px; color: var(--fg-dim); text-align: right; }
 
 #toast {
   position: absolute;

@@ -252,7 +252,16 @@ func Default() Config {
 			"ContextMenu":    "menu",
 			"Home":           "home",
 			"F10":            "exit",
-			"Digit0":         "0", "Digit1": "1", "Digit2": "2", "Digit3": "3", "Digit4": "4",
+			// Keyboard shortcuts.
+			"KeyA":     "menu",
+			"KeyW":     "weather",
+			"KeyP":     "playpause",
+			"KeyH":     "help",
+			"F1":       "help",
+			"Slash":    "help",
+			"PageUp":   "left",
+			"PageDown": "right",
+			"Digit0":   "0", "Digit1": "1", "Digit2": "2", "Digit3": "3", "Digit4": "4",
 			"Digit5": "5", "Digit6": "6", "Digit7": "7", "Digit8": "8", "Digit9": "9",
 		}},
 		System:  System{Enabled: true, Interval: Duration{10 * time.Second}},
@@ -277,23 +286,33 @@ func Load(path string) (Config, error) {
 	if err != nil {
 		return cfg, err
 	}
-	// A user-supplied key map replaces the default one entirely so that
-	// unwanted defaults can be removed; start from empty if the file has one.
-	var probe struct {
+	// Keys in the file are added to the built-in key map, so shortcuts that
+	// arrive with an update work without editing the settings. Mapping a key
+	// to "none" switches a built-in one off.
+	var file struct {
 		Input struct {
 			Keys map[string]string `toml:"keys"`
 		} `toml:"input"`
 	}
-	if err := toml.Unmarshal(data, &probe); err != nil {
+	if err := toml.Unmarshal(data, &file); err != nil {
 		return cfg, fmt.Errorf("parse %s: %w", path, err)
 	}
-	if probe.Input.Keys != nil {
-		cfg.Input.Keys = map[string]string{}
-	}
+	keys := cfg.Input.Keys
 	md, err := toml.Decode(string(data), &cfg)
 	if err != nil {
 		return cfg, fmt.Errorf("parse %s: %w", path, err)
 	}
+	for k, v := range file.Input.Keys {
+		keys[k] = v
+	}
+	for k, v := range keys {
+		if v = strings.ToLower(strings.TrimSpace(v)); v == "" || v == "none" {
+			delete(keys, k)
+		} else {
+			keys[k] = v
+		}
+	}
+	cfg.Input.Keys = keys
 	if undecoded := md.Undecoded(); len(undecoded) > 0 {
 		return cfg, fmt.Errorf("%s: unknown key(s): %v", path, undecoded)
 	}

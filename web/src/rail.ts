@@ -143,16 +143,28 @@ export class Rail {
         num.textContent = i < 9 ? String(i + 1) : "";
 
         tile.append(num, art, label, sub);
+        // Mouse and touch: hovering focuses a tile, clicking chooses it.
+        tile.addEventListener("pointerenter", (e) => {
+          if (e.pointerType !== "mouse" || this.focus === i) return;
+          this.focus = i;
+          this.updateFocus(false);
+        });
+        tile.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.activate(i);
+        });
         return tile;
       }),
     );
     this.updateFocus();
   }
 
-  private updateFocus() {
+  /** scroll=false keeps the row still, so tiles do not slide away under the mouse. */
+  private updateFocus(scroll = true) {
     const tiles = this.strip.children;
     for (let i = 0; i < tiles.length; i++) tiles[i].classList.toggle("focused", i === this.focus);
 
+    if (!scroll) return;
     // Keep the focused tile on screen when there are more tiles than fit.
     const avail = this.root.clientWidth || VIEW_WIDTH;
     const total = this.items.length * TILE_PITCH;

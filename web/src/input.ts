@@ -40,8 +40,12 @@ export class Input {
   attachKeyboard(target: Window = window) {
     target.addEventListener("keydown", (e) => {
       if (e.repeat) return;
+      // Leave shortcuts of the desktop and the browser alone (Alt+F4, Ctrl+R, …).
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
       // Prefer `code` (layout-independent); some CEC/RC keymaps only set `key`.
-      const mapped = this.keys[e.code] ?? this.keys[e.key];
+      let mapped = this.keys[e.code] ?? this.keys[e.key];
+      // Tab moves through the tiles like in any other program.
+      if (e.code === "Tab") mapped = e.shiftKey ? "left" : "right";
       this.showDebug(`${e.code || e.key}${mapped ? " → " + mapped : ""}`);
       if (mapped && isAction(mapped)) {
         e.preventDefault();
@@ -74,6 +78,17 @@ export class Input {
     this.holdTimers = [];
     this.holdCode = "";
     this.holdListener(false);
+  }
+
+  /** Performs an action chosen with the mouse or a touch screen. */
+  emit(action: Action) {
+    this.showDebug(`pointer → ${action}`);
+    this.dispatch(action, { action, source: "pointer" });
+  }
+
+  /** The current key map, for the help screen. */
+  get keyMap(): Readonly<Record<string, string>> {
+    return this.keys;
   }
 
   /** Called for input events received from the backend (phone remote). */

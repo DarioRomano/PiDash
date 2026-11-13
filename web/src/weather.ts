@@ -270,6 +270,6 @@ export class WeatherView {
       `<h3>This week <span class="wp-legend">low to high, in ${esc(u.temperature)}</span></h3><div class="wp-days">${days}</div>` +
       `</section>` +
       `</div>` +
-      `<footer class="wp-foot"><span>${this.stale ? "Could not refresh · last update " : "Updated "}${this.clock(c.time)}  ·  Weather data by Open-Meteo.com</span><span>Back to close</span></footer>`;
+      `<footer class="wp-foot"><span>${this.stale ? "Could not refresh · last update " : "Updated "}${this.clock(c.time)}  ·  Weather data by Open-Meteo.com</span><span>Back or click to close</span></footer>`;
   }
 }

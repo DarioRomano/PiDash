@@ -24,7 +24,7 @@ export interface StateEntry<T = unknown> {
 export interface InputEvent {
   action: string;
   text?: string;
-  source: "key" | "remote";
+  source: "key" | "remote" | "pointer";
 }
 
 export interface SystemState {
@@ -118,11 +118,11 @@ export interface WeatherState {
 /** The complete remote-control vocabulary. Everything else is ignored. */
 export type Action =
   | "up" | "down" | "left" | "right"
-  | "select" | "back" | "menu" | "home" | "playpause" | "exit"
+  | "select" | "back" | "menu" | "home" | "playpause" | "exit" | "weather" | "help"
   | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
 
 export const ACTIONS: ReadonlySet<string> = new Set<Action>([
-  "up", "down", "left", "right", "select", "back", "menu", "home", "playpause", "exit",
+  "up", "down", "left", "right", "select", "back", "menu", "home", "playpause", "exit", "weather", "help",
   "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
 ]);
 
