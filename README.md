@@ -278,9 +278,11 @@ the screen.
 - **They take the colours of the selected app.** With the app row open, the
   ribbons turn to the colours of the selected icon: red for YouTube, the
   icon's own mix for anything else.
-- **They are cheap.** The picture is drawn small and stretched, so a 4K screen
-  costs the Pi no more than a small one, and drawing stops while a photo or an
-  app covers it. If the system is set to reduce motion, the ribbons stand
+- **They are sharp without costing much.** The ribbons are drawn at half the
+  screen's resolution: 1080p on a 4K screen, which keeps their edges crisp at
+  a quarter of the work. If the Pi cannot keep up, the picture steps down to
+  a coarser size by itself and looks softer. Drawing stops while a photo or
+  an app covers it. If the system is set to reduce motion, the ribbons stand
   still and only change colour.
 
 ### Background photos from Synology Photos

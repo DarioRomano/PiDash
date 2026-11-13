@@ -22,6 +22,8 @@
 #                     need mouse_keyboard = true under [remote] in the settings.
 #     --binary        path to the pidash binary (default: looks next to deploy/)
 set -euo pipefail
+# Not every way of starting a script sets USER.
+USER="${USER:-$(id -un)}"
 
 if [ "$(id -u)" -eq 0 ]; then
   echo "Run this as your normal desktop user, without sudo." >&2

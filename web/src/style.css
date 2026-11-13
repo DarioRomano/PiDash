@@ -52,7 +52,7 @@ html, body {
   z-index: 0; /* own stacking context: the photo layers stay below everything else */
   background: radial-gradient(120% 90% at 20% 100%, #1a2338 0%, #0b0d12 60%);
 }
-/* Stretched from 160x90: the stretch is what makes the glows soft. */
+/* Painted at half the screen's resolution and stretched to fill it. */
 #ambient {
   position: absolute;
   inset: 0;

@@ -7,10 +7,12 @@
 // towards the mouse pointer. Their colours follow the icon of the app selected
 // in the app row and return to a calm default when the row closes.
 //
-// Everything is painted into a small canvas (480x270) that the browser
-// stretches over the screen. The stretch softens the edges for free, so a 4K
-// screen costs no more than a small one, and a fine static grain on top hides
-// the colour steps that dark gradients otherwise show on a TV.
+// The ribbons are painted at half the screen's resolution (1080p on a 4K
+// screen), which keeps their edges crisp at a quarter of the work. The glows
+// behind them have no edges at all, so they are painted tiny and stretched.
+// If the machine cannot keep up, the picture steps down to a coarser size by
+// itself. A fine static grain on top hides the colour steps that dark
+// gradients otherwise show on a TV.
 
 export type RGB = [number, number, number];
 
@@ -21,8 +23,13 @@ export const DEFAULT_PALETTE: RGB[] = [
   [104, 50, 138], // plum
 ];
 
-const W = 480;
-const H = 270;
+/** Picture heights to choose from, finest first; the width follows at 16:9. */
+const SIZES = [1080, 720, 540, 360, 270];
+const GLOW_W = 160; // the glows' own small picture
+const GLOW_H = 90;
+/** Step down a size when pictures arrive slower than this on average, in milliseconds. */
+const TOO_SLOW_MS = 48;
+const JUDGE_AFTER = 60; // pictures per verdict
 const CALM_FRAME_MS = 33; // about 30 pictures a second while only drifting
 const SETTLE_S = 0.6; // how quickly colours follow a new palette
 const LINGER_MS = 2200; // keep painting while a photo fades in on top
@@ -54,6 +61,15 @@ const FEATHER = [
 
 export class Ambient {
   private ctx: CanvasRenderingContext2D | null;
+  private glows = document.createElement("canvas");
+  private glowCtx: CanvasRenderingContext2D | null;
+  private w = 0;
+  private h = 0;
+  private size = SIZES.length - 1; // index into SIZES
+  private finest = 0; // never go finer than this again once the machine fell behind
+  private slowSum = 0;
+  private slowCount = 0;
+  private slowVerdicts = 0;
   private colours: RGB[] = DEFAULT_PALETTE.map((c) => [...c] as RGB);
   private target: RGB[] = DEFAULT_PALETTE;
   private active = false;
@@ -77,11 +93,49 @@ export class Ambient {
     private canvas: HTMLCanvasElement,
     private grain: HTMLElement,
   ) {
-    canvas.width = W;
-    canvas.height = H;
     this.ctx = canvas.getContext("2d", { alpha: false });
+    this.glows.width = GLOW_W;
+    this.glows.height = GLOW_H;
+    this.glowCtx = this.glows.getContext("2d", { alpha: false });
     grain.style.backgroundImage = `url(${grainTile()})`;
+    this.fitScreen();
+    window.addEventListener("resize", () => this.fitScreen());
+  }
+
+  /** Chooses the picture size for this screen: about half its real resolution. */
+  private fitScreen() {
+    const screenHeight = Math.max(window.innerHeight, (window.innerWidth * 9) / 16) * (window.devicePixelRatio || 1);
+    let size = SIZES.findIndex((s) => s <= screenHeight / 2 + 1);
+    if (size < 0) size = SIZES.length - 1;
+    this.resize(Math.max(size, this.finest));
+  }
+
+  private resize(size: number) {
+    this.size = size;
+    this.h = SIZES[size];
+    this.w = Math.round((this.h * 16) / 9);
+    if (this.canvas.width !== this.w || this.canvas.height !== this.h) {
+      this.canvas.width = this.w;
+      this.canvas.height = this.h;
+    }
+    this.slowSum = this.slowCount = this.slowVerdicts = 0;
     this.paint();
+  }
+
+  /** Notes how long the last picture took to arrive and steps down a size if that keeps being too long. */
+  private judge(interval: number) {
+    if (interval <= 0 || interval > 250) return; // a pause, not a slow picture
+    this.slowSum += interval;
+    if (++this.slowCount < JUDGE_AFTER) return;
+    const average = this.slowSum / this.slowCount;
+    this.slowSum = this.slowCount = 0;
+    // One slow stretch can be something else keeping the machine busy; two
+    // in a row mean this size is too much for it.
+    this.slowVerdicts = average > TOO_SLOW_MS ? this.slowVerdicts + 1 : 0;
+    if (this.slowVerdicts >= 2 && this.size < SIZES.length - 1) {
+      this.finest = this.size + 1;
+      this.resize(this.finest);
+    }
   }
 
   /** Colours to move towards; null returns to the default. */
@@ -161,6 +215,7 @@ export class Ambient {
       return;
     }
     const dt = this.last ? Math.min(0.1, (now - this.last) / 1000) : 0;
+    if (this.last) this.judge(now - this.last);
     this.last = now;
 
     // Colours ease towards the target palette.
@@ -194,40 +249,50 @@ export class Ambient {
 
   private paint() {
     const ctx = this.ctx;
-    if (!ctx) return;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalCompositeOperation = "source-over";
-    ctx.fillStyle = rgba(BASE, 1);
-    ctx.fillRect(0, 0, W, H);
-    ctx.globalCompositeOperation = "lighter"; // colours add up where shapes overlap
+    const glows = this.glowCtx;
+    if (!ctx || !glows) return;
+    const { w, h } = this;
 
+    // The glows, small.
+    glows.globalCompositeOperation = "source-over";
+    glows.fillStyle = rgba(BASE, 1);
+    glows.fillRect(0, 0, GLOW_W, GLOW_H);
+    glows.globalCompositeOperation = "lighter"; // colours add up where shapes overlap
     for (const g of GLOWS) {
       const a = (this.clock / g.period) * Math.PI * 2 + g.phase;
       // Two different rhythms per axis, so a path never visibly repeats.
-      const x = (g.x + g.ax * Math.sin(a) + 0.05 * Math.sin(a * 2.3 + 1) - this.lean[0] * 0.01) * W;
-      const y = (g.y + g.ay * Math.cos(a * 0.8) + 0.04 * Math.cos(a * 1.7 + 2) + this.sway * 0.4) * H;
-      const r = g.size * W * (1 + 0.12 * Math.sin(a * 0.6 + g.phase));
+      const x = (g.x + g.ax * Math.sin(a) + 0.05 * Math.sin(a * 2.3 + 1) - this.lean[0] * 0.01) * GLOW_W;
+      const y = (g.y + g.ay * Math.cos(a * 0.8) + 0.04 * Math.cos(a * 1.7 + 2) + this.sway * 0.4) * GLOW_H;
+      const r = g.size * GLOW_W * (1 + 0.12 * Math.sin(a * 0.6 + g.phase));
       const c = this.colours[g.colour];
-      const glow = ctx.createRadialGradient(x, y, 0, x, y, r);
+      const glow = glows.createRadialGradient(x, y, 0, x, y, r);
       glow.addColorStop(0, rgba(c, g.strength));
       glow.addColorStop(0.45, rgba(c, g.strength * 0.42));
       glow.addColorStop(1, rgba(c, 0));
-      ctx.fillStyle = glow;
-      ctx.fillRect(0, 0, W, H);
+      glows.fillStyle = glow;
+      glows.fillRect(0, 0, GLOW_W, GLOW_H);
     }
+
+    // Stretched over the whole picture, they are its ground.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = "source-over";
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(this.glows, 0, 0, w, h);
 
     // The ribbons are drawn in a tilted frame, wider than the screen, so their
     // ends are never seen.
-    ctx.translate(W / 2, H / 2);
+    ctx.globalCompositeOperation = "lighter";
+    ctx.translate(w / 2, h / 2);
     ctx.rotate(TILT);
-    ctx.translate(-W / 2, -H / 2);
+    ctx.translate(-w / 2, -h / 2);
     const bright = 1 + 0.22 * Math.min(1, this.swell);
     for (const r of RIBBONS) {
       const from = lighten(this.colours[r.from], 0.16);
       const to = lighten(this.colours[r.to], 0.16);
       for (const [width, share] of FEATHER) {
         const alpha = r.alpha * share * bright;
-        const fill = ctx.createLinearGradient(-0.25 * W, 0, 1.25 * W, 0);
+        const fill = ctx.createLinearGradient(-0.25 * w, 0, 1.25 * w, 0);
         fill.addColorStop(0, rgba(from, alpha * 0.5));
         fill.addColorStop(0.3, rgba(from, alpha));
         fill.addColorStop(0.72, rgba(to, alpha));
@@ -241,13 +306,15 @@ export class Ambient {
 
   /** Traces one ribbon's outline: along its upper edge, back along the lower. */
   private traceRibbon(ctx: CanvasRenderingContext2D, r: (typeof RIBBONS)[number], width: number) {
+    const { w, h } = this;
     const t = this.clock;
     const push = this.flow * r.depth;
     const reach = 1 + 0.4 * this.swell; // a swell makes the waves taller
-    const top: [number, number][] = [];
-    const bottom: [number, number][] = [];
-    for (let i = 0; i <= 50; i++) {
-      const u = -0.25 + (i / 50) * 1.5; // along the ribbon; 0..1 is the screen
+    const top: Point[] = [];
+    const bottom: Point[] = [];
+    const steps = 56;
+    for (let i = 0; i <= steps; i++) {
+      const u = -0.25 + (i / steps) * 1.5; // along the ribbon; 0..1 is the screen
       const turn = u * Math.PI * 2 * r.waves;
       const centre =
         r.y +
@@ -257,16 +324,31 @@ export class Ambient {
       // Pinches to a waist and opens again, like cloth turning over.
       const turnOver = Math.sin(turn * 0.6 + r.phase * 0.5 - push * 0.5 + t * r.speed * 0.7);
       const half = (r.thick * (0.2 + 0.8 * turnOver * turnOver) * (1 + 0.25 * this.swell) * width) / 2;
-      const x = (u - this.lean[0] * 0.015 * r.depth) * W;
-      top.push([x, (centre - half) * H]);
-      bottom.push([x, (centre + half) * H]);
+      const x = (u - this.lean[0] * 0.015 * r.depth) * w;
+      top.push([x, (centre - half) * h]);
+      bottom.push([x, (centre + half) * h]);
     }
+    bottom.reverse();
     ctx.beginPath();
     ctx.moveTo(top[0][0], top[0][1]);
-    for (const [x, y] of top) ctx.lineTo(x, y);
-    for (let i = bottom.length - 1; i >= 0; i--) ctx.lineTo(bottom[i][0], bottom[i][1]);
+    curveThrough(ctx, top);
+    ctx.lineTo(bottom[0][0], bottom[0][1]);
+    curveThrough(ctx, bottom);
     ctx.closePath();
   }
+}
+
+type Point = [number, number];
+
+/** Continues the path through the points as one smooth curve, without corners. */
+function curveThrough(ctx: CanvasRenderingContext2D, points: Point[]) {
+  for (let i = 1; i < points.length - 1; i++) {
+    const [x, y] = points[i];
+    const [nx, ny] = points[i + 1];
+    ctx.quadraticCurveTo(x, y, (x + nx) / 2, (y + ny) / 2);
+  }
+  const last = points[points.length - 1];
+  ctx.lineTo(last[0], last[1]);
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
