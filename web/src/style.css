@@ -91,37 +91,49 @@ html, body {
 #stage.night #radio, #stage.panel-open #radio { opacity: 0; }
 #stage[data-clock="top-left"] #radio { top: auto; bottom: var(--safe); }
 
-/* The next calendar events, opposite the clock. */
-#agenda {
+/* Opposite the clock: the next calendar events and, under them, the weather.
+   One column, so the two can never lie on top of each other. */
+#side {
   position: absolute;
-  right: var(--safe);
-  bottom: var(--safe);
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 34px;
+  transition: transform 0.35s ease;
+}
+#agenda {
   width: 620px;
   display: flex;
   flex-direction: column;
   gap: 6px;
   text-shadow: 0 2px 18px rgba(0, 0, 0, 0.55);
-  transition: opacity 0.4s ease, transform 0.35s ease;
+  transition: opacity 0.4s ease;
 }
 .agenda-day { margin-top: 14px; font-size: 24px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--fg-dim); text-align: right; }
+.agenda-day:first-child { margin-top: 0; }
 .agenda-event { display: flex; justify-content: flex-end; align-items: baseline; gap: 18px; font-size: 34px; line-height: 1.2; }
 .agenda-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agenda-time { flex: 0 0 auto; min-width: 110px; text-align: right; color: var(--fg-dim); font-variant-numeric: tabular-nums; }
 .agenda-time:empty { display: none; }
-#stage.rail-open #agenda { transform: translateY(-330px); }
-#stage.panel-open #agenda { opacity: 0; }
-#stage:has(#overlay[data-density="photo"]) #agenda { opacity: 0; }
 
 /* Where the clock sits, and how large it is. The calendar takes the bottom
    corner the clock leaves free. */
 #stage[data-clock$="right"] #overlay { align-items: flex-end; text-align: right; }
 #stage[data-clock$="right"] #time { justify-content: flex-end; }
 #stage[data-clock^="top"] #overlay { justify-content: flex-start; }
-#stage[data-clock="bottom-right"] #agenda { right: auto; left: var(--safe); }
-#stage[data-clock="bottom-right"] .agenda-day { text-align: left; }
-#stage[data-clock="bottom-right"] .agenda-event { justify-content: flex-start; flex-direction: row-reverse; }
-#stage[data-clock="bottom-right"] .agenda-time { text-align: left; }
+/* With the clock on the right, the column moves to the left and reads from there. */
+#stage[data-clock$="right"] #side { right: auto; left: 0; align-items: flex-start; }
+#stage[data-clock$="right"] #weather { text-align: left; }
+#stage[data-clock$="right"] .w-now { justify-content: flex-start; }
+#stage[data-clock$="right"] .w-hilo { margin-left: 0; margin-right: 22px; }
+#stage[data-clock$="right"] .agenda-day { text-align: left; }
+#stage[data-clock$="right"] .agenda-event { justify-content: flex-start; flex-direction: row-reverse; }
+#stage[data-clock$="right"] .agenda-time { text-align: left; }
+/* A clock at the top stays put when the app row opens; the column makes room for it. */
 #stage[data-clock^="top"].rail-open #overlay { transform: none; }
+#stage[data-clock^="top"].rail-open #side { transform: translateY(-330px); }
 #stage[data-clock^="top"] #status { top: auto; bottom: var(--safe); }
 #stage[data-clock-size="medium"] #time { font-size: 150px; }
 #stage[data-clock-size="medium"] #date { font-size: 36px; margin-top: 12px; }
@@ -174,9 +186,6 @@ html, body {
 /* --- Weather summary (bottom right of the ambient screen) ------------------ */
 
 #weather {
-  position: absolute;
-  right: 0;
-  bottom: 0;
   text-align: right;
   text-shadow: 0 2px 24px rgba(0, 0, 0, 0.5);
   cursor: pointer;
