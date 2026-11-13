@@ -143,6 +143,20 @@ an id, name, command and a launch mode.
 | `desktop` | In the desktop session, like the menu   | Steam Link, anything windowed    | None  |
 | `console` | On its own virtual terminal (tty8)      | Moonlight, Kodi: direct display access for low latency, HDR, refresh-rate switching | `install.sh --console-apps` |
 
+An app is either a **program** (`command`) or a **website** (`url`). A website
+app is opened with `--kiosk` in Chromium or Firefox, in its own browser profile
+under `~/.local/share/pidash/profiles/<id>`, so logins persist and stay separate
+from the user's normal browser. Options: `browser`, `user_agent`, and `adblock`,
+which downloads uBlock Origin from addons.mozilla.org into the Firefox profile on
+first launch and enables it through profile preferences (no system-wide Firefox
+policy). The default config ships YouTube (Firefox, uBlock, TV interface via a TV
+user agent) and Netflix (Chromium, Widevine).
+
+Tile icons need no configuration: an explicit `icon` wins, then built-in icons
+for YouTube, Netflix and Synology Photos, then the installed program's own icon
+resolved through its `.desktop` entry and the hicolor icon theme (including
+Flatpak exports), then a globe or the first letter.
+
 How it works:
 
 - Both modes run the app as a systemd unit whose command is
@@ -208,8 +222,18 @@ PiDash is a guest on the existing desktop. It never changes how the Pi boots.
 3. **Ambient screen.** Photo provider with resize cache and crossfade; clock and
    weather overlay; overlay density levels.
 4. **Resilience & schedule.** Reconnect handling, TV standby/wake via CEC.
-5. **Polish & docs.** Weather detail panel, system panel, app icons shipped for
-   common apps.
+5. **Polish & docs.** Weather detail panel, system panel.
+
+Known gaps in the launcher, candidates for a follow-up:
+
+- **No way back with the TV remote alone.** While an app has the screen the
+  dashboard does not receive keys. Fix: have the backend read the remote's
+  input device directly and treat a long press of Back as "stop the app".
+- **Pointer-driven websites.** Netflix and Synology Photos want a mouse. Fix: a
+  touchpad on the phone remote that drives a virtual pointer.
+- **Typing into apps.** The phone remote's text field only reaches the dashboard.
+- **Synology Photos as the slideshow source**, through its API, instead of only
+  opening its website.
 
 ## Later ideas (not in scope now)
 

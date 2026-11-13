@@ -5,7 +5,8 @@
 #   - files go to   ~/.local/share/pidash  and  ~/.config/pidash
 #   - two systemd USER units (backend + fullscreen browser)
 #   - a "PiDash" entry in the desktop menu
-#   - apt packages only if missing: chromium, v4l-utils (CEC), curl, fonts-inter
+#   - apt packages only if missing: chromium, v4l-utils (CEC), curl, fonts-inter,
+#     firefox (YouTube app), libwidevinecdm0 (DRM module for the Netflix app)
 # Remove everything again with deploy/uninstall.sh.
 #
 # Usage (as your normal user, NOT with sudo):
@@ -34,7 +35,7 @@ while [ $# -gt 0 ]; do
     --autostart) AUTOSTART=1 ;;
     --console-apps) CONSOLE_APPS=1 ;;
     --binary) BINARY="${2:?--binary needs a path}"; shift ;;
-    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 1 ;;
   esac
   shift
@@ -62,6 +63,12 @@ command -v chromium >/dev/null 2>&1 || command -v chromium-browser >/dev/null 2>
 command -v cec-ctl >/dev/null 2>&1 || missing+=(v4l-utils)
 command -v curl >/dev/null 2>&1 || missing+=(curl)
 fc-list 2>/dev/null | grep -qi '/inter' || missing+=(fonts-inter)
+# The YouTube app runs in Firefox (for uBlock Origin).
+command -v firefox >/dev/null 2>&1 || command -v firefox-esr >/dev/null 2>&1 || missing+=(firefox)
+# Netflix only plays with the Widevine DRM module, which Raspberry Pi OS packages for Chromium.
+if ! dpkg -s libwidevinecdm0 >/dev/null 2>&1 && apt-cache show libwidevinecdm0 >/dev/null 2>&1; then
+  missing+=(libwidevinecdm0)
+fi
 if [ "$CONSOLE_APPS" -eq 1 ]; then
   command -v chvt >/dev/null 2>&1 || missing+=(kbd)
 fi

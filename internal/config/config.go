@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -67,17 +68,34 @@ const (
 	AppModeConsole = "console"
 )
 
-// App is an external program that can be launched from the dashboard.
+// Browsers a web app can run in.
+const (
+	BrowserChromium = "chromium"
+	BrowserFirefox  = "firefox"
+)
+
+// App is something that can be launched from the dashboard: either a program
+// (Command) or a website shown fullscreen in its own browser profile (URL).
 type App struct {
 	// ID is a short unique name used in URLs and unit names: a-z, 0-9 and "-".
 	ID string `toml:"id"`
 	// Name is shown on the TV. Defaults to ID.
 	Name string `toml:"name"`
-	// Command is run with `sh -c` as the desktop user.
+	// Command is run with `sh -c` as the desktop user. Use this or URL, not both.
 	Command string `toml:"command"`
+	// URL makes this a web app: the address is opened fullscreen in Browser.
+	URL string `toml:"url"`
+	// Browser for a web app: "chromium" (default) or "firefox".
+	Browser string `toml:"browser"`
+	// AdBlock installs uBlock Origin into the app's browser profile (Firefox only).
+	AdBlock bool `toml:"adblock"`
+	// UserAgent overrides the browser's user agent for a web app, for sites
+	// that only show their TV interface to TVs.
+	UserAgent string `toml:"user_agent"`
 	// Mode is "desktop" (default) or "console" (own virtual terminal).
 	Mode string `toml:"mode"`
-	// Icon is an optional path to an image (SVG or PNG) shown on the tile.
+	// Icon is optional: a path to an SVG or PNG, or an icon name. When empty
+	// the icon of the installed program or a built-in one is used.
 	Icon string `toml:"icon"`
 }
 
@@ -178,8 +196,12 @@ func (c *Config) finish() error {
 		if strings.TrimSpace(a.Name) == "" {
 			a.Name = a.ID
 		}
-		if strings.TrimSpace(a.Command) == "" {
-			return fmt.Errorf("apps[%d] (%s): command is required", i, a.ID)
+		a.Command, a.URL = strings.TrimSpace(a.Command), strings.TrimSpace(a.URL)
+		switch {
+		case a.Command == "" && a.URL == "":
+			return fmt.Errorf("apps[%d] (%s): set either command (a program) or url (a website)", i, a.ID)
+		case a.Command != "" && a.URL != "":
+			return fmt.Errorf("apps[%d] (%s): set either command or url, not both", i, a.ID)
 		}
 		switch a.Mode {
 		case "":
@@ -187,6 +209,30 @@ func (c *Config) finish() error {
 		case AppModeDesktop, AppModeConsole:
 		default:
 			return fmt.Errorf("apps[%d] (%s): mode must be %q or %q, got %q", i, a.ID, AppModeDesktop, AppModeConsole, a.Mode)
+		}
+		if a.URL != "" {
+			u, err := url.Parse(a.URL)
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+				return fmt.Errorf("apps[%d] (%s): url must be a full http:// or https:// address, got %q", i, a.ID, a.URL)
+			}
+			if a.Mode != AppModeDesktop {
+				return fmt.Errorf("apps[%d] (%s): a web app runs in a browser and needs mode = %q", i, a.ID, AppModeDesktop)
+			}
+			switch a.Browser {
+			case "":
+				a.Browser = BrowserChromium
+			case BrowserChromium, BrowserFirefox:
+			default:
+				return fmt.Errorf("apps[%d] (%s): browser must be %q or %q, got %q", i, a.ID, BrowserChromium, BrowserFirefox, a.Browser)
+			}
+			if a.AdBlock && a.Browser != BrowserFirefox {
+				return fmt.Errorf("apps[%d] (%s): adblock = true needs browser = %q", i, a.ID, BrowserFirefox)
+			}
+			if strings.ContainsAny(a.UserAgent, "\r\n") {
+				return fmt.Errorf("apps[%d] (%s): user_agent must be a single line", i, a.ID)
+			}
+		} else if a.Browser != "" || a.AdBlock || a.UserAgent != "" {
+			return fmt.Errorf("apps[%d] (%s): browser, adblock and user_agent only apply to web apps (url)", i, a.ID)
 		}
 	}
 	return c.validate()

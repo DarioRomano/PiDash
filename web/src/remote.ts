@@ -79,7 +79,7 @@ document.addEventListener("visibilitychange", () => {
 // --- Apps: launch on the TV, and get back to the dashboard -------------------
 
 interface AppsStatus {
-  apps: { id: string; name: string; mode: string }[];
+  apps: { id: string; name: string; mode: string; hasIcon: boolean }[];
   running: string;
   consoleReady: boolean;
   error?: string;
@@ -101,7 +101,14 @@ function showApps(st: AppsStatus) {
   appList.replaceChildren(
     ...st.apps.map((a) => {
       const b = document.createElement("button");
-      b.textContent = a.name;
+      if (a.hasIcon) {
+        const img = document.createElement("img");
+        img.src = `/api/apps/${encodeURIComponent(a.id)}/icon`;
+        img.alt = "";
+        img.addEventListener("error", () => img.remove());
+        b.appendChild(img);
+      }
+      b.append(a.name);
       b.classList.toggle("current", a.id === st.running);
       b.addEventListener("click", () => appRequest("/api/apps/start", { id: a.id }));
       return b;

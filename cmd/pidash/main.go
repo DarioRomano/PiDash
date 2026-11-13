@@ -54,7 +54,7 @@ func main() {
 	}
 	if *execApp != "" {
 		// Does not return on success.
-		if err := runApp(cfg, *execApp); err != nil {
+		if err := runApp(cfg, *execApp, log); err != nil {
 			log.Error("exec-app", "app", *execApp, "err", err)
 			os.Exit(1)
 		}
@@ -99,6 +99,7 @@ func main() {
 		appBackend = &apps.Systemd{Exe: exe, ConfigPath: absCfg, Log: log}
 	}
 	appManager := apps.NewManager(cfg.Apps, appBackend, log)
+	appManager.ResolveIcons(apps.DefaultIconFinder())
 
 	srv := server.New(cfg, log, static, kiosk.New(cfg.Kiosk.Unit, *mock, log), appManager, newRunner)
 
@@ -115,7 +116,7 @@ func main() {
 // runApp replaces this process with the command of the configured app. It is
 // what the systemd units for both launch modes execute, so an app's command
 // lives only in config.toml.
-func runApp(cfg config.Config, id string) error {
+func runApp(cfg config.Config, id string, log *slog.Logger) error {
 	for _, a := range cfg.Apps {
 		if a.ID != id {
 			continue
@@ -125,6 +126,18 @@ func runApp(cfg config.Config, id string) error {
 			env = apps.ConsoleEnv(env)
 		} else {
 			env = apps.DesktopEnv(env)
+		}
+		if a.URL != "" {
+			// A website: open it fullscreen in the app's own browser profile.
+			dataDir, err := apps.DataDir()
+			if err != nil {
+				return err
+			}
+			launch, err := apps.PrepareWebApp(a, dataDir, env, log)
+			if err != nil {
+				return err
+			}
+			return syscall.Exec(launch.Argv[0], launch.Argv, launch.Env)
 		}
 		return syscall.Exec("/bin/sh", []string{"sh", "-c", a.Command}, env)
 	}

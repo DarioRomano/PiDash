@@ -29,22 +29,64 @@ interval = "10s"
 unit = "pidash-kiosk.service"
 
 # --- Apps -------------------------------------------------------------------
-# Programs you can launch from the dashboard: press OK to open the app row.
-# Add one [[apps]] block per program.
+# Things you can launch from the dashboard: press OK to open the app row.
+# Add one [[apps]] block per app. An app is either a website or a program.
 #
-#   id       short unique name: a-z, 0-9 and "-"
-#   name     what the TV shows (defaults to id)
-#   command  what to run, exactly as you would type it in a terminal
-#   mode     "desktop" (default): runs on the desktop like any other program.
-#            "console": runs on its own virtual terminal, outside the desktop,
-#                       so the app drives the screen directly. Best for game
-#                       streaming and video players: lower latency, HDR and
-#                       refresh-rate switching. Needs a one-time setup:
-#                       bash deploy/install.sh --console-apps
-#   icon     optional path to an SVG or PNG for the tile
+#   id          short unique name: a-z, 0-9 and "-"
+#   name        what the TV shows (defaults to id)
+#   icon        optional. Leave it out and PiDash uses the installed program's
+#               own icon, or a built-in one for YouTube, Netflix and Synology
+#               Photos. Set a path to an SVG/PNG to use your own.
+#
+# A website, shown fullscreen in its own browser profile (logins are remembered
+# and kept separate from your normal browser):
+#   url         full address, starting with http:// or https://
+#   browser     "chromium" (default) or "firefox"
+#   adblock     true installs uBlock Origin into that profile (Firefox only)
+#   user_agent  optional: pretend to be another device, for sites that only
+#               show their TV interface to TVs
+#
+# A program:
+#   command     what to run, exactly as you would type it in a terminal
+#   mode        "desktop" (default): runs on the desktop like any other program.
+#               "console": runs on its own virtual terminal, outside the desktop,
+#                          so the app drives the screen directly. Best for game
+#                          streaming and video players: lower latency, HDR and
+#                          refresh-rate switching. Needs a one-time setup:
+#                          bash deploy/install.sh --console-apps
 #
 # While an app is running, the phone remote shows "Back to dashboard".
-# Uncomment and adjust the examples you want:
+
+# YouTube's TV interface, made for remote controls: arrow keys and OK work.
+# Runs in Firefox with uBlock Origin. The user agent makes YouTube serve the TV
+# interface; remove user_agent and use https://www.youtube.com/ for the normal site.
+[[apps]]
+id = "youtube"
+name = "YouTube"
+url = "https://www.youtube.com/tv"
+browser = "firefox"
+adblock = true
+user_agent = "Mozilla/5.0 (PS4; Leanback Shell) Gecko/20100101 Firefox/65.0 LeanbackShell/01.00.01.75 Sony PS4/ (PS4, , no, CH)"
+
+# Netflix in Chromium, which has the DRM module Netflix requires on the Pi.
+# Sign in once with a keyboard; the login is remembered.
+[[apps]]
+id = "netflix"
+name = "Netflix"
+url = "https://www.netflix.com/browse"
+
+# Synology Photos. Replace YOUR-NAS with your NAS address or name, then remove
+# the "# " in front of these lines. Use the address you open Synology Photos
+# with in a browser, for example:
+#   http://192.168.1.20:5000/?launchApp=SYNO.Foto.AppInstance
+#   https://photos.example.com/photo/
+#
+# [[apps]]
+# id = "synology-photos"
+# name = "Photos"
+# url = "http://YOUR-NAS:5000/?launchApp=SYNO.Foto.AppInstance"
+
+# More examples:
 #
 # [[apps]]
 # id = "moonlight"
@@ -62,7 +104,6 @@ unit = "pidash-kiosk.service"
 # id = "steamlink"
 # name = "Steam Link"
 # command = "steamlink"
-# mode = "desktop"
 
 # Map browser KeyboardEvent.code values to actions.
 # Actions: up down left right select back menu home playpause exit 0-9

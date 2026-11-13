@@ -13,7 +13,8 @@ See [docs/PLAN.md](docs/PLAN.md) for the architecture and roadmap.
 ## Status
 
 Working today: fullscreen dashboard with a clock on top of the existing desktop,
-start/exit controls, an app launcher (Moonlight, Kodi, Steam Link, …),
+start/exit controls, an app launcher (YouTube, Netflix, Synology Photos,
+Moonlight, Kodi, Steam Link, …),
 remote-control input mapping with on-screen key debugging, phone remote, system
 stats. Photos and weather are next.
 
@@ -54,8 +55,9 @@ What the installer does:
 | Settings | `~/.config/pidash/config.toml` |
 | Two systemd *user* services (backend, fullscreen browser) | `~/.config/systemd/user/` |
 | "PiDash" entry in the desktop menu | `~/.local/share/applications/` |
-| Packages, only if missing | `chromium`, `v4l-utils`, `curl`, `fonts-inter` |
-| Only with `--console-apps` | three system files, see [Apps](#apps-moonlight-kodi-steam-link-and-others) |
+| Packages, only if missing | `chromium`, `v4l-utils`, `curl`, `fonts-inter`, `firefox`, `libwidevinecdm0` |
+| Browser profiles of website apps (created on first launch) | `~/.local/share/pidash/profiles/` |
+| Only with `--console-apps` | three system files, see [Apps](#apps) |
 
 ## Using it
 
@@ -75,10 +77,81 @@ blanking applies again once you exit. The layout scales to whatever resolution
 the desktop uses. For the smoothest result on a 4K TV, set the desktop to
 1920x1080 in *Preferences → Screen Configuration*.
 
-### Apps: Moonlight, Kodi, Steam Link and others
+### Apps
 
-Add the programs you want on the TV to `~/.config/pidash/config.toml`, one block
-each, then restart the backend:
+Press **OK** on the dashboard to open the app row. Apps are defined in
+`~/.config/pidash/config.toml`, one `[[apps]]` block each. After editing, run
+`systemctl --user restart pidash`. An app is either a website or a program.
+
+#### YouTube, Netflix and other websites
+
+A website app opens fullscreen in its own browser profile, so its login is
+remembered and kept apart from your normal browser. The default config ships
+with these two:
+
+```toml
+[[apps]]
+id = "youtube"
+name = "YouTube"
+url = "https://www.youtube.com/tv"
+browser = "firefox"
+adblock = true
+user_agent = "Mozilla/5.0 (PS4; Leanback Shell) Gecko/20100101 Firefox/65.0 LeanbackShell/01.00.01.75 Sony PS4/ (PS4, , no, CH)"
+
+[[apps]]
+id = "netflix"
+name = "Netflix"
+url = "https://www.netflix.com/browse"
+```
+
+- **YouTube** runs in Firefox with **uBlock Origin**. The ad blocker is
+  downloaded from Mozilla's add-on site into the YouTube profile the first time
+  you start the app, so the Pi needs internet then. Firefox keeps it updated.
+  The address is YouTube's TV interface, which is built for remote controls:
+  the arrow keys and OK on your TV remote work. The `user_agent` line is what
+  makes YouTube serve that interface. For the normal website instead, use
+  `url = "https://www.youtube.com/"` and delete the `user_agent` line.
+- **Netflix** runs in Chromium, because Raspberry Pi OS provides the DRM module
+  Netflix requires (`libwidevinecdm0`) for Chromium. The installer adds it if
+  it is missing.
+
+#### Synology Photos
+
+Add a block with the address you normally open Synology Photos with in a
+browser:
+
+```toml
+[[apps]]
+id = "synology-photos"
+name = "Photos"
+url = "http://192.168.1.20:5000/?launchApp=SYNO.Foto.AppInstance"
+```
+
+If your NAS uses HTTPS with a self-signed certificate, the browser will show a
+warning page first. Use the plain `http://` address on your home network, or a
+real certificate.
+
+#### Things to know about website apps
+
+- **Signing in needs a keyboard once.** Plug one in for the first login to
+  Netflix or your NAS. After that the login is remembered.
+- **Netflix and Synology Photos expect a mouse.** Their websites are not built
+  for arrow-key navigation, so browsing them from the sofa works best with a
+  wireless keyboard with touchpad. Playback keys such as Space work. YouTube's
+  TV interface does not have this problem.
+- **Getting back.** Tap **Back to dashboard** on the phone remote, or press
+  Alt+F4 on a keyboard.
+- **If uBlock Origin is not active** in the YouTube app, Firefox on your system
+  did not accept the automatic install. The reliable alternative applies to
+  every Firefox profile on the Pi. Create `/etc/firefox/policies/policies.json`:
+
+  ```json
+  {"policies": {"ExtensionSettings": {"uBlock0@raymondhill.net": {
+    "installation_mode": "force_installed",
+    "install_url": "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi"}}}}
+  ```
+
+#### Programs: Moonlight, Kodi, Steam Link and others
 
 ```toml
 [[apps]]
@@ -93,7 +166,7 @@ name = "Steam Link"
 command = "steamlink"
 ```
 
-Each app has a `mode`:
+Each program has a `mode`:
 
 - **`desktop`** (the default) runs the program on the desktop, as if you had
   started it from the menu. No extra setup.
@@ -118,13 +191,27 @@ uninstaller removes all three.
 
 While a console app is on screen, the dashboard cannot see the TV remote. Use the
 app's own quit shortcut, or **Back to dashboard** on the phone remote, which
-always works. An optional `icon = "/path/to/icon.svg"` puts a picture on the tile.
+always works.
+
+#### Icons
+
+You do not need to configure icons. PiDash picks one for each app in this order:
+
+1. `icon` in the app's block, if you set one: a path to an SVG or PNG.
+2. A built-in icon for YouTube, Netflix and Synology Photos. These are simple
+   drawings in each service's colours, not the official artwork.
+3. For programs, the icon the installed program ships with, found through its
+   desktop menu entry. This covers Moonlight, Kodi, Steam Link and anything
+   else that appears in the desktop menu, including Flatpak apps.
+4. A globe for other websites, or the first letter of the name.
+
+#### Troubleshooting
 
 If an app does not start, the TV shows a message. Details are in the logs:
 
 ```sh
-journalctl --user -u 'pidash-app-*' -e        # desktop-mode apps
-journalctl -u 'pidash-console@*' -e           # console-mode apps
+journalctl --user -u 'pidash-app-*' -e        # websites and desktop-mode programs
+journalctl -u 'pidash-console@*' -e           # console-mode programs
 ```
 
 ### Mapping your TV remote

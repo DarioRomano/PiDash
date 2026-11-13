@@ -218,13 +218,18 @@ func (s *Server) handleAppStop(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAppIcon(w http.ResponseWriter, r *http.Request) {
-	path, ok := s.apps.Icon(r.PathValue("id"))
+	icon, ok := s.apps.Icon(r.PathValue("id"))
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
 	w.Header().Set("Cache-Control", "max-age=3600")
-	http.ServeFile(w, r, path)
+	if icon.Data != nil {
+		w.Header().Set("Content-Type", icon.ContentType)
+		w.Write(icon.Data)
+		return
+	}
+	http.ServeFile(w, r, icon.Path)
 }
 
 // handleEvents streams config, current state and subsequent updates as SSE.

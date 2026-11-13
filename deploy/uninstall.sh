@@ -1,6 +1,7 @@
 #!/bin/bash
 # Removes PiDash for the current user. Your settings are kept unless --purge is given.
-# apt packages installed by install.sh (chromium, v4l-utils, curl, fonts-inter, kbd) are left alone.
+# apt packages installed by install.sh are left alone.
+# Without --purge the browser profiles of your web apps (YouTube, Netflix, ... logins) are kept too.
 # If console mode was set up (install.sh --console-apps), its three system files
 # are removed too, which needs sudo.
 set -uo pipefail
@@ -42,8 +43,9 @@ rmdir "$HOME/.local/share/pidash" 2>/dev/null
 if [ "$PURGE" -eq 1 ]; then
   rm -f "$HOME/.config/pidash/config.toml"
   rmdir "$HOME/.config/pidash" 2>/dev/null
-  rm -rf "$HOME/.cache/pidash-chromium"
+  rm -rf "$HOME/.cache/pidash-chromium" "$HOME/.local/share/pidash/profiles"
+  rmdir "$HOME/.local/share/pidash" 2>/dev/null
   echo "PiDash removed, including settings and the browser profile."
 else
-  echo "PiDash removed. Settings kept in ~/.config/pidash (use --purge to delete them too)."
+  echo "PiDash removed. Settings (~/.config/pidash) and app logins (~/.local/share/pidash/profiles) kept; use --purge to delete them too."
 fi

@@ -74,6 +74,8 @@ type Manager struct {
 	log     *slog.Logger
 	poll    time.Duration
 
+	icons map[string]Icon
+
 	mu        sync.Mutex
 	running   string
 	startedAt time.Time
@@ -84,7 +86,18 @@ type Manager struct {
 
 // NewManager returns a launcher for the configured apps.
 func NewManager(apps []config.App, backend Backend, log *slog.Logger) *Manager {
-	return &Manager{apps: apps, backend: backend, log: log, poll: time.Second, onChange: func(Status) {}}
+	return &Manager{apps: apps, backend: backend, log: log, poll: time.Second, icons: map[string]Icon{}, onChange: func(Status) {}}
+}
+
+// ResolveIcons looks up the tile icon of every app once, at startup.
+func (m *Manager) ResolveIcons(f *IconFinder) {
+	for _, a := range m.apps {
+		if ic, ok := f.Resolve(a); ok {
+			m.icons[a.ID] = ic
+		} else if a.Icon != "" {
+			m.log.Warn("icon not found; using the letter tile", "app", a.ID, "icon", a.Icon)
+		}
+	}
 }
 
 // OnChange registers a callback invoked whenever the status changes.
@@ -104,7 +117,8 @@ func (m *Manager) Status() Status {
 func (m *Manager) statusLocked() Status {
 	infos := make([]Info, 0, len(m.apps))
 	for _, a := range m.apps {
-		infos = append(infos, Info{ID: a.ID, Name: a.Name, Mode: a.Mode, HasIcon: a.Icon != ""})
+		_, hasIcon := m.icons[a.ID]
+		infos = append(infos, Info{ID: a.ID, Name: a.Name, Mode: a.Mode, HasIcon: hasIcon})
 	}
 	return Status{Apps: infos, Running: m.running, ConsoleReady: m.backend.ConsoleReady(), Error: m.lastErr}
 }
@@ -118,10 +132,10 @@ func (m *Manager) find(id string) (config.App, bool) {
 	return config.App{}, false
 }
 
-// Icon returns the icon file configured for an app.
-func (m *Manager) Icon(id string) (string, bool) {
-	a, ok := m.find(id)
-	return a.Icon, ok && a.Icon != ""
+// Icon returns the resolved tile icon of an app.
+func (m *Manager) Icon(id string) (Icon, bool) {
+	ic, ok := m.icons[id]
+	return ic, ok
 }
 
 // Run adopts an app that is already running (for example after the backend was
