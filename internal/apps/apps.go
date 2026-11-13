@@ -254,7 +254,7 @@ func (m *Manager) watch(ctx context.Context, app config.App, gen int) {
 		m.running = ""
 		m.gen++
 		if time.Since(m.startedAt) < quickExit {
-			m.lastErr = fmt.Sprintf("%s closed right after starting. Check its command in config.toml and the logs.", app.Name)
+			m.lastErr = fmt.Sprintf("%s closed right after starting. If its window did open, the program handed over to a copy that was already running; otherwise check the logs.", app.Name)
 		}
 		st, notify := m.statusLocked(), m.onChange
 		m.mu.Unlock()

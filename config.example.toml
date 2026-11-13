@@ -20,6 +20,9 @@ safe_area = 0.03
 debug_keys = true
 # Nudge the UI by up to this many pixels every few minutes (OLED/plasma burn-in). 0 = off.
 pixel_shift = 4
+# Close the app row and return to the clock after this many seconds without a
+# key press. 0 = keep it open until Back is pressed.
+app_row_timeout = 30
 clock_24h = true
 # BCP 47 locale for the date, e.g. "en-GB", "it-IT". Empty = browser default.
 locale = ""

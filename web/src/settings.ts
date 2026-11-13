@@ -3,10 +3,14 @@ export {};
 // and equally usable on the TV with a mouse and keyboard.
 
 interface AppEntry {
-  kind: "preset" | "web" | "file";
+  kind: "preset" | "web" | "file" | "desktop";
   id?: string;
   name: string;
   preset?: string;
+  /** The menu entry of an installed program, for kind "desktop". */
+  desktop?: string;
+  /** The program is not installed any more. */
+  missing?: boolean;
   url?: string;
   browser?: string;
   adblock?: boolean;
@@ -33,6 +37,8 @@ interface Info {
   };
   apps: AppEntry[];
   presets: Preset[];
+  /** Programs installed on the Pi, as its application menu lists them. */
+  installed: { id: string; name: string; comment?: string }[];
   consoleReady: boolean;
   pinRequired: boolean;
   version: string;
@@ -114,7 +120,7 @@ function readForm() {
         quality: val("s-quality"),
       },
     },
-    apps: apps.map(({ detail: _detail, ...rest }) => rest),
+    apps: apps.map(({ detail: _detail, missing: _missing, ...rest }) => rest),
   };
 }
 
@@ -178,6 +184,10 @@ function appDetail(a: AppEntry): string {
     return p?.description ?? "";
   }
   if (a.kind === "web") return (a.url ?? "") + (a.adblock ? "  ·  ads blocked" : "");
+  if (a.kind === "desktop") {
+    if (a.missing) return "Not installed on the Pi any more. Its tile is hidden until it is back.";
+    return info.installed.find((e) => e.id === a.desktop)?.comment || "Installed on the Pi";
+  }
   return `From config.toml: ${a.detail ?? a.id ?? ""}`;
 }
 
@@ -223,6 +233,7 @@ function renderApps() {
 }
 
 const OTHER = "__website";
+const INSTALLED = "__installed";
 
 function renderAddChoices() {
   const kind = $<HTMLSelectElement>("add-kind");
@@ -230,9 +241,20 @@ function renderAddChoices() {
   const used = new Set(apps.filter((a) => a.kind === "preset").map((a) => a.preset));
   kind.replaceChildren(
     ...info.presets.filter((p) => !used.has(p.id)).map((p) => new Option(p.name, p.id)),
+    new Option("A program installed on the Pi…", INSTALLED),
     new Option("Another website…", OTHER),
   );
   if ([...kind.options].some((o) => o.value === previous)) kind.value = previous;
+
+  // Installed programs that are not in the list yet. Two with the same name
+  // (say, a system and a Flatpak copy) are told apart by their entry's id.
+  const program = $<HTMLSelectElement>("add-installed");
+  const previousProgram = program.value;
+  const added = new Set(apps.filter((a) => a.kind === "desktop").map((a) => a.desktop));
+  const free = info.installed.filter((e) => !added.has(e.id));
+  const twice = new Set(free.map((e) => e.name).filter((n, i, all) => all.indexOf(n) !== i));
+  program.replaceChildren(...free.map((e) => new Option(twice.has(e.name) ? `${e.name} (${e.id})` : e.name, e.id)));
+  if ([...program.options].some((o) => o.value === previousProgram)) program.value = previousProgram;
   showAddFields();
 }
 
@@ -240,11 +262,20 @@ function showAddFields() {
   const choice = val("add-kind");
   const p = info.presets.find((x) => x.id === choice);
   const other = choice === OTHER;
+  const installed = choice === INSTALLED;
+  $("add-installed-row").hidden = !installed;
   $("add-name-row").hidden = !other;
   $("add-adblock-row").hidden = !other;
   $("add-url-row").hidden = !(other || p?.needsUrl);
   $<HTMLInputElement>("add-url").placeholder = other ? "https://…" : (p?.urlHint ?? "");
   let desc = other ? "Opens the address fullscreen, with its own login." : (p?.description ?? "");
+  if (installed) {
+    const e = info.installed.find((x) => x.id === val("add-installed"));
+    desc = e
+      ? (e.comment ? e.comment.replace(/\.$/, "") + ". " : "") +
+        "It starts the way it does from the Pi's menu. Programs made for a mouse need one: the phone remote has a touchpad."
+      : "No more programs were found in the Pi's application menu.";
+  }
   if (p?.console && !info.consoleReady) {
     desc += " It runs outside the desktop, which needs a one-time setup on the Pi: bash deploy/install.sh --console-apps";
   }
@@ -253,6 +284,7 @@ function showAddFields() {
 }
 
 $("add-kind").addEventListener("change", showAddFields);
+$("add-installed").addEventListener("change", showAddFields);
 
 $("add-btn").addEventListener("click", () => {
   const choice = val("add-kind");
@@ -263,6 +295,10 @@ $("add-btn").addEventListener("click", () => {
     if (!name) return setResult(result, "Give it a name.", "error");
     if (!/^https?:\/\/\S+\.\S+|^https?:\/\/[^\s/]+/.test(url)) return setResult(result, "Enter the full address, starting with http:// or https://", "error");
     apps.push({ kind: "web", name, url, adblock: $<HTMLInputElement>("add-adblock").checked });
+  } else if (choice === INSTALLED) {
+    const e = info.installed.find((x) => x.id === val("add-installed"));
+    if (!e) return setResult(result, "Choose a program first.", "error");
+    apps.push({ kind: "desktop", desktop: e.id, name: e.name });
   } else {
     const p = info.presets.find((x) => x.id === choice);
     if (!p) return;

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/DarioRomano/PiDash/internal/config"
+	"github.com/DarioRomano/PiDash/internal/desktop"
 )
 
 // Icons PiDash ships itself, for web apps that have no installed package to
@@ -44,23 +45,7 @@ type IconFinder struct {
 // DefaultIconFinder searches the user's and the system's data directories,
 // including Flatpak exports.
 func DefaultIconFinder() *IconFinder {
-	home, _ := os.UserHomeDir()
-	dirs := []string{}
-	if d := os.Getenv("XDG_DATA_HOME"); d != "" {
-		dirs = append(dirs, d)
-	} else if home != "" {
-		dirs = append(dirs, filepath.Join(home, ".local", "share"))
-	}
-	if home != "" {
-		dirs = append(dirs, filepath.Join(home, ".local", "share", "flatpak", "exports", "share"))
-	}
-	sys := os.Getenv("XDG_DATA_DIRS")
-	if sys == "" {
-		sys = "/usr/local/share:/usr/share"
-	}
-	dirs = append(dirs, filepath.SplitList(sys)...)
-	dirs = append(dirs, "/var/lib/flatpak/exports/share")
-	return &IconFinder{DataDirs: dirs}
+	return &IconFinder{DataDirs: desktop.DataDirs()}
 }
 
 // Resolve picks the icon for an app:
@@ -212,28 +197,42 @@ func readDesktopEntry(path string) (execLine, icon string) {
 	return execLine, icon
 }
 
-// themeIcon looks an icon name up in the hicolor theme and pixmaps, preferring
-// vector artwork, then the largest bitmap.
+// themeIcon looks an icon name up in the hicolor theme and pixmaps, then in
+// any other installed theme, preferring vector artwork, then the largest bitmap.
 func (f *IconFinder) themeIcon(name string) string {
-	if name == "" || strings.ContainsAny(name, "/\\") {
+	if name == "" || strings.ContainsAny(name, "/\\*?[") {
 		return ""
 	}
 	sizes := []string{"scalable", "512x512", "256x256", "192x192", "128x128", "96x96", "72x72", "64x64", "48x48"}
+	ext := func(size string) string {
+		if size == "scalable" {
+			return ".svg"
+		}
+		return ".png"
+	}
 	for _, dir := range f.DataDirs {
 		for _, size := range sizes {
-			ext := ".png"
-			if size == "scalable" {
-				ext = ".svg"
-			}
-			if p := filepath.Join(dir, "icons", "hicolor", size, "apps", name+ext); fileExists(p) {
+			if p := filepath.Join(dir, "icons", "hicolor", size, "apps", name+ext(size)); fileExists(p) {
 				return p
 			}
 		}
 	}
 	for _, dir := range f.DataDirs {
-		for _, ext := range []string{".svg", ".png"} {
-			if p := filepath.Join(dir, "pixmaps", name+ext); fileExists(p) {
+		for _, e := range []string{".svg", ".png"} {
+			if p := filepath.Join(dir, "pixmaps", name+e); fileExists(p) {
 				return p
+			}
+		}
+	}
+	// Programs that come with a desktop keep their icons in that desktop's
+	// theme (PiXflat on Raspberry Pi OS, Adwaita, …).
+	for _, dir := range f.DataDirs {
+		for _, size := range sizes {
+			matches, _ := filepath.Glob(filepath.Join(dir, "icons", "*", size, "apps", name+ext(size)))
+			for _, p := range matches {
+				if fileExists(p) {
+					return p
+				}
 			}
 		}
 	}

@@ -4,6 +4,8 @@ export interface DisplayConfig {
   safe_area: number;
   debug_keys: boolean;
   pixel_shift: number;
+  /** Seconds without input after which the app row closes; 0 = never. */
+  app_row_timeout: number;
   clock_24h: boolean;
   locale: string;
 }

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/DarioRomano/PiDash/internal/config"
+	"github.com/DarioRomano/PiDash/internal/desktop"
 )
 
 // File is the content of settings.json. A section that is absent leaves
@@ -64,22 +65,31 @@ type Synology struct {
 
 // App kinds.
 const (
-	KindPreset = "preset" // one of Presets
-	KindWeb    = "web"    // a website given by address
-	KindFile   = "file"   // a program defined in config.toml, kept as it is
+	KindPreset  = "preset"  // one of Presets
+	KindWeb     = "web"     // a website given by address
+	KindFile    = "file"    // a program defined in config.toml, kept as it is
+	KindDesktop = "desktop" // a program installed on the Pi, named by its menu entry
 )
 
 // App is one entry of the app row as chosen on the settings page.
 //
-// Programs can only be added from the built-in presets here. An arbitrary
-// command still has to be written into config.toml: the settings page is open
-// to the home network, and it must not become a way to run commands on the Pi.
+// Programs can only be added from the built-in presets and from what is
+// installed on the Pi. The page names an installed program by its menu entry;
+// the command is always read from that entry on the Pi, never taken from the
+// page. An arbitrary command still has to be written into config.toml: the
+// settings page is open to the home network, and it must not become a way to
+// run commands on the Pi.
 type App struct {
 	Kind string `json:"kind"`
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	// Preset names the entry of Presets, for KindPreset.
 	Preset string `json:"preset,omitempty"`
+	// Desktop is the id of the installed program's menu entry, for KindDesktop.
+	Desktop string `json:"desktop,omitempty"`
+	// Missing is true for a KindDesktop entry whose program is not installed
+	// any more. It is for display and not stored.
+	Missing bool `json:"missing,omitempty"`
 	// URL is the address for KindWeb, and for presets that need one.
 	URL       string `json:"url,omitempty"`
 	Browser   string `json:"browser,omitempty"`
@@ -148,6 +158,8 @@ func Path(configPath string) string {
 type Store struct {
 	path string
 	base config.Config
+	// installed lists the programs installed on the Pi.
+	installed func() []desktop.Entry
 
 	mu   sync.Mutex
 	file File
@@ -156,7 +168,7 @@ type Store struct {
 // Open reads settings.json. A missing file is an empty one. An unreadable
 // file is reported and ignored, so a damaged file never keeps PiDash down.
 func Open(path string, base config.Config) (*Store, error) {
-	s := &Store{path: path, base: base}
+	s := &Store{path: path, base: base, installed: func() []desktop.Entry { return desktop.List(desktop.DataDirs()) }}
 	if path == "" {
 		return s, nil
 	}
@@ -178,7 +190,7 @@ func Open(path string, base config.Config) (*Store, error) {
 func (s *Store) Effective() (config.Config, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return apply(s.base, s.file)
+	return apply(s.base, s.file, s.installed())
 }
 
 var slugRe = regexp.MustCompile(`[^a-z0-9]+`)
@@ -194,8 +206,12 @@ func slug(name string) string {
 	return id
 }
 
-// apply lays f over base and validates the result.
-func apply(base config.Config, f File) (config.Config, error) {
+// errNotInstalled marks an app whose program was removed from the Pi.
+var errNotInstalled = errors.New("it is not installed any more")
+
+// apply lays f over base and validates the result. installed is what the Pi
+// has installed, for the apps chosen from that list.
+func apply(base config.Config, f File, installed []desktop.Entry) (config.Config, error) {
 	cfg := base
 	cfg.Apps = append([]config.App{}, base.Apps...)
 
@@ -233,7 +249,12 @@ func apply(base config.Config, f File) (config.Config, error) {
 		cfg.Apps = cfg.Apps[:0]
 		used := map[string]bool{}
 		for i, a := range *f.Apps {
-			app, err := resolve(a, base)
+			app, err := resolve(a, base, installed)
+			if errors.Is(err, errNotInstalled) {
+				// Uninstalling a program must not undo every other setting: its
+				// tile just disappears, and comes back if it is installed again.
+				continue
+			}
 			if err != nil {
 				return cfg, fmt.Errorf("app %d (%s): %w", i+1, a.Name, err)
 			}
@@ -255,8 +276,23 @@ func apply(base config.Config, f File) (config.Config, error) {
 }
 
 // resolve turns a settings-page entry into a launcher app.
-func resolve(a App, base config.Config) (config.App, error) {
+func resolve(a App, base config.Config, installed []desktop.Entry) (config.App, error) {
 	switch a.Kind {
+	case KindDesktop:
+		for _, e := range installed {
+			if e.ID != a.Desktop {
+				continue
+			}
+			app := config.App{ID: slug(e.ID), Name: e.Name, Command: e.Command(), Icon: e.Icon, Mode: config.AppModeDesktop}
+			if strings.TrimSpace(a.Name) != "" {
+				app.Name = strings.TrimSpace(a.Name)
+			}
+			if app.Command == "" {
+				return config.App{}, errNotInstalled
+			}
+			return app, nil
+		}
+		return config.App{}, errNotInstalled
 	case KindFile:
 		for _, b := range base.Apps {
 			if b.ID == a.ID {
@@ -321,6 +357,8 @@ type View struct {
 	Photos  PhotosView  `json:"photos"`
 	Apps    []App       `json:"apps"`
 	Presets []Preset    `json:"presets"`
+	// Installed are the programs on the Pi that can be added to the app row.
+	Installed []desktop.Entry `json:"installed"`
 }
 
 // WeatherView is the weather section.
@@ -354,11 +392,20 @@ type SynologyView struct {
 func (s *Store) View() View {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	cfg, err := apply(s.base, s.file)
+	installed := s.installed()
+	if installed == nil {
+		installed = []desktop.Entry{}
+	}
+	isInstalled := map[string]bool{}
+	for _, e := range installed {
+		isInstalled[e.ID] = true
+	}
+	cfg, err := apply(s.base, s.file, installed)
 	if err != nil {
 		cfg = s.base
 	}
 	v := View{
+		Installed: installed,
 		Weather: WeatherView{Location: cfg.Weather.Location, Name: cfg.Weather.Name, Units: cfg.Weather.Units,
 			Coordinates: cfg.Weather.Latitude != nil},
 		Photos: PhotosView{
@@ -382,6 +429,7 @@ func (s *Store) View() View {
 					}
 				}
 			}
+			a.Missing = a.Kind == KindDesktop && !isInstalled[a.Desktop]
 			v.Apps = append(v.Apps, a)
 		}
 	} else {
@@ -423,7 +471,7 @@ func (s *Store) Save(u Update) error {
 		p := *u.Photos
 		// An empty password means "keep the one already stored".
 		if p.Source == config.PhotoSourceSynology && p.Synology.Password == "" {
-			if cur, err := apply(s.base, s.file); err == nil {
+			if cur, err := apply(s.base, s.file, s.installed()); err == nil {
 				p.Synology.Password = cur.Photos.Synology.Password
 			} else {
 				p.Synology.Password = s.base.Photos.Synology.Password
@@ -434,12 +482,12 @@ func (s *Store) Save(u Update) error {
 	if u.Apps != nil {
 		apps := make([]App, 0, len(*u.Apps))
 		for _, a := range *u.Apps {
-			a.Detail = ""
+			a.Detail, a.Missing = "", false
 			apps = append(apps, a)
 		}
 		next.Apps = &apps
 	}
-	if _, err := apply(s.base, next); err != nil {
+	if _, err := apply(s.base, next, s.installed()); err != nil {
 		return err
 	}
 	if err := s.write(next); err != nil {

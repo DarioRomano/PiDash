@@ -216,8 +216,26 @@ const rail = new Rail(
   $("#rail"),
   $("#rail-strip"),
   activateRailItem,
-  (open) => stage.classList.toggle("rail-open", open),
+  (open) => {
+    stage.classList.toggle("rail-open", open);
+    railActivity();
+  },
 );
+
+// Left alone, the app row closes again, so the TV goes back to being a clock
+// and a picture frame instead of showing a menu all evening.
+let railTimeoutMs = 30_000;
+let railTimer = 0;
+function railActivity() {
+  clearTimeout(railTimer);
+  if (!rail.isOpen || railTimeoutMs <= 0) return;
+  railTimer = window.setTimeout(() => {
+    // Not under an app that is starting or running: the row is not visible
+    // then, and should be where it was when the app closes.
+    if (appsStatus.running !== "" || document.visibilityState !== "visible") railActivity();
+    else rail.close();
+  }, railTimeoutMs);
+}
 
 function railItems(): RailItem[] {
   const items: RailItem[] = [];
@@ -245,7 +263,7 @@ function onApps(st: AppsStatus) {
   updateSuspended();
   railHint.textContent = st.apps.length
     ? "◀ ▶ choose  ·  OK open  ·  Back close"
-    : "Add apps under [[apps]] in ~/.config/pidash/config.toml  ·  Back close";
+    : "Add apps under Settings  ·  Back close";
   // Do not replay an old problem when the page (re)connects.
   if (appsLoaded && st.error && st.error !== previousError) toast(st.error, 9000);
 }
@@ -318,6 +336,8 @@ function applyConfig(cfg: ClientConfig) {
   input.setDebugElement(d.debug_keys ? debug : null);
   if (!d.debug_keys) debug.hidden = true;
   startPixelShift(d.pixel_shift);
+  railTimeoutMs = (d.app_row_timeout ?? 30) * 1000;
+  railActivity();
   sysBadge.hidden = !d.debug_keys;
 }
 
@@ -380,6 +400,7 @@ function formatUptime(sec: number): string {
 // --- Actions ----------------------------------------------------------------
 
 input.on((action) => {
+  railActivity();
   if (action === "exit") {
     exitToDesktop();
     return;
@@ -498,6 +519,7 @@ function refreshHud() {
 let pointerTimer = 0;
 let pointerTravel = 0;
 function pointerActive() {
+  railActivity();
   refreshHud();
   document.documentElement.classList.add("pointer-active");
   clearTimeout(pointerTimer);

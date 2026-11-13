@@ -42,6 +42,9 @@ type Display struct {
 	// PixelShift nudges the whole UI by a few pixels periodically to avoid
 	// burn-in on OLED and plasma panels. 0 disables it.
 	PixelShift int `toml:"pixel_shift" json:"pixel_shift"`
+	// AppRowTimeout closes the app row after this many seconds without a
+	// key press or pointer movement, returning to the clock. 0 keeps it open.
+	AppRowTimeout int `toml:"app_row_timeout" json:"app_row_timeout"`
 	// Use 24-hour time.
 	Clock24h bool `toml:"clock_24h" json:"clock_24h"`
 	// Locale used for date formatting, e.g. "en-GB". Empty uses the browser default.
@@ -237,7 +240,7 @@ func (d Duration) MarshalText() ([]byte, error) { return []byte(d.String()), nil
 func Default() Config {
 	return Config{
 		Server:  Server{Listen: ":8080"},
-		Display: Display{SafeArea: 0.03, DebugKeys: true, PixelShift: 4, Clock24h: true},
+		Display: Display{SafeArea: 0.03, DebugKeys: true, PixelShift: 4, AppRowTimeout: 30, Clock24h: true},
 		Input: Input{AppExitKeys: []string{}, AppExitHold: Duration{2 * time.Second}, Keys: map[string]string{
 			"ArrowUp":        "up",
 			"ArrowDown":      "down",
@@ -437,6 +440,9 @@ func (p *Photos) validate() error {
 }
 
 func (c Config) validate() error {
+	if c.Display.AppRowTimeout < 0 || c.Display.AppRowTimeout > 3600 {
+		return fmt.Errorf("display.app_row_timeout must be between 0 and 3600 seconds, got %d", c.Display.AppRowTimeout)
+	}
 	if c.Display.SafeArea < 0 || c.Display.SafeArea > 0.2 {
 		return fmt.Errorf("display.safe_area must be between 0 and 0.2, got %v", c.Display.SafeArea)
 	}

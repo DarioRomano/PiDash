@@ -93,6 +93,10 @@
             <span>Add</span>
             <select id="add-kind"></select>
           </label>
+          <label class="field" id="add-installed-row" hidden>
+            <span>Program</span>
+            <select id="add-installed"></select>
+          </label>
           <p id="add-desc" class="hint"></p>
           <label class="field" id="add-name-row" hidden>
             <span>Name</span>
@@ -107,8 +111,8 @@
           <p id="add-result" class="result"></p>
         </div>
         <p class="hint">
-          Other programs can be added in <code>~/.config/pidash/config.toml</code> on the Pi. They then show up here to
-          reorder or remove.
+          A program that needs its own command or options can be added in
+          <code>~/.config/pidash/config.toml</code> on the Pi. It then shows up here to reorder or remove.
         </p>
       </section>
 

@@ -176,8 +176,29 @@ What it covers:
   each photo stays. After saving, **Choose folders and albums** takes you to
   the picker.
 - **Apps:** the app row. Add from a list of ready-made apps (YouTube, Netflix,
-  Synology Photos, Plex, Moonlight, Kodi, Steam Link) or any website by
-  address, reorder them, and remove them.
+  Synology Photos, Plex, Moonlight, Kodi, Steam Link), any program installed
+  on the Pi, or any website by address. Reorder them, and remove them.
+
+**Programs installed on the Pi** are the ones in the Pi's application menu.
+Choose **A program installed on the Pi…** under Add, pick it, and save; a
+program installed later appears in that list the next time you open the page.
+It gets its own icon and starts the way it does from the menu, as a window on
+top of the dashboard. A few things to know:
+
+- Most desktop programs are made for a mouse and keyboard. The TV remote sends
+  them arrows, Enter and Esc; for the rest use a mouse or the phone's touchpad.
+- Holding **Back** closes the program and returns to the dashboard, as for
+  every app.
+- A program that only hands over to a copy that is already open (some file
+  managers and browsers do) is reported as "closed right after starting",
+  although its window opens. PiDash then cannot close it for you.
+- Text programs that need a terminal window are not offered.
+- If you uninstall a program, its tile disappears; the other settings stay.
+
+The settings page can be opened by anyone on your home network, so it only
+lets them pick a program by name. The command always comes from the menu entry
+on the Pi itself. A program that needs its own command or options still goes
+into `config.toml`.
 
 Press **Save**. PiDash restarts itself to apply the changes, which takes a few
 seconds, and the TV reloads.
@@ -326,9 +347,14 @@ Good to know:
 
 ### Apps
 
-Press **OK** on the dashboard to open the app row. Apps are defined in
-`~/.config/pidash/config.toml`, one `[[apps]]` block each. After editing, run
-`systemctl --user restart pidash`. An app is either a website or a program.
+Press **OK** on the dashboard to open the app row. Left alone for 30 seconds,
+the row closes again and the TV returns to the clock; `app_row_timeout` under
+`[display]` changes that, and `0` keeps it open.
+
+The easiest way to add apps is the [settings page](#settings). They can also
+be defined in `~/.config/pidash/config.toml`, one `[[apps]]` block each. After
+editing, run `systemctl --user restart pidash`. An app is either a website or
+a program.
 
 #### YouTube, Netflix and other websites
 

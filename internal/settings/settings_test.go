@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/DarioRomano/PiDash/internal/config"
+	"github.com/DarioRomano/PiDash/internal/desktop"
 )
 
 // base imitates a config.toml with the shipped YouTube and Netflix apps, one
@@ -32,6 +33,8 @@ func open(t *testing.T) (*Store, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// What is installed on the machine running the tests must not matter.
+	s.installed = func() []desktop.Entry { return nil }
 	return s, path
 }
 
@@ -217,5 +220,94 @@ func TestDamagedSettingsFileIsIgnored(t *testing.T) {
 	}
 	if cfg, err := s.Effective(); err != nil || len(cfg.Apps) != 3 {
 		t.Errorf("PiDash should run on config.toml alone: %v", err)
+	}
+}
+
+func TestAddingAnInstalledProgram(t *testing.T) {
+	s, path := open(t)
+	installed := []desktop.Entry{
+		{ID: "org.videolan.VLC", Name: "VLC media player", Exec: "/usr/bin/vlc --started-from-file %U", Icon: "vlc"},
+		{ID: "steam", Name: "Steam", Exec: "steam %U", Icon: "/opt/steam/icon.png"},
+	}
+	s.installed = func() []desktop.Entry { return installed }
+
+	if v := s.View(); len(v.Installed) != 2 || v.Installed[0].Name != "VLC media player" {
+		t.Fatalf("installed on the page = %+v", v.Installed)
+	}
+	err := s.Save(Update{Apps: &[]App{
+		{Kind: KindPreset, Preset: "netflix"},
+		{Kind: KindDesktop, Desktop: "org.videolan.VLC"},
+		{Kind: KindDesktop, Desktop: "steam", Name: "Games"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := s.Effective()
+	if err != nil || len(cfg.Apps) != 3 {
+		t.Fatalf("apps = %+v, err %v", cfg.Apps, err)
+	}
+	vlc, steam := cfg.Apps[1], cfg.Apps[2]
+	if vlc.ID != "org-videolan-vlc" || vlc.Name != "VLC media player" || vlc.Command != "/usr/bin/vlc --started-from-file" || vlc.Icon != "vlc" || vlc.Mode != config.AppModeDesktop {
+		t.Errorf("vlc = %+v", vlc)
+	}
+	if steam.Name != "Games" || steam.Command != "steam" {
+		t.Errorf("steam = %+v", steam)
+	}
+
+	// The page can only name a program. A command it sends along is not stored
+	// and not run: the command always comes from the Pi's own menu entry.
+	raw := `{"apps":[{"kind":"desktop","desktop":"steam","command":"rm -rf ~","exec":"rm -rf ~"}]}`
+	var u Update
+	if err := json.Unmarshal([]byte(raw), &u); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Save(u); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _ := s.Effective(); len(cfg.Apps) != 1 || cfg.Apps[0].Command != "steam" {
+		t.Errorf("apps = %+v", cfg.Apps)
+	}
+	if data, _ := os.ReadFile(path); strings.Contains(string(data), "rm -rf") {
+		t.Errorf("a command from the page was stored: %s", data)
+	}
+}
+
+func TestAnUninstalledProgramOnlyLosesItsTile(t *testing.T) {
+	s, _ := open(t)
+	installed := []desktop.Entry{{ID: "steam", Name: "Steam", Exec: "steam %U"}}
+	s.installed = func() []desktop.Entry { return installed }
+	err := s.Save(Update{
+		Weather: &Weather{Location: "Zurich", Units: "metric"},
+		Apps:    &[]App{{Kind: KindDesktop, Desktop: "steam"}, {Kind: KindPreset, Preset: "netflix"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	installed = nil // Steam was removed from the Pi
+	cfg, err := s.Effective()
+	if err != nil || len(cfg.Apps) != 1 || cfg.Apps[0].ID != "netflix" || cfg.Weather.Location != "Zurich" {
+		t.Fatalf("apps = %+v, weather %q, err %v; want Netflix alone and the weather kept", cfg.Apps, cfg.Weather.Location, err)
+	}
+	v := s.View()
+	if len(v.Apps) != 2 || !v.Apps[0].Missing || v.Apps[1].Missing {
+		t.Errorf("the page should still list Steam, marked as missing: %+v", v.Apps)
+	}
+	// Saving the list as the page shows it keeps working.
+	if err := s.Save(Update{Apps: &v.Apps}); err != nil {
+		t.Errorf("saving with a missing program: %v", err)
+	}
+
+	installed = []desktop.Entry{{ID: "steam", Name: "Steam", Exec: "steam %U"}}
+	if cfg, _ := s.Effective(); len(cfg.Apps) != 2 {
+		t.Errorf("Steam should be back after reinstalling: %+v", cfg.Apps)
+	}
+
+	// An unknown name is refused nowhere near a shell: it is simply not installed.
+	if err := s.Save(Update{Apps: &[]App{{Kind: KindDesktop, Desktop: "../../etc/passwd; reboot"}}}); err != nil {
+		t.Errorf("err = %v", err)
+	}
+	if cfg, _ := s.Effective(); len(cfg.Apps) != 0 {
+		t.Errorf("apps = %+v", cfg.Apps)
 	}
 }
