@@ -496,6 +496,10 @@ func (c *Config) Finish() error {
 	if c.Input.AppExitHold.Duration < 0 || c.Input.AppExitHold.Duration > 10*time.Second {
 		return fmt.Errorf("input.app_exit_hold must be between 0s and 10s")
 	}
+	// Tidies addresses and fills in defaults, so it must work on c itself.
+	if err := c.validateExtras(); err != nil {
+		return err
+	}
 	return c.validate()
 }
 
@@ -542,9 +546,6 @@ func (p *Photos) validate() error {
 }
 
 func (c Config) validate() error {
-	if err := c.validateExtras(); err != nil {
-		return err
-	}
 	if (c.Display.NightStart == "") != (c.Display.NightEnd == "") {
 		return fmt.Errorf("display.night_start and display.night_end must both be set, or both be empty")
 	}
