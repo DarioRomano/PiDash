@@ -151,6 +151,10 @@ type Photos struct {
 	Interval Duration `toml:"interval"`
 	// Refresh is how often the chosen folders are re-read for new photos.
 	Refresh Duration `toml:"refresh"`
+	// Motion animates the photos with slow pans and zooms: "off" (default),
+	// "whole" (the whole photo always stays on screen) or "fill" (the photo
+	// fills the screen and its edges may drift out of view).
+	Motion string `toml:"motion"`
 	// CacheMB limits the disk space used for rendered photos.
 	CacheMB  int            `toml:"cache_mb"`
 	Synology SynologyPhotos `toml:"synology"`
@@ -179,6 +183,10 @@ type PhotoFolder struct {
 const (
 	PhotoQualityOriginal = "original"
 	PhotoQualityPreview  = "preview"
+
+	PhotoMotionOff   = "off"
+	PhotoMotionWhole = "whole"
+	PhotoMotionFill  = "fill"
 )
 
 // App launch modes.
@@ -405,6 +413,13 @@ func (c *Config) Finish() error {
 }
 
 func (p *Photos) validate() error {
+	switch p.Motion {
+	case "":
+		p.Motion = PhotoMotionOff
+	case PhotoMotionOff, PhotoMotionWhole, PhotoMotionFill:
+	default:
+		return fmt.Errorf("photos.motion must be %q, %q or %q, got %q", PhotoMotionOff, PhotoMotionWhole, PhotoMotionFill, p.Motion)
+	}
 	if p.Interval.Duration < 5*time.Second {
 		return fmt.Errorf("photos.interval must be at least 5s")
 	}

@@ -191,6 +191,47 @@ func TestChoosingASharedAlbum(t *testing.T) {
 	wait("3 folder photos + 2 album photos + 1 from the Shared Space", idle(6))
 }
 
+func TestMotionSettingChangesHowPhotosArePrepared(t *testing.T) {
+	_, syn := newFakeNAS(t)
+	cache := t.TempDir()
+
+	still, wait := startService(t, Options{Source: syn, PreferOriginal: true, CacheDir: cache})
+	still.SetSelection(Selection{Folders: []Folder{{ID: "p:3", Name: "Holiday"}}})
+	st := wait("3 photos", idle(3))
+	if st.Motion != MotionOff || still.Variant() != "" {
+		t.Errorf("motion = %q, variant %q; want off", st.Motion, still.Variant())
+	}
+	filled, err := still.Image(context.Background(), "p-10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The test photo is upright, so it reaches from the top edge to the bottom.
+	if c := frameColor(t, filled, FrameW/2, 8); !near(c, color.RGBA{220, 30, 30, 255}) {
+		t.Errorf("standing still, the photo should reach the top edge; there = %v", c)
+	}
+
+	// The same cache directory, as after changing the setting and restarting.
+	moving, wait := startService(t, Options{Source: syn, PreferOriginal: true, CacheDir: cache, Motion: MotionWhole})
+	moving.SetSelection(Selection{Folders: []Folder{{ID: "p:3", Name: "Holiday"}}})
+	st = wait("3 photos", idle(3))
+	if st.Motion != MotionWhole || st.MotionZoom != WholeZoom || moving.Variant() == "" {
+		t.Errorf("motion = %q, zoom %v, variant %q", st.Motion, st.MotionZoom, moving.Variant())
+	}
+	whole, err := moving.Image(context.Background(), "p-10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if whole == filled {
+		t.Fatal("the frame prepared for standing still was reused for a moving photo")
+	}
+	if c := frameColor(t, whole, FrameW/2, 8); near(c, color.RGBA{220, 30, 30, 255}) {
+		t.Errorf("moving, the photo must leave room around it; top edge = %v", c)
+	}
+	if c := frameColor(t, whole, FrameW/2, FrameH/2); !near(c, color.RGBA{220, 30, 30, 255}) {
+		t.Errorf("centre = %v, want the photo", c)
+	}
+}
+
 func TestPreviewQualityNeverDownloadsFullFiles(t *testing.T) {
 	nas, syn := newFakeNAS(t)
 	svc, wait := startService(t, Options{Source: syn, PreferOriginal: false})

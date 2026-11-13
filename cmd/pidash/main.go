@@ -330,6 +330,7 @@ func newPhotoService(cfg config.Photos, mock bool, log *slog.Logger) (*photos.Se
 		Interval:       cfg.Interval.Duration,
 		Refresh:        cfg.Refresh.Duration,
 		PreferOriginal: cfg.Synology.Quality == config.PhotoQualityOriginal,
+		Motion:         cfg.Motion,
 		StatePath:      filepath.Join(dataDir, name+"-selection.json"),
 		CacheDir:       filepath.Join(cacheRoot, "pidash", name),
 		CacheBytes:     int64(cfg.CacheMB) << 20,

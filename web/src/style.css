@@ -72,6 +72,7 @@ html, body {
   object-fit: cover;
   opacity: 0;
   transition: opacity 1.6s ease-in-out;
+  will-change: opacity, transform; /* photos may pan and zoom slowly */
 }
 #backdrop img.visible { opacity: 1; }
 

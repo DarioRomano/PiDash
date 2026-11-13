@@ -100,7 +100,7 @@ func near(a color.Color, b color.RGBA) bool {
 }
 
 func TestLandscapePhotoFillsTheFrame(t *testing.T) {
-	out, err := Render(encodePNG(t, quadrants(1600, 900)), true)
+	out, err := Render(encodePNG(t, quadrants(1600, 900)), true, LayoutFill)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestLandscapePhotoFillsTheFrame(t *testing.T) {
 
 func TestSlightlyDifferentAspectIsCroppedNotLetterboxed(t *testing.T) {
 	// 3:2 loses under 16% when filling a 16:9 frame, so it fills the frame.
-	out, err := Render(encodePNG(t, quadrants(1500, 1000)), true)
+	out, err := Render(encodePNG(t, quadrants(1500, 1000)), true, LayoutFill)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestSlightlyDifferentAspectIsCroppedNotLetterboxed(t *testing.T) {
 }
 
 func TestPortraitPhotoIsShownWholeOnADarkBackdrop(t *testing.T) {
-	out, err := Render(encodePNG(t, quadrants(900, 1200)), true)
+	out, err := Render(encodePNG(t, quadrants(900, 1200)), true, LayoutFill)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestExifOrientationIsApplied(t *testing.T) {
 		if got := exifOrientation(data); got != 6 {
 			t.Fatalf("exifOrientation = %d, want 6", got)
 		}
-		out, err := Render(data, true)
+		out, err := Render(data, true, LayoutFill)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -177,7 +177,7 @@ func TestExifOrientationIsApplied(t *testing.T) {
 	}
 
 	// A source that already rotated the picture must not be rotated again.
-	out, err := Render(withExifOrientation(stored, 6, binary.BigEndian), false)
+	out, err := Render(withExifOrientation(stored, 6, binary.BigEndian), false, LayoutFill)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestAllOrientationsMapCorners(t *testing.T) {
 	want := map[int]color.RGBA{1: red, 2: green, 3: white, 4: blue, 5: red, 6: blue, 7: white, 8: green}
 	src := quadrants(800, 450)
 	for o, c := range want {
-		f := compose(src, o)
+		f := compose(src, o, LayoutFill)
 		// Landscape results fill the frame; portrait results are centred.
 		x := 10
 		if o >= 5 {
@@ -205,7 +205,7 @@ func TestAllOrientationsMapCorners(t *testing.T) {
 }
 
 func TestFourByThreeLandscapeFillsTheFrame(t *testing.T) {
-	out, err := Render(encodePNG(t, quadrants(1200, 900)), true)
+	out, err := Render(encodePNG(t, quadrants(1200, 900)), true, LayoutFill)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +216,7 @@ func TestFourByThreeLandscapeFillsTheFrame(t *testing.T) {
 }
 
 func TestBadInputIsRejected(t *testing.T) {
-	if _, err := Render([]byte("<html>not an image</html>"), true); err == nil {
+	if _, err := Render([]byte("<html>not an image</html>"), true, LayoutFill); err == nil {
 		t.Error("expected an error for non-image data")
 	}
 	if exifOrientation([]byte{0xFF, 0xD8, 0xFF, 0xE1, 0xFF, 0xFF}) != 1 {
@@ -224,5 +224,50 @@ func TestBadInputIsRejected(t *testing.T) {
 	}
 	if exifOrientation(nil) != 1 {
 		t.Error("empty data should be treated as no orientation")
+	}
+}
+
+func TestWholeLayoutLeavesRoomToZoomWithoutCuttingThePhoto(t *testing.T) {
+	// The part of the frame that is still on screen at the largest zoom.
+	room := 1 - 1/float64(WholeZoom)
+	left, top := int(float64(FrameW)*room/2), int(float64(FrameH)*room/2)
+	right, bottom := FrameW-left, FrameH-top
+
+	for name, size := range map[string][2]int{"widescreen": {1600, 900}, "4:3": {1600, 1200}, "portrait": {900, 1200}, "panorama": {3000, 800}} {
+		out, err := Render(encodePNG(t, quadrants(size[0], size[1])), true, LayoutWhole)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f := decodeFrame(t, out)
+
+		// Find the photo: the box of pixels that have one of its four pure colours.
+		minX, minY, maxX, maxY := FrameW, FrameH, -1, -1
+		for y := 0; y < FrameH; y += 2 {
+			for x := 0; x < FrameW; x += 2 {
+				c := f.At(x, y)
+				if near(c, red) || near(c, green) || near(c, blue) || near(c, white) {
+					minX, minY, maxX, maxY = min(minX, x), min(minY, y), max(maxX, x), max(maxY, y)
+				}
+			}
+		}
+		if maxX < 0 {
+			t.Fatalf("%s: no photo found in the frame", name)
+		}
+		if minX < left-2 || minY < top-2 || maxX > right+2 || maxY > bottom+2 {
+			t.Errorf("%s: photo spans x %d..%d, y %d..%d; must stay within x %d..%d, y %d..%d", name, minX, maxX, minY, maxY, left, right, top, bottom)
+		}
+		// Nothing is cropped: all four corners of the photo are there, in order.
+		if !near(f.At(minX+6, minY+6), red) || !near(f.At(maxX-6, minY+6), green) || !near(f.At(minX+6, maxY-6), blue) || !near(f.At(maxX-6, maxY-6), white) {
+			t.Errorf("%s: the photo's corners are not all visible", name)
+		}
+		// It is as large as the room allows: it touches the box in one direction.
+		if maxX-minX < right-left-8 && maxY-minY < bottom-top-8 {
+			t.Errorf("%s: photo is %dx%d, smaller than it needs to be", name, maxX-minX, maxY-minY)
+		}
+		// Around it is the blurred copy, not black bars.
+		r, g, b, _ := f.At(4, 4).RGBA()
+		if r>>8 < 5 && g>>8 < 5 && b>>8 < 5 {
+			t.Errorf("%s: the surround is black", name)
+		}
 	}
 }

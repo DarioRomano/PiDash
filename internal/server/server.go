@@ -647,7 +647,7 @@ func (s *Server) handlePhotoPlaylist(w http.ResponseWriter, r *http.Request) {
 		version, items := s.photos.Playlist(limit)
 		out.Version = version
 		for _, it := range items {
-			sum := sha1.Sum([]byte(it.Version))
+			sum := sha1.Sum([]byte(it.Version + "|" + s.photos.Variant()))
 			out.Items = append(out.Items, playlistItem{Key: it.Key, Name: it.Name, Folder: it.Folder, Taken: it.Taken, V: hex.EncodeToString(sum[:4])})
 		}
 	}

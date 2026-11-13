@@ -172,8 +172,8 @@ What it covers:
 - **Weather:** your town and the units. **Check town** shows which place the
   weather service found before you save.
 - **Background photos:** where photos come from, the connection to Synology
-  Photos with a **Test connection** button, the picture quality, and how long
-  each photo stays. After saving, **Choose folders and albums** takes you to
+  Photos with a **Test connection** button, the picture quality, how long
+  each photo stays, and whether photos move (see below). After saving, **Choose folders and albums** takes you to
   the picker.
 - **Apps:** the app row. Add from a list of ready-made apps (YouTube, Netflix,
   Synology Photos, Plex, Moonlight, Kodi, Steam Link), any program installed
@@ -340,6 +340,21 @@ How photos are shown:
   NAS and the Pi. Videos are skipped.
 - If the NAS is switched off or unreachable, the photos already prepared keep
   showing, and the folder picker says what is wrong.
+
+**Moving photos.** Under **Movement** on the settings page, or with `motion`
+under `[photos]`, each photo can drift slowly while it is shown: a zoom in, a
+zoom out, or a glide to one side, a different one each time.
+
+| Setting | What you see |
+|---|---|
+| None (`off`) | Photos stand still. This is the default |
+| Gentle (`whole`) | The whole photo stays in view the entire time; nothing is ever cut off, not even for landscape photos. To make room for the movement, photos are shown a little smaller (at most 89% of the screen at the widest view), on a blurred copy of themselves |
+| Full screen (`fill`) | Photos fill the screen as before and move more freely. While they move, up to about a tenth along the edges can be out of view |
+
+The movement is spread over the time a photo is shown, so a longer time per
+photo means slower movement. After changing the setting, photos are prepared
+again as they come up. If the system is set to reduce motion, photos stand
+still.
 
 More settings, with their defaults:
 

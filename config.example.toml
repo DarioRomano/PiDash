@@ -91,6 +91,13 @@ interval = "15m"
 source = ""
 # How long each photo stays on screen.
 interval = "30s"
+# Slow pans and zooms while a photo is shown:
+#   "off"    photos stand still
+#   "whole"  gentle movement; the whole photo always stays in view, shown a
+#            little smaller on a blurred copy of itself
+#   "fill"   movement over a photo that fills the screen; its edges may
+#            drift out of view
+motion = "off"
 # How often the chosen folders are checked for new photos.
 refresh = "6h"
 # Disk space for prepared photos, in MB. The oldest are removed first.

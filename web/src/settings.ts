@@ -32,6 +32,7 @@ interface Info {
   photos: {
     source: string;
     intervalSeconds: number;
+    motion: string;
     synology: { url: string; username: string; passwordSet: boolean; insecureTls: boolean; quality: string };
     folderPath: string;
   };
@@ -112,6 +113,7 @@ function readForm() {
     photos: {
       source,
       intervalSeconds: Math.max(5, Math.round(Number(val("p-interval")) || 30)),
+      motion: val("p-motion") || "off",
       synology: {
         url: val("s-url").trim(),
         username: val("s-user").trim(),
@@ -129,6 +131,13 @@ function refresh() {
   $("p-synology").hidden = source !== "synology";
   $("p-folder").hidden = source !== "folder";
   $("p-interval-row").hidden = source === "";
+  $("p-motion-row").hidden = source === "";
+  const motion = val("p-motion");
+  $("p-motion-hint").hidden = source === "" || motion === "off";
+  $("p-motion-hint").textContent =
+    motion === "whole"
+      ? "Photos are shown a little smaller, on a soft blurred copy of themselves, so nothing is cut off while they move. They are prepared again after saving, which takes a moment per photo."
+      : "Photos fill the screen as far as they can. While they move, up to about a tenth along the edges can be out of view.";
   const dirty = JSON.stringify(readForm()) !== savedState;
   // Folders can be chosen once the source in use is the one shown here.
   $("p-folders").hidden = source === "" || source !== info.photos.source || dirty;
@@ -158,6 +167,7 @@ function fill(i: Info) {
   $<HTMLInputElement>("s-tls").checked = i.photos.synology.insecureTls;
   $<HTMLSelectElement>("s-quality").value = i.photos.synology.quality || "original";
   $<HTMLInputElement>("p-interval").value = String(i.photos.intervalSeconds || 30);
+  $<HTMLSelectElement>("p-motion").value = i.photos.motion || "off";
 
   apps = i.apps.map((a) => ({ ...a }));
   renderApps();
@@ -376,7 +386,7 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
-for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval"]) {
+for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion"]) {
   $(id).addEventListener("input", refresh);
   $(id).addEventListener("change", refresh);
 }

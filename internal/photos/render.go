@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/jpeg"
 	_ "image/png" // decode PNG sources
+	"math"
 
 	"golang.org/x/image/draw"
 )
@@ -28,12 +29,30 @@ const maxSourcePixels = 80_000_000
 // a blurred, darkened copy of themselves instead.
 const maxCropLoss = 0.26
 
+// WholeZoom is how far the dashboard may zoom into a frame rendered with
+// LayoutWhole before any of the photo leaves the screen. Such a frame keeps
+// the photo inside its central 1/WholeZoom, in both directions.
+const WholeZoom = 1.12
+
+// Layout is how a photo is placed in its frame.
+type Layout int
+
+const (
+	// LayoutFill fills the screen where little is lost by cropping, and
+	// otherwise shows the whole photo on a blurred copy of itself.
+	LayoutFill Layout = iota
+	// LayoutWhole never crops. The photo sits whole in the middle of the
+	// frame with room around it, so the dashboard can move and zoom the frame
+	// slowly without any part of the photo ever leaving the screen.
+	LayoutWhole
+)
+
 var errTooLarge = errors.New("image is too large to process")
 
 // Render turns encoded image data into a FrameW x FrameH JPEG. applyExif
 // rotates the image according to its EXIF orientation tag; pass false when the
 // source has already rotated it (pre-made thumbnails).
-func Render(data []byte, applyExif bool) ([]byte, error) {
+func Render(data []byte, applyExif bool, layout Layout) ([]byte, error) {
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("unsupported image: %w", err)
@@ -49,7 +68,7 @@ func Render(data []byte, applyExif bool) ([]byte, error) {
 	if applyExif {
 		orientation = exifOrientation(data)
 	}
-	frame := compose(src, orientation)
+	frame := compose(src, orientation, layout)
 
 	var out bytes.Buffer
 	if err := jpeg.Encode(&out, frame, &jpeg.Options{Quality: 88}); err != nil {
@@ -59,7 +78,7 @@ func Render(data []byte, applyExif bool) ([]byte, error) {
 }
 
 // compose scales src into a frame, applying the EXIF orientation.
-func compose(src image.Image, orientation int) *image.RGBA {
+func compose(src image.Image, orientation int, layout Layout) *image.RGBA {
 	// Work out the layout in the photo's upright dimensions.
 	sb := src.Bounds()
 	w, h := sb.Dx(), sb.Dy()
@@ -75,7 +94,7 @@ func compose(src image.Image, orientation int) *image.RGBA {
 		loss = 1 - frameAspect/srcAspect
 	}
 
-	if loss <= maxCropLoss {
+	if layout == LayoutFill && loss <= maxCropLoss {
 		// Fill the screen, cropping the centre.
 		cw, ch := w, int(float64(w)/frameAspect+0.5)
 		if srcAspect > frameAspect {
@@ -86,11 +105,17 @@ func compose(src image.Image, orientation int) *image.RGBA {
 		return frame
 	}
 
-	// Show the whole photo, centred, never enlarged beyond the frame.
-	fw, fh := FrameW, int(float64(FrameW)/srcAspect+0.5)
-	if srcAspect < frameAspect {
-		fw, fh = int(float64(FrameH)*srcAspect+0.5), FrameH
+	// Show the whole photo, centred, as large as its box allows: the frame,
+	// or the smaller middle part that stays on screen while zoomed.
+	boxW, boxH := FrameW, FrameH
+	if layout == LayoutWhole {
+		boxW, boxH = int(math.Floor(FrameW/WholeZoom)), int(math.Floor(FrameH/WholeZoom))
 	}
+	fw, fh := boxW, int(float64(boxW)/srcAspect+0.5)
+	if srcAspect < frameAspect {
+		fw, fh = int(float64(boxH)*srcAspect+0.5), boxH
+	}
+	fw, fh = max(1, min(fw, boxW)), max(1, min(fh, boxH))
 	fitted := image.NewRGBA(image.Rect(0, 0, fw, fh))
 	scaleOriented(fitted, fitted.Bounds(), src, image.Rect(0, 0, w, h), orientation)
 

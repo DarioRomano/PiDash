@@ -82,6 +82,10 @@ export interface PhotosStatus {
   intervalSeconds: number;
   selection: PhotoSelection;
   version: number;
+  /** How photos move: standing still, moving with the whole photo in view, or filling the screen. */
+  motion?: "off" | "whole" | "fill";
+  /** The largest zoom at which a photo prepared for "whole" still fits the screen. */
+  motionZoom?: number;
 }
 
 export interface PhotoItem {

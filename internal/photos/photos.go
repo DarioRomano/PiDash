@@ -20,6 +20,13 @@ import (
 	"time"
 )
 
+// How photos move on screen.
+const (
+	MotionOff   = "off"
+	MotionWhole = "whole" // slow pans and zooms; the whole photo always stays visible
+	MotionFill  = "fill"  // slow pans and zooms over a photo that fills the screen
+)
+
 // Folder is a place photos can be picked from.
 type Folder struct {
 	// ID identifies the folder to its source.
@@ -85,6 +92,10 @@ type Status struct {
 	Selection       Selection `json:"selection"`
 	// Version increases whenever the set of photos changes.
 	Version int `json:"version"`
+	// Motion is how photos move on screen: "off", "whole" or "fill".
+	// MotionZoom is the largest zoom at which a "whole" photo still fits.
+	Motion     string  `json:"motion"`
+	MotionZoom float64 `json:"motionZoom"`
 }
 
 // Options configure a Service.
@@ -96,6 +107,10 @@ type Options struct {
 	// PreferOriginal renders from the full file where possible (sharper) instead
 	// of the source's smaller preview.
 	PreferOriginal bool
+	// Motion is "whole" to prepare photos for slow movement that never cuts
+	// them off, "fill" for movement over photos that fill the screen, or
+	// "off"/"" for photos that stand still.
+	Motion string
 	// StatePath stores the folder selection; CacheDir the rendered frames.
 	StatePath  string
 	CacheDir   string
@@ -192,6 +207,8 @@ func (s *Service) statusLocked() Status {
 		IntervalSeconds: int(s.opt.Interval / time.Second),
 		Selection:       sel,
 		Version:         s.version,
+		Motion:          s.motion(),
+		MotionZoom:      WholeZoom,
 	}
 }
 
@@ -200,6 +217,30 @@ func (s *Service) notify() {
 	st, fn := s.statusLocked(), s.onChange
 	s.mu.Unlock()
 	fn(st)
+}
+
+func (s *Service) motion() string {
+	if s.opt.Motion == MotionWhole || s.opt.Motion == MotionFill {
+		return s.opt.Motion
+	}
+	return MotionOff
+}
+
+// Variant names how frames are rendered. It is part of the name of every
+// cached frame and of the address the dashboard loads it from, so changing
+// the setting never shows a frame prepared for the other one.
+func (s *Service) Variant() string {
+	if s.opt.Motion == MotionWhole {
+		return "whole"
+	}
+	return ""
+}
+
+func (s *Service) layout() Layout {
+	if s.opt.Motion == MotionWhole {
+		return LayoutWhole
+	}
+	return LayoutFill
 }
 
 // Run indexes now, whenever the selection changes, and periodically to pick up
@@ -437,7 +478,11 @@ func (s *Service) Image(ctx context.Context, key string) (string, error) {
 	if !ok {
 		return "", ErrNotFound
 	}
-	sum := sha1.Sum([]byte(item.Key + "|" + item.Version))
+	name := item.Key + "|" + item.Version
+	if v := s.Variant(); v != "" {
+		name += "|" + v
+	}
+	sum := sha1.Sum([]byte(name))
 	path := filepath.Join(s.opt.CacheDir, hex.EncodeToString(sum[:12])+".jpg")
 
 	if fi, err := os.Stat(path); err == nil && fi.Size() > 0 {
@@ -531,7 +576,7 @@ func (s *Service) fetchAndRender(ctx context.Context, item Item, original bool) 
 		return nil, ctx.Err()
 	}
 	defer func() { <-s.renderSem }()
-	return Render(data, !upright)
+	return Render(data, !upright, s.layout())
 }
 
 // evict keeps the frame cache under its size limit, removing the frames that

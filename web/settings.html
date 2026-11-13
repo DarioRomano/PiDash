@@ -80,6 +80,15 @@
           <span>Seconds per photo</span>
           <input id="p-interval" type="number" min="5" max="3600" step="5" inputmode="numeric" />
         </label>
+        <label class="field" id="p-motion-row">
+          <span>Movement</span>
+          <select id="p-motion">
+            <option value="off">None: photos stand still</option>
+            <option value="whole">Gentle: slow pans and zooms, the whole photo always in view</option>
+            <option value="fill">Full screen: slow pans and zooms, edges may drift out of view</option>
+          </select>
+        </label>
+        <p id="p-motion-hint" class="hint"></p>
         <a id="p-folders" class="link" href="/photos" hidden>Choose folders and albums<span>›</span></a>
       </section>
 
