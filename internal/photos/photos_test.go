@@ -308,6 +308,72 @@ func TestUprightPhotosAreShownTwoAtATime(t *testing.T) {
 	}
 }
 
+func TestPhotosFromThisDayComeFirst(t *testing.T) {
+	_, syn := newFakeNAS(t)
+	// The fake's photos are taken at 1700000000 + id seconds: 14 November 2023.
+	day := time.Unix(1700000010, 0).UTC()
+	today := time.Date(2026, day.Month(), day.Day(), 9, 0, 0, 0, time.UTC)
+	svc, wait := startService(t, Options{Source: syn, OnThisDay: true, Now: func() time.Time { return today }})
+	svc.SetSelection(Selection{Folders: []Folder{{ID: "p:3", Name: "Holiday"}}})
+	wait("3 photos", idle(3))
+	if _, slides := svc.Slides(0); len(slides) != 3 {
+		t.Fatalf("slides = %d", len(slides))
+	}
+
+	// Another day of the year: nothing is preferred, everything still shows.
+	other, wait2 := startService(t, Options{Source: syn, OnThisDay: true, Now: func() time.Time { return today.AddDate(0, 0, 40) }})
+	other.SetSelection(Selection{Folders: []Folder{{ID: "p:3", Name: "Holiday"}}})
+	wait2("3 photos", idle(3))
+	if _, slides := other.Slides(0); len(slides) != 3 {
+		t.Fatalf("slides = %d", len(slides))
+	}
+
+	if !onThisDay(day, today) || onThisDay(day, today.AddDate(0, 0, 1)) || onThisDay(today, today) {
+		t.Error("onThisDay: want the same date in an earlier year only")
+	}
+
+	// A mixed library: the one photo from this day leads every shuffle.
+	mixed := New(Options{Source: Mock{}, OnThisDay: true, Now: func() time.Time { return today }, Log: quietLog})
+	mixed.items = []Item{{Key: "a", Taken: today.AddDate(-1, 0, 3)}, {Key: "b", Taken: today.AddDate(-2, 0, 0)}, {Key: "c", Taken: today.AddDate(0, -1, 0)}, {Key: "d", Taken: today.AddDate(-3, 2, 0)}}
+	for i := 0; i < 20; i++ {
+		if _, slides := mixed.Slides(0); len(slides) != 4 || slides[0].Key != "b" {
+			t.Fatalf("shuffle %d starts with %s, want b", i, slides[0].Key)
+		}
+	}
+}
+
+func TestHidingAPhoto(t *testing.T) {
+	_, syn := newFakeNAS(t)
+	state := filepath.Join(t.TempDir(), "photos-selection.json")
+	svc, wait := startService(t, Options{Source: syn, StatePath: state})
+	svc.SetSelection(Selection{Folders: []Folder{{ID: "p:3", Name: "Holiday"}}})
+	st := wait("3 photos", idle(3))
+
+	if err := svc.Hide("p-11"); err != nil {
+		t.Fatal(err)
+	}
+	after := svc.Status()
+	if after.Count != 2 || after.Hidden != 1 || after.Version == st.Version {
+		t.Errorf("after hiding: %d photos, %d hidden, version %d (was %d); want 2, 1 and a new version", after.Count, after.Hidden, after.Version, st.Version)
+	}
+	if _, err := svc.Image(context.Background(), "p-11"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("a hidden photo can still be loaded: %v", err)
+	}
+	// A pair hides both; what is unknown or already hidden changes nothing.
+	if err := svc.Hide("p-10+p-13", "nope", "p-11"); err != nil || svc.Status().Count != 0 || svc.Status().Hidden != 3 {
+		t.Errorf("hiding a pair: err %v, status %+v", err, svc.Status())
+	}
+
+	// It stays hidden after a restart and when the folders are read again.
+	again, wait2 := startService(t, Options{Source: syn, StatePath: state})
+	wait2("everything hidden", func(s Status) bool { return !s.Indexing && s.Hidden == 3 && s.Count == 0 && len(s.Selection.Folders) == 1 })
+
+	if err := again.ShowHidden(); err != nil {
+		t.Fatal(err)
+	}
+	wait2("all back", func(s Status) bool { return !s.Indexing && s.Hidden == 0 && s.Count == 3 })
+}
+
 func TestPreviewQualityNeverDownloadsFullFiles(t *testing.T) {
 	nas, syn := newFakeNAS(t)
 	svc, wait := startService(t, Options{Source: syn, PreferOriginal: false})

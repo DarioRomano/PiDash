@@ -29,7 +29,15 @@ type File struct {
 	Port    *Port    `json:"port,omitempty"`
 	Weather *Weather `json:"weather,omitempty"`
 	Photos  *Photos  `json:"photos,omitempty"`
+	Screen  *Screen  `json:"screen,omitempty"`
 	Apps    *[]App   `json:"apps,omitempty"`
+}
+
+// Screen settings.
+type Screen struct {
+	// NightStart and NightEnd ("HH:MM") bound the night mode; both empty is off.
+	NightStart string `json:"nightStart"`
+	NightEnd   string `json:"nightEnd"`
 }
 
 // Port records a port fallback. It applies only while config.toml still asks
@@ -55,8 +63,10 @@ type Photos struct {
 	Motion string `json:"motion,omitempty"`
 	// PairPortraits shows two upright photos side by side; absent leaves
 	// config.toml in charge.
-	PairPortraits *bool    `json:"pairPortraits,omitempty"`
-	Synology      Synology `json:"synology"`
+	PairPortraits *bool `json:"pairPortraits,omitempty"`
+	// OnThisDay prefers photos taken on today's date in earlier years.
+	OnThisDay *bool    `json:"onThisDay,omitempty"`
+	Synology  Synology `json:"synology"`
 }
 
 // Synology is the connection to Synology Photos.
@@ -96,10 +106,12 @@ type App struct {
 	// any more. It is for display and not stored.
 	Missing bool `json:"missing,omitempty"`
 	// URL is the address for KindWeb, and for presets that need one.
-	URL       string `json:"url,omitempty"`
-	Browser   string `json:"browser,omitempty"`
-	AdBlock   bool   `json:"adblock,omitempty"`
-	UserAgent string `json:"userAgent,omitempty"`
+	URL     string `json:"url,omitempty"`
+	Browser string `json:"browser,omitempty"`
+	// Zoom enlarges a website; 0 leaves it at its normal size.
+	Zoom      float64 `json:"zoom,omitempty"`
+	AdBlock   bool    `json:"adblock,omitempty"`
+	UserAgent string  `json:"userAgent,omitempty"`
 	// Detail describes a KindFile entry for display; it is not stored.
 	Detail string `json:"detail,omitempty"`
 }
@@ -113,8 +125,10 @@ type Preset struct {
 	NeedsURL bool   `json:"needsUrl"`
 	URLHint  string `json:"urlHint,omitempty"`
 	// Console is true for programs that run outside the desktop.
-	Console bool       `json:"console"`
-	App     config.App `json:"-"`
+	Console bool `json:"console"`
+	// Web is true for websites, which can be enlarged.
+	Web bool       `json:"web"`
+	App config.App `json:"-"`
 }
 
 // youTubeTV makes YouTube serve its TV interface, which works with a remote.
@@ -137,6 +151,16 @@ var Presets = []Preset{
 		App: config.App{Command: "kodi-standalone", Mode: config.AppModeConsole}},
 	{ID: "steamlink", Name: "Steam Link", Description: "Game streaming from Steam. Needs Steam Link installed",
 		App: config.App{Command: "steamlink", Mode: config.AppModeDesktop}},
+}
+
+// presetsForPage marks which presets are websites.
+func presetsForPage() []Preset {
+	out := make([]Preset, len(Presets))
+	for i, p := range Presets {
+		p.Web = p.App.URL != "" || p.NeedsURL
+		out[i] = p
+	}
+	return out
 }
 
 func preset(id string) (Preset, bool) {
@@ -245,6 +269,9 @@ func apply(base config.Config, f File, installed []desktop.Entry) (config.Config
 		if p.PairPortraits != nil {
 			cfg.Photos.PairPortraits = *p.PairPortraits
 		}
+		if p.OnThisDay != nil {
+			cfg.Photos.OnThisDay = *p.OnThisDay
+		}
 		if p.Source == config.PhotoSourceSynology {
 			cfg.Photos.Synology.URL = p.Synology.URL
 			cfg.Photos.Synology.Username = p.Synology.Username
@@ -254,6 +281,10 @@ func apply(base config.Config, f File, installed []desktop.Entry) (config.Config
 				cfg.Photos.Synology.Quality = p.Synology.Quality
 			}
 		}
+	}
+
+	if sc := f.Screen; sc != nil {
+		cfg.Display.NightStart, cfg.Display.NightEnd = strings.TrimSpace(sc.NightStart), strings.TrimSpace(sc.NightEnd)
 	}
 
 	if f.Apps != nil {
@@ -328,6 +359,9 @@ func resolve(a App, base config.Config, installed []desktop.Entry) (config.App, 
 				return config.App{}, errors.New("an address is needed")
 			}
 		}
+		if app.URL != "" {
+			app.Zoom = a.Zoom
+		}
 		return app, nil
 	case KindWeb:
 		name := strings.TrimSpace(a.Name)
@@ -335,7 +369,7 @@ func resolve(a App, base config.Config, installed []desktop.Entry) (config.App, 
 			return config.App{}, errors.New("a name is needed")
 		}
 		app := config.App{ID: slug(name), Name: name, URL: strings.TrimSpace(a.URL), Browser: a.Browser,
-			AdBlock: a.AdBlock, UserAgent: strings.TrimSpace(a.UserAgent)}
+			AdBlock: a.AdBlock, UserAgent: strings.TrimSpace(a.UserAgent), Zoom: a.Zoom}
 		if app.AdBlock {
 			app.Browser = config.BrowserFirefox // the ad blocker only exists for Firefox
 		}
@@ -349,7 +383,7 @@ func describe(app config.App) App {
 	for _, p := range Presets {
 		same := app.ID == p.ID && app.Command == p.App.Command && (p.NeedsURL || app.URL == p.App.URL)
 		if same && (p.App.Command != "" || app.URL != "") {
-			out := App{Kind: KindPreset, ID: app.ID, Name: app.Name, Preset: p.ID}
+			out := App{Kind: KindPreset, ID: app.ID, Name: app.Name, Preset: p.ID, Zoom: app.Zoom}
 			if p.NeedsURL {
 				out.URL = app.URL
 			}
@@ -357,7 +391,7 @@ func describe(app config.App) App {
 		}
 	}
 	if app.URL != "" {
-		return App{Kind: KindWeb, ID: app.ID, Name: app.Name, URL: app.URL, Browser: app.Browser, AdBlock: app.AdBlock, UserAgent: app.UserAgent}
+		return App{Kind: KindWeb, ID: app.ID, Name: app.Name, URL: app.URL, Browser: app.Browser, AdBlock: app.AdBlock, UserAgent: app.UserAgent, Zoom: app.Zoom}
 	}
 	return App{Kind: KindFile, ID: app.ID, Name: app.Name, Detail: app.Command}
 }
@@ -366,6 +400,7 @@ func describe(app config.App) App {
 type View struct {
 	Weather WeatherView `json:"weather"`
 	Photos  PhotosView  `json:"photos"`
+	Screen  Screen      `json:"screen"`
 	Apps    []App       `json:"apps"`
 	Presets []Preset    `json:"presets"`
 	// Installed are the programs on the Pi that can be added to the app row.
@@ -387,6 +422,7 @@ type PhotosView struct {
 	IntervalSeconds int          `json:"intervalSeconds"`
 	Motion          string       `json:"motion"`
 	PairPortraits   bool         `json:"pairPortraits"`
+	OnThisDay       bool         `json:"onThisDay"`
 	Synology        SynologyView `json:"synology"`
 	// FolderPath is the folder configured in config.toml, if any.
 	FolderPath string `json:"folderPath"`
@@ -423,13 +459,14 @@ func (s *Store) View() View {
 			Coordinates: cfg.Weather.Latitude != nil},
 		Photos: PhotosView{
 			Source: cfg.Photos.Source, IntervalSeconds: int(cfg.Photos.Interval.Duration / time.Second),
-			Motion: cfg.Photos.Motion, PairPortraits: cfg.Photos.PairPortraits,
+			Motion: cfg.Photos.Motion, PairPortraits: cfg.Photos.PairPortraits, OnThisDay: cfg.Photos.OnThisDay,
 			Synology: SynologyView{URL: cfg.Photos.Synology.URL, Username: cfg.Photos.Synology.Username,
 				PasswordSet: cfg.Photos.Synology.Password != "", InsecureTLS: cfg.Photos.Synology.InsecureTLS,
 				Quality: cfg.Photos.Synology.Quality},
 		},
+		Screen:  Screen{NightStart: cfg.Display.NightStart, NightEnd: cfg.Display.NightEnd},
 		Apps:    []App{},
-		Presets: Presets,
+		Presets: presetsForPage(),
 	}
 	if strings.HasPrefix(s.base.Photos.Folder.Path, "/") && s.base.Photos.Source == config.PhotoSourceFolder {
 		v.Photos.FolderPath = s.base.Photos.Folder.Path
@@ -458,6 +495,7 @@ func (s *Store) View() View {
 type Update struct {
 	Weather *Weather `json:"weather"`
 	Photos  *Photos  `json:"photos"`
+	Screen  *Screen  `json:"screen"`
 	Apps    *[]App   `json:"apps"`
 }
 
@@ -492,6 +530,10 @@ func (s *Store) Save(u Update) error {
 			}
 		}
 		next.Photos = &p
+	}
+	if u.Screen != nil {
+		sc := *u.Screen
+		next.Screen = &sc
 	}
 	if u.Apps != nil {
 		apps := make([]App, 0, len(*u.Apps))

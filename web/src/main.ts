@@ -104,26 +104,30 @@ function showCaption(item: PhotoItem | null) {
     captionEl.textContent = "";
     return;
   }
-  // "Holiday · June 2024": the innermost folder and when the photo was taken.
+  // "Holiday · Sintra, Portugal · 14 June 2024": the innermost folder, the
+  // place if the photo carries one, and the day it was taken.
   const folder = item.folder.split(" / ").pop() ?? "";
   const taken = new Date(item.taken);
   const when = isNaN(taken.getTime()) || taken.getFullYear() < 1990
     ? ""
-    : new Intl.DateTimeFormat(dateLocale, { month: "long", year: "numeric" }).format(taken);
-  captionEl.textContent = [folder, when].filter(Boolean).join("  ·  ");
+    : new Intl.DateTimeFormat(dateLocale, { day: "numeric", month: "long", year: "numeric" }).format(taken);
+  captionEl.textContent = [folder, item.place, when].filter(Boolean).join("  ·  ");
 }
 
 // Without a photo on screen, the background is a slow play of colours.
 const ambient = new Ambient($<HTMLCanvasElement>("#ambient"), $("#grain"));
 let photoShowing = false;
 function updateAmbient() {
-  ambient.setActive(!photoShowing && appsStatus.running === "" && document.visibilityState === "visible" && !tvAsleep);
+  ambient.setActive(!photoShowing && appsStatus.running === "" && document.visibilityState === "visible" && !tvAsleep && !nightNow);
 }
 
+let shownPhoto: PhotoItem | null = null;
 const slideshow = new Slideshow($("#backdrop"), (item) => {
   photoShowing = item !== null;
+  shownPhoto = item;
   updateAmbient();
   showCaption(item);
+  rail.setItems(railItems()); // the "hide this photo" tile follows the photo
 });
 let photosHintShown = false;
 
@@ -140,9 +144,51 @@ let tvAsleep = false;
 
 function updateSuspended() {
   // Do not load photos while an app covers the dashboard, the page is hidden,
-  // or the TV has been switched off for the night.
-  slideshow.setSuspended(appsStatus.running !== "" || document.visibilityState !== "visible" || tvAsleep);
+  // the TV has been switched off for the night, or night mode shows only a clock.
+  slideshow.setSuspended(appsStatus.running !== "" || document.visibilityState !== "visible" || tvAsleep || nightNow);
   updateAmbient();
+}
+
+// --- Night mode -----------------------------------------------------------------
+// Between two times of day the screen shows only a dim clock on black. Any
+// button brings the dashboard back for a minute.
+
+let nightHours: [number, number] | null = null; // minutes after midnight
+let nightNow = false;
+let awakeUntil = 0;
+
+function minutesOf(clock: string): number {
+  const [h, m] = clock.split(":").map(Number);
+  return h * 60 + m;
+}
+
+function updateNight() {
+  let night = false;
+  if (nightHours) {
+    const d = new Date();
+    const now = d.getHours() * 60 + d.getMinutes();
+    const [from, to] = nightHours;
+    night = from <= to ? now >= from && now < to : now >= from || now < to;
+  }
+  night = night && Date.now() > awakeUntil;
+  if (night === nightNow) return;
+  nightNow = night;
+  stage.classList.toggle("night", night);
+  if (night) {
+    rail.close();
+    weather.close();
+  }
+  updateSuspended();
+}
+window.setInterval(updateNight, 15_000);
+
+/** A button was pressed. Returns true when that press only woke the screen. */
+function wakeFromNight(): boolean {
+  if (!nightHours) return false;
+  const wasNight = nightNow;
+  awakeUntil = Date.now() + 60_000;
+  updateNight();
+  return wasNight;
 }
 
 // --- Weather ------------------------------------------------------------------
@@ -181,6 +227,10 @@ function openSettings() {
 
 // --- Panel rail and apps ------------------------------------------------------
 
+const HIDE_ID = "__hide:";
+const HIDE_GLYPH =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M3 3l18 18M10.6 6.2A9.8 9.8 0 0 1 12 6c5 0 8.5 4.5 9.5 6-.4.7-1.300 1.900-2.600 3.100M6.300 7.700C4.300 9 3 10.900 2.500 12c1 1.500 4.500 6 9.500 6 1.300 0 2.500-.300 3.600-.800M9.900 9.900a3 3 0 0 0 4.200 4.200"/></svg>';
 const EXIT_ID = "__desktop";
 const EXIT_GLYPH =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
@@ -243,6 +293,17 @@ function railItems(): RailItem[] {
       sub: running ? "Running · OK to stop" : "",
     });
   }
+  // A photo that should not come up again can be hidden; of two side by
+  // side, either one.
+  if (shownPhoto) {
+    const keys = shownPhoto.key.split("+");
+    if (keys.length === 2) {
+      items.push({ id: HIDE_ID + keys[0], label: "Hide left photo", glyph: HIDE_GLYPH });
+      items.push({ id: HIDE_ID + keys[1], label: "Hide right photo", glyph: HIDE_GLYPH });
+    } else {
+      items.push({ id: HIDE_ID + keys[0], label: "Hide this photo", glyph: HIDE_GLYPH });
+    }
+  }
   items.push({ id: SETTINGS_ID, label: "Settings", glyph: GEAR_GLYPH });
   items.push({ id: EXIT_ID, label: "Desktop", glyph: EXIT_GLYPH });
   return items;
@@ -281,6 +342,16 @@ async function activateRailItem(item: RailItem) {
   }
   if (item.id === SETTINGS_ID) {
     openSettings();
+    return;
+  }
+  if (item.id.startsWith(HIDE_ID)) {
+    rail.close();
+    try {
+      const res = await postJSON("/api/photos/hide", { keys: [item.id.slice(HIDE_ID.length)] });
+      toast(res.ok ? "Hidden. It can be brought back under Settings, Background photos." : (await res.text()).trim(), 6000);
+    } catch {
+      toast("The PiDash backend is not reachable.", 6000);
+    }
     return;
   }
   const stopping = appsStatus.running === item.id;
@@ -328,6 +399,8 @@ function applyConfig(cfg: ClientConfig) {
   input.setDebugElement(d.debug_keys ? debug : null);
   if (!d.debug_keys) debug.hidden = true;
   startPixelShift(d.pixel_shift);
+  nightHours = d.night_start && d.night_end ? [minutesOf(d.night_start), minutesOf(d.night_end)] : null;
+  updateNight();
   railTimeoutMs = (d.app_row_timeout ?? 30) * 1000;
   railActivity();
   sysBadge.hidden = !d.debug_keys;
@@ -416,6 +489,8 @@ function stirAmbient(action: Action) {
 }
 
 input.on((action) => {
+  // In night mode the first press only brings the dashboard back.
+  if (wakeFromNight() && action !== "exit") return;
   railActivity();
   stirAmbient(action);
   if (action === "exit") {

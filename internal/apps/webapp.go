@@ -96,6 +96,10 @@ func PrepareWebApp(app config.App, dataDir string, env []string, log *slog.Logge
 		if app.UserAgent != "" {
 			argv = append(argv, "--user-agent="+app.UserAgent)
 		}
+		if app.Zoom > 0 && app.Zoom != 1 {
+			// Everything is drawn larger, as on a screen with bigger pixels.
+			argv = append(argv, "--force-device-scale-factor="+strconv.FormatFloat(app.Zoom, 'f', 2, 64))
+		}
 		return WebLaunch{Argv: append(argv, app.URL), Env: env}, nil
 	}
 	return WebLaunch{}, fmt.Errorf("unknown browser %q", app.Browser)
@@ -127,6 +131,12 @@ func firefoxPrefs(app config.App) string {
 	pref("toolkit.startup.max_resumed_crashes", -1)
 	pref("browser.tabs.warnOnClose", false)
 	pref("browser.translations.automaticallyPopup", false)
+	// Size: -1.0 is "as the screen says"; a zoom draws everything that much larger.
+	scale := "-1.0"
+	if app.Zoom > 0 && app.Zoom != 1 {
+		scale = strconv.FormatFloat(app.Zoom, 'f', 2, 64)
+	}
+	pref("layout.css.devPixelsPerPx", scale)
 	// Video: play without a click, allow DRM, no "is now fullscreen" banner.
 	pref("media.autoplay.default", 0)
 	pref("media.autoplay.blocking_policy", 0)

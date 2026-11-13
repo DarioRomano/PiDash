@@ -7,6 +7,8 @@ interface AppEntry {
   id?: string;
   name: string;
   preset?: string;
+  /** How much larger a website is drawn; 0 or absent is normal size. */
+  zoom?: number;
   /** The menu entry of an installed program, for kind "desktop". */
   desktop?: string;
   /** The program is not installed any more. */
@@ -25,6 +27,7 @@ interface Preset {
   needsUrl: boolean;
   urlHint?: string;
   console: boolean;
+  web: boolean;
 }
 
 interface Info {
@@ -34,9 +37,11 @@ interface Info {
     intervalSeconds: number;
     motion: string;
     pairPortraits: boolean;
+    onThisDay: boolean;
     synology: { url: string; username: string; passwordSet: boolean; insecureTls: boolean; quality: string };
     folderPath: string;
   };
+  screen: { nightStart: string; nightEnd: string };
   apps: AppEntry[];
   presets: Preset[];
   /** Programs installed on the Pi, as its application menu lists them. */
@@ -117,6 +122,7 @@ function readForm() {
       intervalSeconds: Math.max(5, Math.round(Number(val("p-interval")) || 30)),
       motion: val("p-motion") || "off",
       pairPortraits: $<HTMLInputElement>("p-pairs").checked,
+      onThisDay: $<HTMLInputElement>("p-today").checked,
       synology: {
         url: val("s-url").trim(),
         username: val("s-user").trim(),
@@ -125,6 +131,8 @@ function readForm() {
         quality: val("s-quality"),
       },
     },
+    // Night mode needs both times; "Off" in the first switches it off.
+    screen: val("n-start") ? { nightStart: val("n-start"), nightEnd: val("n-end") || "07:00" } : { nightStart: "", nightEnd: "" },
     apps: apps.map(({ detail: _detail, missing: _missing, ...rest }) => rest),
   };
 }
@@ -136,6 +144,8 @@ function refresh() {
   $("p-interval-row").hidden = source === "";
   $("p-motion-row").hidden = source === "";
   $("p-pairs-row").hidden = source === "";
+  $("p-today-row").hidden = source === "";
+  $<HTMLSelectElement>("n-end").disabled = val("n-start") === "";
   const motion = val("p-motion");
   $("p-motion-hint").hidden = source === "" || motion === "off";
   $("p-motion-hint").textContent =
@@ -173,6 +183,10 @@ function fill(i: Info) {
   $<HTMLInputElement>("p-interval").value = String(i.photos.intervalSeconds || 30);
   $<HTMLSelectElement>("p-motion").value = i.photos.motion || "off";
   $<HTMLInputElement>("p-pairs").checked = !!i.photos.pairPortraits;
+  $<HTMLInputElement>("p-today").checked = !!i.photos.onThisDay;
+  fillTimes($<HTMLSelectElement>("n-start"), i.screen.nightStart, "Off");
+  fillTimes($<HTMLSelectElement>("n-end"), i.screen.nightEnd || "07:00");
+  void showHidden();
 
   apps = i.apps.map((a) => ({ ...a }));
   renderApps();
@@ -187,6 +201,35 @@ function fill(i: Info) {
   savedState = JSON.stringify(readForm());
   refresh();
 }
+
+// --- Night hours and hidden photos ------------------------------------------------
+
+/** Fills a list with the times of day in half-hour steps, keeping an odd saved time. */
+function fillTimes(sel: HTMLSelectElement, value: string, off?: string) {
+  const times: string[] = [];
+  for (let m = 0; m < 24 * 60; m += 30) times.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`);
+  const padded = value && value.length === 4 ? "0" + value : value;
+  if (padded && !times.includes(padded)) times.push(padded);
+  times.sort();
+  sel.replaceChildren(...(off ? [new Option(off, "")] : []), ...times.map((t) => new Option(t, t)));
+  sel.value = padded;
+}
+
+async function showHidden() {
+  try {
+    const st: { hidden?: number } = await (await fetch("/api/photos", { cache: "no-store" })).json();
+    const n = st.hidden ?? 0;
+    $("p-hidden-row").hidden = n === 0;
+    $("p-hidden").textContent = n === 1 ? "1 photo is hidden from the slideshow." : `${n} photos are hidden from the slideshow.`;
+  } catch {
+    $("p-hidden-row").hidden = true;
+  }
+}
+
+$("p-unhide").addEventListener("click", async () => {
+  await send("POST", "/api/photos/unhide", {});
+  await showHidden();
+});
 
 // --- Apps -----------------------------------------------------------------------
 
@@ -235,8 +278,26 @@ function renderApps() {
         });
         return b;
       };
+      // Websites can be drawn larger, for a 4K screen seen from the sofa.
+      const isWeb = a.kind === "web" || (a.kind === "preset" && !!presetOf(a)?.web);
+      if (isWeb) {
+        const size = document.createElement("select");
+        size.className = "size";
+        size.title = "Size";
+        size.setAttribute("aria-label", `Size of ${name.textContent}`);
+        for (const z of [1, 1.25, 1.5, 1.75, 2, 2.5, 3]) size.add(new Option(`${Math.round(z * 100)}%`, String(z)));
+        size.value = String(a.zoom && a.zoom !== 1 ? a.zoom : 1);
+        size.addEventListener("change", () => {
+          const z = Number(size.value);
+          if (z === 1) delete a.zoom;
+          else a.zoom = z;
+          refresh();
+        });
+        li.append(what, size);
+      } else {
+        li.append(what);
+      }
       li.append(
-        what,
         button("↑", "Move up", i === 0, () => apps.splice(i - 1, 0, ...apps.splice(i, 1))),
         button("↓", "Move down", i === apps.length - 1, () => apps.splice(i + 1, 0, ...apps.splice(i, 1))),
         button("✕", "Remove", false, () => apps.splice(i, 1)),
@@ -391,7 +452,7 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
-for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs"]) {
+for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "n-start", "n-end"]) {
   $(id).addEventListener("input", refresh);
   $(id).addEventListener("change", refresh);
 }

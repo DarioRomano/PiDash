@@ -95,7 +95,27 @@
         </label>
         <p id="p-motion-hint" class="hint"></p>
         <label class="check" id="p-pairs-row"><input id="p-pairs" type="checkbox" /><span>Show two upright photos side by side</span></label>
+        <label class="check" id="p-today-row"><input id="p-today" type="checkbox" /><span>Start with photos taken on this day in earlier years</span></label>
+        <div id="p-hidden-row" class="pair" hidden>
+          <p id="p-hidden" class="hint"></p>
+          <button id="p-unhide" type="button" class="secondary">Show them again</button>
+        </div>
         <a id="p-folders" class="link" href="/photos" hidden>Choose folders and albums<span>›</span></a>
+      </section>
+
+      <section class="card">
+        <h2>Night</h2>
+        <p class="hint">Between these times the TV shows only a dim clock on black. Any button brings the dashboard back for a minute.</p>
+        <div class="pair">
+          <label class="field">
+            <span>From</span>
+            <select id="n-start"></select>
+          </label>
+          <label class="field">
+            <span>Until</span>
+            <select id="n-end"></select>
+          </label>
+        </div>
       </section>
 
       <section class="card">

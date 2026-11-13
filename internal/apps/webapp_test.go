@@ -142,7 +142,7 @@ func TestChromiumWebApp(t *testing.T) {
 	os.MkdirAll(filepath.Join(profile, "Default"), 0o700)
 	os.WriteFile(filepath.Join(profile, "Default", "Preferences"), []byte(`{"profile":{"exit_type":"Crashed","exited_cleanly":false}}`), 0o600)
 
-	app := config.App{ID: "netflix", URL: "https://www.netflix.com/browse", Browser: config.BrowserChromium, UserAgent: "TestUA/1.0"}
+	app := config.App{ID: "netflix", URL: "https://www.netflix.com/browse", Browser: config.BrowserChromium, UserAgent: "TestUA/1.0", Zoom: 1.5}
 	launch, err := PrepareWebApp(app, data, []string{"DISPLAY=:0"}, quiet)
 	if err != nil {
 		t.Fatal(err)
@@ -150,7 +150,7 @@ func TestChromiumWebApp(t *testing.T) {
 	if launch.Argv[0] != filepath.Join(bin, "chromium-browser") || launch.Argv[len(launch.Argv)-1] != "https://www.netflix.com/browse" {
 		t.Errorf("argv = %q", launch.Argv)
 	}
-	for _, flag := range []string{"--kiosk", "--ozone-platform=x11", "--user-data-dir=" + profile, "--user-agent=TestUA/1.0"} {
+	for _, flag := range []string{"--kiosk", "--ozone-platform=x11", "--user-data-dir=" + profile, "--user-agent=TestUA/1.0", "--force-device-scale-factor=1.50"} {
 		if !slices.Contains(launch.Argv, flag) {
 			t.Errorf("argv is missing %s: %q", flag, launch.Argv)
 		}
@@ -166,5 +166,16 @@ func TestMissingBrowserIsReportedClearly(t *testing.T) {
 	_, err := PrepareWebApp(config.App{ID: "a", URL: "https://example.com", Browser: config.BrowserFirefox}, t.TempDir(), nil, quiet)
 	if err == nil || !strings.Contains(err.Error(), "Firefox is not installed") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+func TestZoomReachesTheBrowser(t *testing.T) {
+	plain := firefoxPrefs(config.App{ID: "a", URL: "https://example.org"})
+	if !strings.Contains(plain, `user_pref("layout.css.devPixelsPerPx", "-1.0");`) {
+		t.Errorf("without zoom Firefox must follow the screen:\n%s", plain)
+	}
+	big := firefoxPrefs(config.App{ID: "a", URL: "https://example.org", Zoom: 1.5})
+	if !strings.Contains(big, `user_pref("layout.css.devPixelsPerPx", "1.50");`) {
+		t.Errorf("zoom 1.5 is missing from the Firefox profile:\n%s", big)
 	}
 }

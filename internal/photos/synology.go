@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -35,6 +36,9 @@ type Synology struct {
 	roots    map[string]int // space -> root folder id
 	albums   []album        // the last album list, kept briefly
 	albumsAt time.Time
+
+	// noAddress is set once the NAS has refused to list place names.
+	noAddress atomic.Bool
 }
 
 // SynologyOptions configure the connection to the NAS.
@@ -407,7 +411,29 @@ type rawItem struct {
 			CacheKey string `json:"cache_key"`
 			UnitID   int    `json:"unit_id"`
 		} `json:"thumbnail"`
+		// Address is where the photo was taken, when it carries a position.
+		Address map[string]any `json:"address"`
 	} `json:"additional"`
+}
+
+// placeName turns the NAS's address of a photo into "Town, Country".
+func placeName(address map[string]any) string {
+	field := func(names ...string) string {
+		for _, n := range names {
+			if v, ok := address[n].(string); ok && strings.TrimSpace(v) != "" {
+				return strings.TrimSpace(v)
+			}
+		}
+		return ""
+	}
+	town, country := field("city", "town", "village", "county", "state"), field("country")
+	switch {
+	case town != "" && country != "":
+		return town + ", " + country
+	case town != "":
+		return town
+	}
+	return country
 }
 
 // listItems reads every page of a photo list. where selects the list (a folder
@@ -420,16 +446,34 @@ func (s *Synology) listItems(ctx context.Context, api string, where url.Values, 
 		var data struct {
 			List []rawItem `json:"list"`
 		}
-		params := url.Values{
-			"api": {api}, "version": {"1"}, "method": {"list"},
-			"offset": {strconv.Itoa(offset)}, "limit": {strconv.Itoa(page)},
-			"additional": {`["thumbnail"]`},
+		list := func(additional string) error {
+			params := url.Values{
+				"api": {api}, "version": {"1"}, "method": {"list"},
+				"offset": {strconv.Itoa(offset)}, "limit": {strconv.Itoa(page)},
+				"additional": {additional},
+			}
+			for k, v := range where {
+				params[k] = v
+			}
+			data.List = nil
+			return s.call(ctx, params, &data)
 		}
-		for k, v := range where {
-			params[k] = v
+		// Place names are a bonus: a NAS that does not offer them for this
+		// list is asked without, from then on.
+		err := errors.New("without places")
+		if !s.noAddress.Load() {
+			if err = list(`["thumbnail","address"]`); err != nil {
+				var apiErr *synoError
+				if !errors.As(err, &apiErr) || isSessionError(err) {
+					return out, err
+				}
+				s.noAddress.Store(true)
+			}
 		}
-		if err := s.call(ctx, params, &data); err != nil {
-			return out, err
+		if err != nil {
+			if err = list(`["thumbnail"]`); err != nil {
+				return out, err
+			}
 		}
 		for _, it := range data.List {
 			// Photos and "live" photos have a still image; videos are skipped.
@@ -450,6 +494,7 @@ func (s *Synology) listItems(ctx context.Context, api string, where url.Values, 
 				Name:    name,
 				Folder:  label,
 				Taken:   time.Unix(it.Time, 0).UTC(),
+				Place:   placeName(it.Additional.Address),
 				Version: it.Additional.Thumbnail.CacheKey,
 				ID:      space + ":" + strconv.Itoa(unit) + suffix,
 			})

@@ -76,6 +76,12 @@ html, body {
 }
 #backdrop img.visible { opacity: 1; }
 
+/* Night mode: a dim clock on black, nothing else. */
+#stage.night #backdrop, #stage.night #scrim, #stage.night #caption, #stage.night #weather,
+#stage.night #agenda, #stage.night #status, #stage.night #hud { opacity: 0; }
+#stage.night #overlay { opacity: 0.32; }
+#backdrop, #caption, #weather { transition: opacity 1.6s ease-in-out; }
+
 #scrim {
   position: absolute;
   inset: 0;

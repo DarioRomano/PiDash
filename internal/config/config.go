@@ -45,6 +45,10 @@ type Display struct {
 	// AppRowTimeout closes the app row after this many seconds without a
 	// key press or pointer movement, returning to the clock. 0 keeps it open.
 	AppRowTimeout int `toml:"app_row_timeout" json:"app_row_timeout"`
+	// NightStart and NightEnd ("HH:MM") bound the hours in which the
+	// dashboard shows only a dim clock on black. Both empty switches it off.
+	NightStart string `toml:"night_start" json:"night_start"`
+	NightEnd   string `toml:"night_end" json:"night_end"`
 	// Use 24-hour time.
 	Clock24h bool `toml:"clock_24h" json:"clock_24h"`
 	// Locale used for date formatting, e.g. "en-GB". Empty uses the browser default.
@@ -157,6 +161,8 @@ type Photos struct {
 	Motion string `toml:"motion"`
 	// PairPortraits shows two upright photos side by side.
 	PairPortraits bool `toml:"pair_portraits"`
+	// OnThisDay shows photos taken on today's date in earlier years first.
+	OnThisDay bool `toml:"on_this_day"`
 	// CacheMB limits the disk space used for rendered photos.
 	CacheMB  int            `toml:"cache_mb"`
 	Synology SynologyPhotos `toml:"synology"`
@@ -226,6 +232,9 @@ type App struct {
 	// Icon is optional: a path to an SVG or PNG, or an icon name. When empty
 	// the icon of the installed program or a built-in one is used.
 	Icon string `toml:"icon"`
+	// Zoom enlarges a web app, for sites drawn too small on a 4K screen:
+	// 1.5 shows everything half as large again. 0 or 1 leaves it alone.
+	Zoom float64 `toml:"zoom"`
 }
 
 var appIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
@@ -384,11 +393,14 @@ func (c *Config) Finish() error {
 			if a.AdBlock && a.Browser != BrowserFirefox {
 				return fmt.Errorf("apps[%d] (%s): adblock = true needs browser = %q", i, a.ID, BrowserFirefox)
 			}
+			if a.Zoom != 0 && (a.Zoom < 0.5 || a.Zoom > 4) {
+				return fmt.Errorf("apps[%d] (%s): zoom must be between 0.5 and 4, got %v", i, a.ID, a.Zoom)
+			}
 			if strings.ContainsAny(a.UserAgent, "\r\n") {
 				return fmt.Errorf("apps[%d] (%s): user_agent must be a single line", i, a.ID)
 			}
-		} else if a.Browser != "" || a.AdBlock || a.UserAgent != "" {
-			return fmt.Errorf("apps[%d] (%s): browser, adblock and user_agent only apply to web apps (url)", i, a.ID)
+		} else if a.Browser != "" || a.AdBlock || a.UserAgent != "" || a.Zoom != 0 {
+			return fmt.Errorf("apps[%d] (%s): browser, adblock, user_agent and zoom only apply to web apps (url)", i, a.ID)
 		}
 	}
 	if err := c.Photos.validate(); err != nil {
@@ -457,6 +469,14 @@ func (p *Photos) validate() error {
 }
 
 func (c Config) validate() error {
+	if (c.Display.NightStart == "") != (c.Display.NightEnd == "") {
+		return fmt.Errorf("display.night_start and display.night_end must both be set, or both be empty")
+	}
+	for name, v := range map[string]string{"night_start": c.Display.NightStart, "night_end": c.Display.NightEnd} {
+		if v != "" && !clockPattern.MatchString(v) {
+			return fmt.Errorf("display.%s must be a time like 22:30, got %q", name, v)
+		}
+	}
 	if c.Display.AppRowTimeout < 0 || c.Display.AppRowTimeout > 3600 {
 		return fmt.Errorf("display.app_row_timeout must be between 0 and 3600 seconds, got %d", c.Display.AppRowTimeout)
 	}

@@ -158,14 +158,15 @@ sofa.
 
 ### Settings
 
-Weather, background photos and apps are set up on the settings page. It needs
-typing, so it is made for your phone or computer:
+Weather, background photos, the calendar, night hours and apps are set up on
+the settings page.
 
-- **On your phone or computer:** open `http://<pi-ip>:8080/settings`. It is
-  also linked at the bottom of the phone remote.
-- **On the TV:** choose **Settings** in the app row, or press **S**. The TV
-  shows the address to open. With a mouse and keyboard on the Pi, pressing OK
-  opens the page right there.
+- **On the TV:** choose **Settings** in the app row, or press **S**. The page
+  opens on the TV and works with the remote alone: arrows move, OK presses a
+  button, opens a list, or opens an on-screen keyboard for text, and Back
+  leaves, offering to save first.
+- **On a phone or computer:** open `http://<pi-ip>:8080/settings`. Long
+  entries such as an address are quicker to type there.
 
 What it covers:
 
@@ -174,9 +175,13 @@ What it covers:
 - **Background photos:** where photos come from, the connection to Synology
   Photos with a **Test connection** button, the picture quality, how long
   each photo stays, whether photos move, and whether two upright photos
-  share the screen (see below). After saving, **Choose folders and albums** takes you to
-  the picker.
-- **Apps:** the app row. Add from a list of ready-made apps (YouTube, Netflix,
+  share the screen (see below). After saving, **Choose folders and albums**
+  takes you to the picker.
+- **Night:** hours in which the TV shows only a dim clock on black. Any button
+  brings the dashboard back for a minute.
+- **Apps:** the app row. Websites have a **size** next to them: 150% or 200%
+  makes Netflix, Plex or Synology Photos readable on a 4K screen.
+- **Apps, adding:** Add from a list of ready-made apps (YouTube, Netflix,
   Synology Photos, Plex, Moonlight, Kodi, Steam Link), any program installed
   on the Pi, or any website by address. Reorder them, and remove them.
 
@@ -356,6 +361,18 @@ The movement is spread over the time a photo is shown, so a longer time per
 photo means slower movement. After changing the setting, photos are prepared
 again as they come up. If the system is set to reduce motion, photos stand
 still.
+
+**On this day.** With **Start with photos taken on this day in earlier
+years** (`on_this_day = true`), each round of the slideshow begins with the
+photos from today's date in past years, when there are any.
+
+**Captions.** Press Up on the dashboard for the caption: the folder or album,
+the place where the photo was taken when the NAS knows it, and the date.
+
+**Hiding a photo.** While a photo is showing, the app row has a **Hide this
+photo** tile (for two side by side, one tile each). A hidden photo never comes
+up again; **Show them again** on the settings page brings all of them back.
+Nothing is deleted or changed on the NAS.
 
 **Two upright photos at a time.** With **Show two upright photos side by
 side** on the settings page (`pair_portraits = true` under `[photos]`), a

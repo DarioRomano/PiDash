@@ -38,11 +38,14 @@ type fakeNAS struct {
 	t  *testing.T
 	mu sync.Mutex
 
-	password     string
-	sharedOff    bool
-	sid          int
-	logins       int
-	thumbs       int
+	password  string
+	sharedOff bool
+	sid       int
+	logins    int
+	thumbs    int
+	// noPlaces makes the NAS refuse to list where photos were taken.
+	noPlaces     bool
+	placeAsks    int
 	peeks        int // of the thumbs, the small ones asked for to learn a photo's shape
 	downloads    int
 	breakFolders bool
@@ -234,13 +237,25 @@ func (n *fakeNAS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		wantsPlaces := strings.Contains(r.Form.Get("additional"), "address")
+		if wantsPlaces {
+			n.placeAsks++
+			if n.noPlaces {
+				fail(120)
+				return
+			}
+		}
 		offset, limit := atoi("offset"), atoi("limit")
 		list := []map[string]any{}
 		for i := offset; i < len(all) && i < offset+limit; i++ {
 			it := all[i]
+			additional := map[string]any{"thumbnail": map[string]any{"cache_key": fmt.Sprintf("%d_1", it.ID), "unit_id": it.ID, "xl": "ready"}}
+			if wantsPlaces && it.ID == 10 {
+				additional["address"] = map[string]any{"city": "", "town": "Sintra", "country": "Portugal", "country_id": "PT"}
+			}
 			entry := map[string]any{
 				"id": it.ID, "filename": it.Filename, "type": it.Type, "time": 1700000000 + it.ID,
-				"additional": map[string]any{"thumbnail": map[string]any{"cache_key": fmt.Sprintf("%d_1", it.ID), "unit_id": it.ID, "xl": "ready"}},
+				"additional": additional,
 			}
 			if owners != nil && !n.hideOwner {
 				entry["owner_user_id"] = owners[i]
@@ -535,4 +550,30 @@ func TestSynologyAlbumListIsReusedWhileIndexing(t *testing.T) {
 	if nas.albumCalls != 1 {
 		t.Errorf("the album list was requested %d times, want 1", nas.albumCalls)
 	}
+}
+
+func TestSynologyPlaceNamesAreABonus(t *testing.T) {
+	nas, syn := newFakeNAS(t)
+	ctx := context.Background()
+	items, err := syn.Items(ctx, Folder{ID: "p:3"})
+	if err != nil || len(items) != 3 {
+		t.Fatalf("%d items, err %v", len(items), err)
+	}
+	if items[0].Place != "Sintra, Portugal" || items[1].Place != "" {
+		t.Errorf("places = %q, %q; want the first photo in Sintra and none for the second", items[0].Place, items[1].Place)
+	}
+
+	// A NAS that does not offer places still lists its photos, and is asked once only.
+	nas2, syn2 := newFakeNAS(t)
+	nas2.noPlaces = true
+	for i := 0; i < 2; i++ {
+		items, err = syn2.Items(ctx, Folder{ID: "p:4"}) // two pages
+		if err != nil || len(items) != 501 {
+			t.Fatalf("without places: %d items, err %v", len(items), err)
+		}
+	}
+	if nas2.placeAsks != 1 {
+		t.Errorf("the NAS was asked for places %d times, want once", nas2.placeAsks)
+	}
+	_ = nas
 }

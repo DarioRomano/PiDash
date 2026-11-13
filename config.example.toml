@@ -23,6 +23,10 @@ pixel_shift = 4
 # Close the app row and return to the clock after this many seconds without a
 # key press. 0 = keep it open until Back is pressed.
 app_row_timeout = 30
+# Night mode: between these times the TV shows only a dim clock on black. Any
+# button brings the dashboard back for a minute. Leave both empty for none.
+night_start = ""
+night_end = ""
 clock_24h = true
 # BCP 47 locale for the date, e.g. "en-GB", "it-IT". Empty = browser default.
 locale = ""
@@ -101,6 +105,8 @@ motion = "off"
 # Show two upright (portrait) photos side by side instead of one with empty
 # space beside it. Partners are neighbours from the same folder.
 pair_portraits = false
+# Start every round with the photos taken on today's date in earlier years.
+on_this_day = false
 # How often the chosen folders are checked for new photos.
 refresh = "6h"
 # Disk space for prepared photos, in MB. The oldest are removed first.

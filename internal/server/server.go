@@ -111,6 +111,8 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("GET /api/photos/folders", s.handlePhotoFolders)
 	s.mux.HandleFunc("PUT /api/photos/selection", s.handlePhotoSelection)
 	s.mux.HandleFunc("GET /api/photos/playlist", s.handlePhotoPlaylist)
+	s.mux.HandleFunc("POST /api/photos/hide", s.handlePhotoHide)
+	s.mux.HandleFunc("POST /api/photos/unhide", s.handlePhotoUnhide)
 	s.mux.HandleFunc("GET /photos/{key}", s.handlePhotoImage)
 	s.mux.HandleFunc("GET /photos", s.servePage("photos.html"))
 	d.TV.OnChange(func(st tv.Status) { s.hub.broadcast("tv", st) })
@@ -624,12 +626,46 @@ func (s *Server) handlePhotoSelection(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.photos.Status())
 }
 
+// handlePhotoHide takes photos out of the slideshow for good.
+func (s *Server) handlePhotoHide(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Keys []string `json:"keys"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil || len(req.Keys) == 0 || len(req.Keys) > 4 {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if s.photos == nil {
+		http.Error(w, "no photo source is set up", http.StatusNotFound)
+		return
+	}
+	if err := s.photos.Hide(req.Keys...); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, s.photos.Status())
+}
+
+// handlePhotoUnhide brings all hidden photos back.
+func (s *Server) handlePhotoUnhide(w http.ResponseWriter, _ *http.Request) {
+	if s.photos == nil {
+		http.Error(w, "no photo source is set up", http.StatusNotFound)
+		return
+	}
+	if err := s.photos.ShowHidden(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, s.photos.Status())
+}
+
 // playlistItem is one photo as the dashboard sees it.
 type playlistItem struct {
 	Key    string    `json:"key"`
 	Name   string    `json:"name"`
 	Folder string    `json:"folder"`
 	Taken  time.Time `json:"taken"`
+	Place  string    `json:"place,omitempty"`
 	// V changes when the photo is edited, so the browser does not show a stale copy.
 	V string `json:"v"`
 }
@@ -658,7 +694,7 @@ func (s *Server) handlePhotoPlaylist(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			sum := sha1.Sum([]byte(versions + s.photos.Variant()))
-			out.Items = append(out.Items, playlistItem{Key: slide.Key, Name: name, Folder: first.Folder, Taken: first.Taken, V: hex.EncodeToString(sum[:4])})
+			out.Items = append(out.Items, playlistItem{Key: slide.Key, Name: name, Folder: first.Folder, Taken: first.Taken, Place: first.Place, V: hex.EncodeToString(sum[:4])})
 		}
 	}
 	writeJSON(w, out)

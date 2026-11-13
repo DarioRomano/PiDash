@@ -48,6 +48,8 @@ type Item struct {
 	Name   string    `json:"name"`
 	Folder string    `json:"folder"`
 	Taken  time.Time `json:"taken"`
+	// Place is where the photo was taken, when the source knows: "Lisbon, Portugal".
+	Place string `json:"place,omitempty"`
 	// Version changes when the photo is edited, so stale renders are not reused.
 	Version string `json:"-"`
 	// ID is what the source needs to fetch the photo.
@@ -99,6 +101,8 @@ type Status struct {
 	// Pairs changes when more is known about which photos can be shown two
 	// at a time; the dashboard then fetches its upcoming photos again.
 	Pairs int `json:"pairs"`
+	// Hidden is the number of photos the person chose never to see again.
+	Hidden int `json:"hidden"`
 }
 
 // Options configure a Service.
@@ -113,6 +117,10 @@ type Options struct {
 	// PairPortraits shows two upright photos side by side instead of one
 	// with empty space beside it.
 	PairPortraits bool
+	// OnThisDay puts photos taken on today's date in earlier years first.
+	OnThisDay bool
+	// Now is the clock, for tests; nil means time.Now.
+	Now func() time.Time
 	// Motion is "whole" to prepare photos for slow movement that never cuts
 	// them off, "fill" for movement over photos that fill the screen, or
 	// "off"/"" for photos that stand still.
@@ -143,6 +151,9 @@ type Service struct {
 	onChange  func(Status)
 
 	reindex chan struct{}
+
+	// hidden are the keys of photos the person chose never to see again.
+	hidden map[string]bool
 
 	// shapes records which photos are upright, by shapeKey; pairs counts how
 	// often that knowledge grew. partners is the pairing worked out from it.
@@ -192,6 +203,7 @@ func New(opt Options) *Service {
 	}
 	s.selection = sel
 	s.loadShapes()
+	s.loadHidden()
 	return s
 }
 
@@ -226,6 +238,7 @@ func (s *Service) statusLocked() Status {
 		Motion:          s.motion(),
 		MotionZoom:      WholeZoom,
 		Pairs:           s.pairs,
+		Hidden:          len(s.hidden),
 	}
 }
 
@@ -389,6 +402,7 @@ func (s *Service) index(ctx context.Context) {
 	items, err := s.collect(ctx, sel)
 
 	s.mu.Lock()
+	items = s.withoutHiddenLocked(items)
 	s.indexing = false
 	switch {
 	case ctx.Err() != nil:
@@ -522,7 +536,19 @@ func (s *Service) Slides(limit int) (version int, slides []Slide) {
 	partners := s.partnersLocked()
 	used := make(map[string]bool, limit)
 	slides = make([]Slide, 0, limit)
-	for _, i := range rand.Perm(n) {
+	order := rand.Perm(n)
+	if s.opt.OnThisDay {
+		// Photos from this day in earlier years come first, still shuffled
+		// among themselves; the rest follow.
+		now := time.Now()
+		if s.opt.Now != nil {
+			now = s.opt.Now()
+		}
+		sort.SliceStable(order, func(a, b int) bool {
+			return onThisDay(s.items[order[a]].Taken, now) && !onThisDay(s.items[order[b]].Taken, now)
+		})
+	}
+	for _, i := range order {
 		if len(slides) == limit {
 			break
 		}
@@ -590,6 +616,109 @@ func (s *Service) partnersLocked() map[string]partner {
 	}
 	s.partners, s.partnersFor = out, [2]int{s.version, s.pairs}
 	return out
+}
+
+// onThisDay reports whether a photo was taken on today's date in an earlier year.
+func onThisDay(taken, now time.Time) bool {
+	taken = taken.In(now.Location())
+	return taken.Month() == now.Month() && taken.Day() == now.Day() && taken.Year() < now.Year() && taken.Year() > 1990
+}
+
+// --- Photos the person does not want to see ---------------------------------------
+
+func (s *Service) hiddenPath() string {
+	if s.opt.StatePath == "" {
+		return ""
+	}
+	return strings.TrimSuffix(s.opt.StatePath, filepath.Ext(s.opt.StatePath)) + "-hidden.json"
+}
+
+func (s *Service) loadHidden() {
+	s.hidden = map[string]bool{}
+	if p := s.hiddenPath(); p != "" {
+		var keys []string
+		if data, err := os.ReadFile(p); err == nil && json.Unmarshal(data, &keys) == nil {
+			for _, k := range keys {
+				s.hidden[k] = true
+			}
+		}
+	}
+}
+
+func (s *Service) saveHiddenLocked() error {
+	p := s.hiddenPath()
+	if p == "" {
+		return nil
+	}
+	keys := make([]string, 0, len(s.hidden))
+	for k := range s.hidden {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	data, err := json.Marshal(keys)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(p+".tmp", data, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(p+".tmp", p)
+}
+
+func (s *Service) withoutHiddenLocked(items []Item) []Item {
+	if len(s.hidden) == 0 {
+		return items
+	}
+	out := items[:0:0]
+	for _, it := range items {
+		if !s.hidden[it.Key] {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+// Hide takes photos out of the slideshow for good. A key may name two photos
+// shown side by side ("a+b"). Unknown keys are ignored.
+func (s *Service) Hide(keys ...string) error {
+	s.mu.Lock()
+	changed := false
+	for _, key := range keys {
+		for _, k := range strings.Split(key, pairSep) {
+			if _, ok := s.byKey[k]; ok && !s.hidden[k] {
+				s.hidden[k] = true
+				delete(s.byKey, k)
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		s.mu.Unlock()
+		return nil
+	}
+	s.items = s.withoutHiddenLocked(s.items)
+	s.version++ // the dashboard moves on to another photo
+	err := s.saveHiddenLocked()
+	s.mu.Unlock()
+	s.notify()
+	return err
+}
+
+// ShowHidden brings every hidden photo back.
+func (s *Service) ShowHidden() error {
+	s.mu.Lock()
+	s.hidden = map[string]bool{}
+	err := s.saveHiddenLocked()
+	s.mu.Unlock()
+	select {
+	case s.reindex <- struct{}{}:
+	default:
+	}
+	s.notify()
+	return err
 }
 
 // --- Which photos are upright ----------------------------------------------------

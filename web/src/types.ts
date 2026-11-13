@@ -6,6 +6,9 @@ export interface DisplayConfig {
   pixel_shift: number;
   /** Seconds without input after which the app row closes; 0 = never. */
   app_row_timeout: number;
+  /** Night mode hours, "HH:MM"; both empty when it is off. */
+  night_start: string;
+  night_end: string;
   clock_24h: boolean;
   locale: string;
 }
@@ -88,6 +91,8 @@ export interface PhotosStatus {
   motionZoom?: number;
   /** Changes when more photos can be shown two at a time. */
   pairs?: number;
+  /** Photos the person chose never to see again. */
+  hidden?: number;
 }
 
 export interface PhotoItem {
@@ -95,6 +100,8 @@ export interface PhotoItem {
   name: string;
   folder: string;
   taken: string;
+  /** Where it was taken, when known. */
+  place?: string;
   v: string;
 }
 
