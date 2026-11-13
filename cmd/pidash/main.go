@@ -167,7 +167,8 @@ func main() {
 	}
 
 	// TV power schedule over HDMI-CEC.
-	tvOpts := tv.Options{TV: cec.New(), Log: log, AppRunning: func() bool { return appManager.Status().Running != "" }}
+	cecControl := cec.New()
+	tvOpts := tv.Options{TV: cecControl, Log: log, AppRunning: func() bool { return appManager.Status().Running != "" }}
 	for _, c := range []struct {
 		value string
 		dst   **tv.Clock
@@ -238,6 +239,9 @@ func main() {
 			Tap: phoneInput.Tap,
 		}
 		go remote.Run(ctx)
+		// Answer the TV's questions, so it keeps sending the remote's keys
+		// here after it was switched to another input and back.
+		go cecControl.Follow(ctx, log)
 	}
 
 	log.Info("pidash starting", "version", version, "config", *cfgPath)

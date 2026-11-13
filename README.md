@@ -265,6 +265,15 @@ personal use and needs no account. If the internet is down, the last forecast
 stays on screen, and the detail view says when it was last updated. Times such
 as sunrise are shown in the local time of the place you configured.
 
+### Background without photos
+
+While no photo is on screen (no photo source, nothing chosen yet, or the NAS is
+away), the background is a slow play of soft colours. With the app row open it
+takes on the colours of the selected app's icon: red for YouTube, the icon's
+own mix for anything else. It is drawn very small and stretched, so it costs
+the Pi next to nothing even on a 4K screen, and it stops while a photo or an
+app covers it.
+
 ### Background photos from Synology Photos
 
 PiDash can show a slideshow behind the clock, taken from folders and albums you
@@ -594,6 +603,13 @@ Philips "EasyLink", etc.). When the dashboard starts it registers the Pi with
 the TV and asks it to switch to the Pi's input; from then on the TV forwards
 remote key presses to the Pi.
 
+A TV only sends the remote's keys to the device it believes it is showing. So
+whenever you switch the TV to the Pi's input, from another input or from one
+of the TV's own apps, the TV asks the Pi to confirm, and PiDash answers. It
+also registers the Pi if the TV was off when the dashboard started. PiDash
+never pulls the TV to the Pi's input by itself; that only happens when the
+dashboard starts and with **TV on**.
+
 The arrows, OK, Back, the number buttons, play/pause, menu and channel up/down
 work without any setup. OK and Back are not keyboard keys, so PiDash reads them
 from the remote directly rather than through the browser.
@@ -644,6 +660,19 @@ PiDash version, your desktop session, the browsers it found, whether the
 settings file is valid, whether the backend answers and on which port, which
 programs occupy the nearby ports, the state and recent log of both services,
 and whether the TV answers over HDMI-CEC. Paste its output when asking for help.
+
+**The TV remote stops working after I used another input or one of the TV's
+apps.** PiDash answers the TV when it comes back to the Pi, which is what TVs
+wait for before they forward the remote again. If yours still does not, press
+**TV on** on the phone remote, which announces the Pi to the TV again. Then
+please report what the TV says to the Pi. Run this in a terminal on the Pi,
+switch the TV away and back, and copy what it printed:
+
+```sh
+systemctl --user stop pidash
+~/.local/share/pidash/pidash -v 2>&1 | grep -i cec    # Ctrl+C to end
+systemctl --user start pidash
+```
 
 **The phone remote is not at port 8080.** If another program on the Pi already
 uses port 8080, PiDash takes the next free port instead of failing. It says so

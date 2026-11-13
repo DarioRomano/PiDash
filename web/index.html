@@ -9,7 +9,11 @@
   <body>
     <div id="fit">
     <div id="stage">
-      <div id="backdrop" aria-hidden="true"></div>
+      <div id="backdrop" aria-hidden="true">
+        <!-- The moving colours behind the clock while no photo is shown. -->
+        <canvas id="ambient"></canvas>
+        <div id="grain"></div>
+      </div>
       <div id="scrim" aria-hidden="true"></div>
 
       <main id="overlay" data-density="compact">

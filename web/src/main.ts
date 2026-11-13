@@ -1,3 +1,4 @@
+import { Ambient, iconPalette } from "./ambient";
 import { Clock } from "./clock";
 import { Help } from "./help";
 import { Input } from "./input";
@@ -112,7 +113,18 @@ function showCaption(item: PhotoItem | null) {
   captionEl.textContent = [folder, when].filter(Boolean).join("  ·  ");
 }
 
-const slideshow = new Slideshow($("#backdrop"), showCaption);
+// Without a photo on screen, the background is a slow play of colours.
+const ambient = new Ambient($<HTMLCanvasElement>("#ambient"), $("#grain"));
+let photoShowing = false;
+function updateAmbient() {
+  ambient.setActive(!photoShowing && appsStatus.running === "" && document.visibilityState === "visible" && !tvAsleep);
+}
+
+const slideshow = new Slideshow($("#backdrop"), (item) => {
+  photoShowing = item !== null;
+  updateAmbient();
+  showCaption(item);
+});
 let photosHintShown = false;
 
 function onPhotos(st: PhotosStatus) {
@@ -131,6 +143,7 @@ function updateSuspended() {
   // Do not load photos while an app covers the dashboard, the page is hidden,
   // or the TV has been switched off for the night.
   slideshow.setSuspended(appsStatus.running !== "" || document.visibilityState !== "visible" || tvAsleep);
+  updateAmbient();
 }
 
 // --- Weather ------------------------------------------------------------------
@@ -221,6 +234,20 @@ const rail = new Rail(
     railActivity();
   },
 );
+
+// The background takes on the colours of the selected app's icon, and returns
+// to its own when the row closes or a tile without an icon is selected.
+let paletteRequest = 0;
+rail.onFocus = (item) => {
+  const request = ++paletteRequest;
+  if (!item?.icon) {
+    ambient.setPalette(null);
+    return;
+  }
+  void iconPalette(item.icon).then((palette) => {
+    if (request === paletteRequest) ambient.setPalette(palette);
+  });
+};
 
 // Left alone, the app row closes again, so the TV goes back to being a clock
 // and a picture frame instead of showing a menu all evening.

@@ -23,6 +23,10 @@ export class Rail {
   private items: RailItem[] = [];
   private focus = 0;
   private opened = false;
+  private announced: string | null = null;
+
+  /** Called when another tile becomes the selected one; null when the rail closes. */
+  onFocus: (item: RailItem | null) => void = () => {};
 
   constructor(
     private root: HTMLElement,
@@ -52,6 +56,16 @@ export class Rail {
     this.root.classList.remove("open");
     this.root.setAttribute("aria-hidden", "true");
     this.onToggle(false);
+    this.announce();
+  }
+
+  private announce() {
+    const item = this.opened ? (this.items[this.focus] ?? null) : null;
+    // The icon is part of the comparison: an app's tile can gain one later.
+    const key = item ? `${item.id}|${item.icon ?? ""}` : null;
+    if (key === this.announced) return;
+    this.announced = key;
+    this.onFocus(item);
   }
 
   /** Replaces the tiles, keeping the focus on the same item where possible. */
@@ -163,6 +177,7 @@ export class Rail {
   private updateFocus(scroll = true) {
     const tiles = this.strip.children;
     for (let i = 0; i < tiles.length; i++) tiles[i].classList.toggle("focused", i === this.focus);
+    this.announce();
 
     if (!scroll) return;
     // Keep the focused tile on screen when there are more tiles than fit.

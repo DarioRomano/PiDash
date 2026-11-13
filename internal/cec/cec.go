@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -35,6 +36,9 @@ type Controller struct {
 	Devices []string
 	// OSDName is how the Pi appears in the TV's input list.
 	OSDName string
+
+	// active is true while the TV shows the Pi's input, as far as PiDash knows.
+	active atomic.Bool
 }
 
 // New returns a controller that uses the system's cec-ctl.
@@ -162,6 +166,9 @@ func (c *Controller) activate(ctx context.Context, a adapter) error {
 		return err
 	}
 	_, err := c.run(ctx, "-d", a.dev, "--to", "15", "--active-source", "phys-addr="+a.phys)
+	if err == nil {
+		c.active.Store(true)
+	}
 	return err
 }
 
