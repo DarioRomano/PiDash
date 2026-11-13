@@ -44,6 +44,7 @@ export class Slideshow {
   private wholeZoom = 1.12;
   private lastMove = -1;
   private still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  private calm = false;
 
   constructor(
     private backdrop: HTMLElement,
@@ -105,10 +106,24 @@ export class Slideshow {
     }
     for (const a of shown?.getAnimations() ?? []) {
       if (suspended) a.pause();
-      else if (a.playState === "paused") a.play();
+      else if (a.playState === "paused" && !this.calm) a.play();
     }
     if (suspended) clearTimeout(this.timer);
     else this.schedule();
+  }
+
+  /**
+   * While the Pi is hot, photos stand still: the one on screen stops where
+   * it is and the next ones do not start moving. Photos keep changing.
+   */
+  setCalm(calm: boolean) {
+    if (calm === this.calm) return;
+    this.calm = calm;
+    if (this.suspended) return; // already standing still; the next photo moves again
+    for (const a of this.current?.getAnimations({ subtree: true }) ?? []) {
+      if (calm) a.pause();
+      else if (a.playState === "paused") a.play();
+    }
   }
 
   togglePause(): boolean {
@@ -295,7 +310,7 @@ export class Slideshow {
    */
   private move(img: HTMLImageElement) {
     for (const a of img.getAnimations()) a.cancel();
-    if (this.motion === "off" || this.still) return;
+    if (this.motion === "off" || this.still || this.calm) return;
     const whole = this.motion === "whole";
     const maxZoom = whole ? this.wholeZoom : FILL_ZOOM;
     const room = (zoom: number) => Math.max(0, Math.min((zoom - 1) / 2, whole ? (1 - zoom / this.wholeZoom) / 2 : 1));

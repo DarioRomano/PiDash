@@ -75,6 +75,8 @@ type Manager struct {
 	poll    time.Duration
 
 	icons map[string]Icon
+	// Focus gives the open app's window the keyboard; nil does nothing.
+	Focus *Focuser
 
 	mu        sync.Mutex
 	running   string
@@ -123,8 +125,40 @@ func (m *Manager) statusLocked() Status {
 	return Status{Apps: infos, Running: m.running, ConsoleReady: m.backend.ConsoleReady(), Error: m.lastErr}
 }
 
-func (m *Manager) find(id string) (config.App, bool) {
+// Reorder puts the apps in the order of ids, which must name each app once.
+// It reports whether it did.
+func (m *Manager) Reorder(ids []string) bool {
+	m.mu.Lock()
+	if len(ids) != len(m.apps) {
+		m.mu.Unlock()
+		return false
+	}
+	byID := map[string]config.App{}
 	for _, a := range m.apps {
+		byID[a.ID] = a
+	}
+	next := make([]config.App, 0, len(ids))
+	for _, id := range ids {
+		a, ok := byID[id]
+		if !ok {
+			m.mu.Unlock()
+			return false
+		}
+		delete(byID, id) // an id named twice is not found the second time
+		next = append(next, a)
+	}
+	m.apps = next
+	st, notify := m.statusLocked(), m.onChange
+	m.mu.Unlock()
+	notify(st)
+	return true
+}
+
+func (m *Manager) find(id string) (config.App, bool) {
+	m.mu.Lock()
+	list := m.apps
+	m.mu.Unlock()
+	for _, a := range list {
 		if a.ID == id {
 			return a, true
 		}
@@ -141,7 +175,10 @@ func (m *Manager) Icon(id string) (Icon, bool) {
 // Run adopts an app that is already running (for example after the backend was
 // restarted while Moonlight was open) and then waits for ctx to end.
 func (m *Manager) Run(ctx context.Context) {
-	for _, a := range m.apps {
+	m.mu.Lock()
+	list := m.apps
+	m.mu.Unlock()
+	for _, a := range list {
 		if m.backend.Active(ctx, a) {
 			m.mu.Lock()
 			m.running = a.ID
@@ -198,6 +235,10 @@ func (m *Manager) Start(ctx context.Context, id string) error {
 
 	m.log.Info("app started", "app", id, "mode", app.Mode)
 	notify(st)
+	// Its window should get the keyboard as soon as it is there.
+	if app.Mode != ModeConsole {
+		go m.Focus.Await(context.WithoutCancel(ctx), WindowOf(app), 20*time.Second)
+	}
 	// The watcher outlives the HTTP request that started the app.
 	go m.watch(context.WithoutCancel(ctx), app, gen)
 	return nil
@@ -224,6 +265,7 @@ func (m *Manager) Stop(ctx context.Context) error {
 	m.mu.Unlock()
 	m.log.Info("app stopped", "app", id)
 	notify(st)
+	go m.Focus.Ensure(context.Background(), KioskWindow) // back to the dashboard
 	return nil
 }
 
@@ -260,7 +302,22 @@ func (m *Manager) watch(ctx context.Context, app config.App, gen int) {
 		m.mu.Unlock()
 		m.log.Info("app exited", "app", app.ID)
 		notify(st)
+		go m.Focus.Ensure(context.Background(), KioskWindow)
 		return
+	}
+}
+
+// CanFocus reports whether an app's window can be given the keyboard.
+func (m *Manager) CanFocus() bool { return m.Focus.Available() }
+
+// EnsureFocus makes sure the open app's window has the keyboard. It is cheap
+// enough to call on every button press of the remote.
+func (m *Manager) EnsureFocus() {
+	m.mu.Lock()
+	id := m.running
+	m.mu.Unlock()
+	if app, ok := m.find(id); ok && app.Mode != ModeConsole {
+		m.Focus.EnsureSoon(WindowOf(app))
 	}
 }
 

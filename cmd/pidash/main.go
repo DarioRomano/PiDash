@@ -22,6 +22,7 @@ import (
 	"github.com/DarioRomano/PiDash/internal/hass"
 	"github.com/DarioRomano/PiDash/internal/input"
 	"github.com/DarioRomano/PiDash/internal/kiosk"
+	"github.com/DarioRomano/PiDash/internal/logring"
 	"github.com/DarioRomano/PiDash/internal/photos"
 	"github.com/DarioRomano/PiDash/internal/providers"
 	"github.com/DarioRomano/PiDash/internal/providers/calendar"
@@ -59,7 +60,9 @@ func main() {
 	if *verbose {
 		level = slog.LevelDebug
 	}
-	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+	// Warnings and errors are also kept for the status page on the TV.
+	problems := logring.New(30)
+	log := slog.New(problems.Handler(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 
 	if *cecCmd != "" {
 		os.Exit(runCEC(*cecCmd))
@@ -126,7 +129,9 @@ func main() {
 	newRunner := func(publish func(providers.Entry)) *providers.Runner {
 		var ps []providers.Provider
 		if cfg.System.Enabled {
-			ps = append(ps, system.New(cfg.System.Interval.Duration))
+			sys := system.New(cfg.System.Interval.Duration)
+			sys.CoolAbove = cfg.System.CoolAbove
+			ps = append(ps, sys)
 		}
 		switch w := cfg.Weather; {
 		case w.Enabled():
@@ -167,6 +172,10 @@ func main() {
 		appBackend = &apps.Systemd{Exe: exe, ConfigPath: absCfg, Log: log}
 	}
 	appManager := apps.NewManager(cfg.Apps, appBackend, log)
+	if !*mock {
+		// Keeps the keyboard, and with it the remote, on the app that is open.
+		appManager.Focus = &apps.Focuser{Env: func() []string { return apps.DesktopEnv(os.Environ()) }, Log: log}
+	}
 	appManager.ResolveIcons(apps.DefaultIconFinder())
 
 	photoService, err := newPhotoService(cfg.Photos, *mock, log)
@@ -239,17 +248,11 @@ func main() {
 		Busy: func() bool { return appManager.Status().Running != "" },
 	})
 
-	srv := server.New(cfg, log, static, server.Deps{
-		Kiosk: kiosk.New(cfg.Kiosk.Unit, *mock, log), Apps: appManager, Photos: photoService,
-		Input: phoneInput, TV: tvService, Version: version, NewRunner: newRunner, Updater: updater, PhotoStatePath: photoStatePath(), TestHooks: *mock,
-		Notices: notices, URLFile: server.URLFile(), Settings: store, BaseListen: baseListen,
-	})
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
+	// The TV remote, keyboards and game controllers, read below the desktop.
+	var srv *server.Server
+	var remote *input.Remote
 	if !*mock {
-		remote := &input.Remote{
+		remote = &input.Remote{
 			Actions: remoteActions, ExitKeys: exitKeys, Hold: cfg.Input.AppExitHold.Duration, Log: log,
 			AppRunning: func() bool { return appManager.Status().Running != "" },
 			OnAction: func(action string) {
@@ -262,8 +265,47 @@ func main() {
 					log.Warn("closing the app", "err", err)
 				}
 			},
-			Tap: phoneInput.Tap,
+			Tap:      phoneInput.Tap,
+			OnAppKey: appManager.EnsureFocus,
+			// A controller's buttons do not come through the TV, so they say
+			// nothing about whether it is on. While it is believed to be off
+			// they only make PiDash ask it.
+			OnPadAction: func(action string) {
+				if tvService.Status().Asleep {
+					go tvService.Recheck(context.Background())
+					return
+				}
+				srv.RemoteAction(action)
+			},
 		}
+		if cfg.TV.WakeOnController {
+			// Like a games console: switching the controller on switches the TV on.
+			remote.OnPadWake = func(name string) {
+				go func() {
+					ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+					defer cancel()
+					switch woke, err := tvService.WakeIfOff(ctx); {
+					case err != nil:
+						log.Warn("switching the TV on for a game controller", "controller", name, "err", err)
+					case woke:
+						log.Info("switched the TV on for a game controller", "controller", name)
+					}
+				}()
+			}
+		}
+	}
+
+	srv = server.New(cfg, log, static, server.Deps{
+		Kiosk: kiosk.New(cfg.Kiosk.Unit, *mock, log), Apps: appManager, Photos: photoService,
+		Input: phoneInput, TV: tvService, Version: version, NewRunner: newRunner, Updater: updater, PhotoStatePath: photoStatePath(), TestHooks: *mock,
+		Notices: notices, URLFile: server.URLFile(), Settings: store, BaseListen: baseListen,
+		Remote: remote, Problems: problems,
+	})
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if !*mock {
 		go remote.Run(ctx)
 		// Answer the TV's questions, so it keeps sending the remote's keys
 		// here after it was switched to another input and back.

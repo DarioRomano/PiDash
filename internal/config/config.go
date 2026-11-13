@@ -194,6 +194,9 @@ type TV struct {
 	// Off and On are times of day like "23:30"; empty means "do not".
 	Off string `toml:"off"`
 	On  string `toml:"on"`
+	// WakeOnController switches the TV on, and to the Pi, when a game
+	// controller is switched on while the TV is in standby.
+	WakeOnController bool `toml:"wake_on_controller"`
 }
 
 var clockPattern = regexp.MustCompile(`^([01]?\d|2[0-3]):[0-5]\d$`)
@@ -202,6 +205,10 @@ var clockPattern = regexp.MustCompile(`^([01]?\d|2[0-3]):[0-5]\d$`)
 type System struct {
 	Enabled  bool     `toml:"enabled"`
 	Interval Duration `toml:"interval"`
+	// CoolAbove is the temperature in °C above which the dashboard stops
+	// its moving background and the movement of photos until the Pi has
+	// cooled down again. 0 never does.
+	CoolAbove float64 `toml:"cool_above"`
 }
 
 // Kiosk configures how the fullscreen browser on the TV is started and stopped.
@@ -342,6 +349,10 @@ type App struct {
 	// Icon is optional: a path to an SVG or PNG, or an icon name. When empty
 	// the icon of the installed program or a built-in one is used.
 	Icon string `toml:"icon"`
+	// Window is the name of the program's window (its app id), by which
+	// PiDash can give it the keyboard. Filled in from the menu entry for
+	// installed programs; rarely needed by hand.
+	Window string `toml:"window"`
 	// Zoom enlarges a web app, for sites drawn too small on a 4K screen:
 	// 1.5 shows everything half as large again. 0 or 1 leaves it alone.
 	Zoom float64 `toml:"zoom"`
@@ -400,8 +411,9 @@ func Default() Config {
 			"Digit0":   "0", "Digit1": "1", "Digit2": "2", "Digit3": "3", "Digit4": "4",
 			"Digit5": "5", "Digit6": "6", "Digit7": "7", "Digit8": "8", "Digit9": "9",
 		}},
-		System:   System{Enabled: true, Interval: Duration{10 * time.Second}},
+		System:   System{Enabled: true, Interval: Duration{10 * time.Second}, CoolAbove: 75},
 		Kiosk:    Kiosk{Unit: "pidash-kiosk.service"},
+		TV:       TV{WakeOnController: true},
 		Weather:  Weather{Units: "metric", Interval: Duration{15 * time.Minute}},
 		Calendar: Calendar{Days: 14},
 		Photos: Photos{
@@ -615,6 +627,9 @@ func (c Config) validate() error {
 	}
 	if c.System.Interval.Duration < time.Second {
 		return fmt.Errorf("system.interval must be at least 1s")
+	}
+	if t := c.System.CoolAbove; t != 0 && (t < 40 || t > 100) {
+		return fmt.Errorf("system.cool_above must be 0 (never) or between 40 and 100 °C, got %v", t)
 	}
 	return nil
 }

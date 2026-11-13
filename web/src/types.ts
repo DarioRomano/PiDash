@@ -59,6 +59,8 @@ export interface SystemState {
   memUsedMB: number;
   cpuTempC: number | null;
   addresses: string[];
+  /** The Pi is hot: do less until it has cooled down. */
+  hot?: boolean;
 }
 
 export interface AppInfo {

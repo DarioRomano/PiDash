@@ -110,6 +110,9 @@ What the installer does:
 | Flip through photos | ◀ ▶ on the dashboard. Play/pause holds the current photo. ▲ shows its folder and date |
 | Change settings | Choose **Settings** in the app row, press **S**, or open `http://<pi-ip>:8080/settings` on your phone. See [Settings](#settings) |
 | Launch an app | Press **OK** on the dashboard to open the app row, choose with ◀ ▶ and press OK. Or tap the app on the phone remote |
+| Move an app in the app row | Select it, press ▲, carry it with ◀ ▶, press **OK**. **Back** leaves it where it was |
+| See how PiDash is doing | Choose **Status** in the app row. See [Status page](#status-page) |
+| Use a game controller | Plug it in or pair it. Switching it on also switches the TV on. See [Game controller](#game-controller) |
 | Get back from an app | **Hold Back for 2 seconds** on the TV remote, hold **Esc** on a keyboard, or tap **Back to dashboard** on the phone remote |
 | Use the phone as mouse and keyboard | Switch it on once (see [Phone as mouse and keyboard](#phone-as-mouse-and-keyboard)), then use the touchpad on the phone remote |
 | Switch the TV on or off | **TV on** / **TV off** on the phone remote, or a daily schedule (see [TV power schedule](#tv-power-schedule)) |
@@ -407,8 +410,16 @@ It also stops drawing when nobody can see it:
   power state; most do.
 - **While an app is open**, and during [night mode](#night-mode).
 
-If the Pi still runs warm (check with `vcgencmd measure_temp`), these settings
-make the largest difference, most effective first:
+- **While the Pi is hot.** From 75 °C the background stands still and photos
+  stop moving, though they keep changing; at 68 °C everything moves again.
+  The seven degrees in between keep it from switching back and forth. The
+  switch is under Settings, Screen; the temperature is `cool_above` under
+  `[system]` in `config.toml`, and `0` switches it off. A Pi 5 slows itself
+  down from 80 °C, so this steps in before that.
+
+If the Pi still runs warm (check with `vcgencmd measure_temp`, or on the
+[status page](#status-page)), these settings make the largest difference, most
+effective first:
 
 1. **Movement: None** for the photos (Settings, Background photos).
 2. **Background without photos: Still picture** (Settings, Screen).
@@ -417,6 +428,26 @@ make the largest difference, most effective first:
 
 A case with a fan or a large heat sink is worth having for a Pi 5 that drives
 a 4K screen all day.
+
+### Status page
+
+**Status** in the app row shows, on the TV, what would otherwise take a
+keyboard and a terminal to find out:
+
+- **This Pi**: the PiDash version and whether a newer one exists, temperature,
+  memory, load, and the address to open on a phone.
+- **TV and remote**: whether the TV answers over HDMI, its timetable, which
+  remotes, keyboards and controllers PiDash is listening to, and the **last
+  button** it heard, with the device it came from. Press any button while the
+  page is open and it appears there within two seconds. A button that does
+  not show up never reached the Pi: the TV is not passing it on.
+- **Content**: where photos come from and how many there are, and when the
+  weather and the calendar were last fetched, or why that failed.
+- **Recent problems**: the latest warnings and errors since PiDash started,
+  the same lines `journalctl --user -u pidash` would show.
+
+Arrows do nothing on this page, so they can be tried out. **Back** or **OK**
+closes it. It shows no passwords and no calendar addresses.
 
 ### Night mode
 
@@ -592,6 +623,11 @@ Press **OK** on the dashboard to open the app row. Left alone for 30 seconds,
 the row closes again and the TV returns to the clock; `app_row_timeout` under
 `[display]` changes that, and `0` keeps it open.
 
+To change the order, select an app in the row and press ▲: the tile lifts.
+◀ ▶ carry it, **OK** puts it down and saves the order, **Back** returns it to
+where it was. With a [lock](#lock) set, apps are moved on the settings page
+instead.
+
 The easiest way to add apps is the [settings page](#settings). They can also
 be defined in `~/.config/pidash/config.toml`, one `[[apps]]` block each. After
 editing, run `systemctl --user restart pidash`. An app is either a website or
@@ -714,6 +750,35 @@ uninstaller removes all three.
 To leave a console app, hold Back on the TV remote for two seconds, use the
 app's own quit shortcut, or tap **Back to dashboard** on the phone remote.
 
+#### Emulators
+
+The settings page offers these emulators by name under **Add an app**. All of
+them run well on a Pi 5:
+
+| Emulator | Plays | Install on the Pi |
+|----------|-------|-------------------|
+| RetroArch | Many classic consoles, from the NES and Mega Drive to the first PlayStation | `sudo apt install retroarch` |
+| PPSSPP | PlayStation Portable | `flatpak install flathub org.ppsspp.PPSSPP` |
+| Mupen64Plus | Nintendo 64 | `sudo apt install mupen64plus-qt` |
+| ScummVM | Point-and-click adventures | `sudo apt install scummvm` |
+| DOSBox | DOS games | `sudo apt install dosbox` |
+| MAME | Arcade machines | `sudo apt install mame` |
+
+One that is not installed yet is listed with its install command; after
+installing it, open the settings page again and add it. PiDash finds an
+emulator through its entry in the Pi's application menu, whether it came from
+`apt` or from Flatpak, and starts RetroArch, PPSSPP, ScummVM and DOSBox
+filling the screen. Any other emulator in the menu can be added with **A
+program installed on the Pi…**.
+
+PiDash starts the emulator; the games are yours to supply, and each emulator
+has its own way of being told where they are. RetroArch also needs a "core"
+per console: `apt search libretro` lists the ones Raspberry Pi OS has.
+
+Inside an emulator the [game controller](#game-controller) belongs to the
+game. **Holding its logo button for two seconds** returns to PiDash, as does
+holding Back on the TV remote.
+
 #### The TV remote inside apps
 
 A TV remote's **OK** and **Back** buttons are not keyboard keys, so apps such
@@ -724,6 +789,14 @@ fills the gap:
   buttons are passed on as numbers. Arrows already work by themselves.
 - **Holding Back for two seconds** closes the app and returns to the dashboard.
   Holding **Esc** on a keyboard does the same.
+
+Buttons go to whichever window has the keyboard. An app's window gets it when
+it opens, but can lose it, for example when the TV is switched off and on
+again; the app then looks as if the remote had stopped working. PiDash checks
+on every button press that the open app's window has the keyboard and gives
+it back if not. This uses the small tool `wlrctl`, which the installer adds,
+and works for websites and for programs added from the list of installed
+programs. The [status page](#status-page) says whether it is available.
 
 This works in every app, including ones that run outside the desktop. It needs
 your user to be in the `input` group, which is the case for the first user on
@@ -876,6 +949,45 @@ Check CEC from a terminal on the Pi:
 cec-ctl -d /dev/cec0 -S                    # show the TV in the topology
 ```
 
+### Game controller
+
+A game controller, wired or over Bluetooth, works as a remote without any
+setup:
+
+| On the controller | Does |
+|-------------------|------|
+| Left stick or direction pad | Arrows |
+| Bottom button (A on an Xbox pad, ✕ on a PlayStation pad) | OK |
+| Right button (B, ○) | Back |
+| Start / Menu / Options | Opens the app row |
+| Shoulder buttons | Previous and next photo |
+| Logo button | Back to the standard view. **Held for two seconds inside an app: closes it** |
+
+Buttons are named by where they sit, so on a Nintendo pad the bottom button
+is B. Inside an app PiDash leaves the controller to the app, apart from the
+logo button being held. To change what a button does, name it under
+`[input.remote_keys]`, for example `BTN_NORTH = "weather"`; `evtest` shows the
+names.
+
+Pair a Bluetooth controller once from the desktop's Bluetooth menu. It shows
+up under **Listening to** on the [status page](#status-page) when PiDash has
+found it.
+
+**Switching the controller on switches the TV on**, the way a games console
+does. A Bluetooth controller switches itself off when left alone; when it is
+switched on again and the TV is in standby, PiDash switches the TV on and to
+the Pi's input over HDMI-CEC. Pressing the logo button of a controller that
+is already connected, a wired one for example, does the same. A TV that is on
+is left alone, so a controller never pulls the TV away from another input,
+and no other button or stick wakes it, so a controller lying on the sofa
+does not either. This needs a TV that says over HDMI whether it is on, which
+`~/.local/share/pidash/pidash -cec status` shows. To switch it off:
+
+```toml
+[tv]
+wake_on_controller = false
+```
+
 ### Debugging the browser on the TV
 
 The dashboard's Chromium listens for DevTools on port 9222, on the Pi only. From
@@ -939,7 +1051,8 @@ settings and shows what is wrong. To check the file without restarting:
 "TV remote and keyboards" part. It shows whether PiDash can read the input
 devices, which needs your user in the `input` group, and whether the virtual
 keyboard is allowed, which the installer sets up. Running the update again
-repairs both where it can.
+repairs both where it can. The [status page](#status-page) on the TV shows the
+same, and the last button PiDash heard.
 
 **Looking at the services directly:**
 

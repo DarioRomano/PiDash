@@ -281,3 +281,97 @@ func TestTheDashboardRestsWhileTheTVIsOff(t *testing.T) {
 		t.Errorf("changes reported = %s, want %s", got, want)
 	}
 }
+
+func TestAControllerWakesATVThatIsInStandby(t *testing.T) {
+	set := &fakeTV{power: cec.PowerStandby}
+	running := false
+	s := newService(set, &running)
+	s.NoteStandby()
+
+	woke, err := s.WakeIfOff(context.Background())
+	if err != nil || !woke || set.wakes != 1 {
+		t.Fatalf("woke = %v, err = %v, wakes = %d; want the TV switched on once", woke, err, set.wakes)
+	}
+	if s.Status().Asleep {
+		t.Error("the dashboard should carry on once the TV was switched on")
+	}
+	// The controller connecting and its logo button arrive together: one wake.
+	if woke, _ := s.WakeIfOff(context.Background()); woke || set.wakes != 1 {
+		t.Errorf("a second request right away woke the TV again (wakes = %d)", set.wakes)
+	}
+}
+
+func TestAControllerLeavesATVThatIsOnAlone(t *testing.T) {
+	// The TV is on, perhaps showing another input: its input is not taken away.
+	set := &fakeTV{power: cec.PowerOn}
+	running := false
+	s := newService(set, &running)
+	if woke, err := s.WakeIfOff(context.Background()); woke || err != nil || set.wakes != 0 {
+		t.Errorf("woke = %v, err = %v, wakes = %d; want nothing done", woke, err, set.wakes)
+	}
+
+	// Believed to be off, but it says it is on: nothing is sent, and the
+	// dashboard carries on.
+	set = &fakeTV{power: cec.PowerOn}
+	s = newService(set, &running)
+	s.mu.Lock()
+	s.asleep = true
+	s.mu.Unlock()
+	if woke, _ := s.WakeIfOff(context.Background()); woke || set.wakes != 0 {
+		t.Errorf("a TV that is on was sent a wake-up (wakes = %d)", set.wakes)
+	}
+	if s.Status().Asleep {
+		t.Error("the TV said it is on; the dashboard should carry on")
+	}
+}
+
+func TestATVThatDoesNotSayIsTakenAsLastKnown(t *testing.T) {
+	running := false
+	// Last heard of going to standby: woken.
+	set := &fakeTV{silent: true}
+	s := newService(set, &running)
+	s.NoteStandby()
+	if woke, _ := s.WakeIfOff(context.Background()); !woke || set.wakes != 1 {
+		t.Errorf("woke = %v, wakes = %d; want it woken", woke, set.wakes)
+	}
+	// Not known to be off: left alone.
+	set = &fakeTV{silent: true}
+	s = newService(set, &running)
+	if woke, _ := s.WakeIfOff(context.Background()); woke || set.wakes != 0 {
+		t.Errorf("woke = %v, wakes = %d; want nothing done", woke, set.wakes)
+	}
+}
+
+func TestAControllerButtonOnlyMakesPiDashAskTheTV(t *testing.T) {
+	running := false
+	set := &fakeTV{power: cec.PowerStandby}
+	s := newService(set, &running)
+	s.NoteStandby()
+	s.Recheck(context.Background())
+	if set.wakes != 0 || !s.Status().Asleep {
+		t.Errorf("a button on a controller must not wake the TV: wakes = %d, asleep = %v", set.wakes, s.Status().Asleep)
+	}
+
+	set = &fakeTV{power: cec.PowerOn}
+	s = newService(set, &running)
+	s.mu.Lock()
+	s.asleep = true
+	s.mu.Unlock()
+	s.Recheck(context.Background())
+	if set.wakes != 0 || s.Status().Asleep {
+		t.Errorf("the TV is on after all: wakes = %d, asleep = %v; want the dashboard carrying on", set.wakes, s.Status().Asleep)
+	}
+}
+
+func TestTheLogoButtonsQuestionDoesNotUseUpItsWakeUp(t *testing.T) {
+	// The logo button both asks whether the TV is on and asks for it to be
+	// woken. Whichever comes first, the TV is woken.
+	running := false
+	set := &fakeTV{power: cec.PowerStandby}
+	s := newService(set, &running)
+	s.NoteStandby()
+	s.Recheck(context.Background())
+	if woke, _ := s.WakeIfOff(context.Background()); !woke || set.wakes != 1 {
+		t.Errorf("woke = %v, wakes = %d; want the TV woken although it was just asked", woke, set.wakes)
+	}
+}

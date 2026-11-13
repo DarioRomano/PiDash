@@ -91,6 +91,8 @@ command -v firefox >/dev/null 2>&1 || command -v firefox-esr >/dev/null 2>&1 || 
 if ! dpkg -s libwidevinecdm0 >/dev/null 2>&1 && apt-cache show libwidevinecdm0 >/dev/null 2>&1; then
   missing+=(libwidevinecdm0)
 fi
+# Gives the open app's window the keyboard when it lost it (Wayland desktops).
+if ! command -v wlrctl >/dev/null 2>&1 && apt-cache show wlrctl >/dev/null 2>&1; then missing+=(wlrctl); fi
 if [ "$CONSOLE_APPS" -eq 1 ]; then
   command -v chvt >/dev/null 2>&1 || missing+=(kbd)
 fi

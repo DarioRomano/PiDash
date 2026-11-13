@@ -14,6 +14,27 @@ const (
 	evSyn = 0x00
 	evKey = 0x01
 	evRel = 0x02
+	evAbs = 0x03
+
+	// Axes of a game controller: the left stick and the direction pad.
+	absX     = 0x00
+	absY     = 0x01
+	absHat0X = 0x10
+	absHat0Y = 0x11
+
+	// Buttons of a game controller, named by where they sit: south is the
+	// bottom one of the four (A on an Xbox pad, cross on a PlayStation pad).
+	btnSouth     = 0x130
+	btnEast      = 0x131
+	btnTL        = 0x136
+	btnTR        = 0x137
+	btnPadSelect = 0x13a
+	btnStart     = 0x13b
+	btnMode      = 0x13c // the button with the logo
+	btnDpadUp    = 0x220
+	btnDpadDown  = 0x221
+	btnDpadLeft  = 0x222
+	btnDpadRight = 0x223
 
 	relX      = 0x00
 	relY      = 0x01
@@ -72,6 +93,12 @@ func DefaultRemoteActions() map[uint16]string {
 		keyPlayCD:   "playpause", keyPauseCD: "playpause", keyPlayPause: "playpause", keyPlay: "playpause",
 		keyInfo:      "help",
 		keyChannelUp: "right", keyChannelDn: "left",
+		// A game controller: the bottom button chooses, the right one goes
+		// back, Start opens the app row, the shoulder buttons change the
+		// photo. Its stick and direction pad arrive as arrows (see stick).
+		btnSouth: "select", btnEast: "back", btnStart: "menu", btnMode: "home",
+		btnTL: "left", btnTR: "right",
+		btnDpadUp: "up", btnDpadDown: "down", btnDpadLeft: "left", btnDpadRight: "right",
 	}
 	for d := 0; d <= 9; d++ {
 		m[uint16(keyNumeric0+d)] = string(rune('0' + d))
@@ -81,7 +108,9 @@ func DefaultRemoteActions() map[uint16]string {
 
 // DefaultExitKeys leave an app when held: the remote's Back/Exit button and a
 // keyboard's Esc.
-func DefaultExitKeys() []uint16 { return []uint16{keyExit, keyBack, keyEsc} }
+// The logo button of a game controller is among them: held, it leaves a game
+// or an emulator, which have no Back button of their own.
+func DefaultExitKeys() []uint16 { return []uint16{keyExit, keyBack, keyEsc, btnMode} }
 
 // appKeys translates remote keys an app would not understand into the keyboard
 // key that means the same: OK becomes Enter, Exit becomes Escape, and the
@@ -109,6 +138,12 @@ var keyNames = map[string]uint16{
 	"KEY_CHANNELUP": keyChannelUp, "KEY_CHANNELDOWN": keyChannelDn, "KEY_ENTER": keyEnter,
 	"KEY_REWIND": 168, "KEY_FASTFORWARD": 208, "KEY_RECORD": 167, "KEY_FAVORITES": 364, "KEY_TV": 377,
 	"KEY_PREVIOUS": 412, "KEY_NEXT": 407, "KEY_CLEAR": 355, "KEY_SUBTITLE": 370, "KEY_EPG": 365,
+	"KEY_UP": keyUp, "KEY_DOWN": keyDown, "KEY_LEFT": keyLeft, "KEY_RIGHT": keyRight,
+	"BTN_SOUTH": btnSouth, "BTN_A": btnSouth, "BTN_EAST": btnEast, "BTN_B": btnEast,
+	"BTN_NORTH": 0x133, "BTN_X": 0x133, "BTN_WEST": 0x134, "BTN_Y": 0x134,
+	"BTN_TL": btnTL, "BTN_TR": btnTR, "BTN_TL2": 0x138, "BTN_TR2": 0x139,
+	"BTN_SELECT": btnPadSelect, "BTN_START": btnStart, "BTN_MODE": btnMode,
+	"BTN_THUMBL": 0x13d, "BTN_THUMBR": 0x13e,
 }
 
 // ParseKey turns a key name such as "KEY_EXIT", or a numeric key code, into
@@ -122,6 +157,22 @@ func ParseKey(s string) (uint16, error) {
 		return uint16(n), nil
 	}
 	return 0, fmt.Errorf("unknown key %q (use a name like KEY_EXIT or a numeric key code)", s)
+}
+
+// KeyName is the reverse of ParseKey: the kernel's name for a key code, or
+// "key 123" for one without a name here.
+func KeyName(code uint16) string {
+	best := ""
+	for name, c := range keyNames {
+		// Some buttons have two names (BTN_A and BTN_SOUTH): always the same one.
+		if c == code && (best == "" || name < best) {
+			best = name
+		}
+	}
+	if best == "" {
+		return fmt.Sprintf("key %d", code)
+	}
+	return best
 }
 
 // actionKeys maps dashboard actions to the key the phone remote presses on the

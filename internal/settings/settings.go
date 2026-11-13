@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -79,7 +80,15 @@ type Home struct {
 // System settings.
 type System struct {
 	AutoUpdate bool `json:"autoUpdate"`
+	// Cooling stops the moving background and the movement of photos while
+	// the Pi is hot. Absent (settings saved by an older version) leaves
+	// config.toml in charge.
+	Cooling *bool `json:"cooling,omitempty"`
 }
+
+// defaultCoolAbove is the limit used when cooling is switched on from the
+// settings page and config.toml has it switched off.
+const defaultCoolAbove = 75
 
 func linkKey(u string) string {
 	sum := sha1.Sum([]byte(u))
@@ -221,6 +230,96 @@ var Presets = []Preset{
 		App: config.App{Command: "kodi-standalone", Mode: config.AppModeConsole}},
 	{ID: "steamlink", Name: "Steam Link", Description: "Game streaming from Steam. Needs Steam Link installed",
 		App: config.App{Command: "steamlink", Mode: config.AppModeDesktop}},
+}
+
+// Emulator is a game emulator that runs well on a Raspberry Pi 5 and is
+// worth offering by name. It is installed like any other program; PiDash
+// finds it through its entry in the Pi's application menu, and adds what it
+// takes to start it filling the screen.
+type Emulator struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Systems says in a few words what it plays.
+	Systems     string `json:"systems"`
+	Description string `json:"description"`
+	// Install is the command that installs it on Raspberry Pi OS.
+	Install string `json:"install"`
+	// Desktop is the id of its menu entry when it is installed, else empty.
+	Desktop string `json:"desktop,omitempty"`
+	// Entries are the names its menu entry goes by, depending on where it
+	// was installed from; Args make it start fullscreen.
+	Entries []string `json:"-"`
+	Args    string   `json:"-"`
+}
+
+// Emulators are the emulators offered on the settings page.
+var Emulators = []Emulator{
+	{ID: "retroarch", Name: "RetroArch", Systems: "classic consoles",
+		Description: "One program for many classic consoles, from the NES and Mega Drive to the first PlayStation. Made for a game controller.",
+		Install:     "sudo apt install retroarch",
+		Entries:     []string{"retroarch", "com.libretro.RetroArch", "org.libretro.RetroArch"}, Args: "-f"},
+	{ID: "ppsspp", Name: "PPSSPP", Systems: "PlayStation Portable",
+		Description: "PlayStation Portable games, which a Pi 5 plays at full speed. Made for a game controller.",
+		Install:     "flatpak install flathub org.ppsspp.PPSSPP",
+		Entries:     []string{"org.ppsspp.PPSSPP", "PPSSPPSDL", "ppsspp", "PPSSPPQt"}, Args: "--fullscreen"},
+	{ID: "mupen64plus", Name: "Mupen64Plus", Systems: "Nintendo 64",
+		Description: "Nintendo 64 games. Choosing a game needs a mouse or the phone's touchpad; playing it, a game controller.",
+		Install:     "sudo apt install mupen64plus-qt",
+		Entries:     []string{"mupen64plus-qt"}},
+	{ID: "scummvm", Name: "ScummVM", Systems: "adventure games",
+		Description: "Classic point-and-click adventures. They are played with a mouse: the phone remote has a touchpad.",
+		Install:     "sudo apt install scummvm",
+		Entries:     []string{"org.scummvm.scummvm", "scummvm"}, Args: "-f"},
+	{ID: "dosbox", Name: "DOSBox", Systems: "DOS games",
+		Description: "Games and programs written for DOS. It starts at a command line, so it needs a keyboard.",
+		Install:     "sudo apt install dosbox",
+		Entries:     []string{"dosbox", "com.dosbox_x.DOSBox-X", "dosbox-x", "dosbox-staging"}, Args: "-fullscreen"},
+	{ID: "mame", Name: "MAME", Systems: "arcade machines",
+		Description: "Arcade machines. Made for a game controller or a keyboard.",
+		Install:     "sudo apt install mame",
+		Entries:     []string{"mame", "org.mamedev.MAME"}},
+}
+
+// emulatorOf returns the emulator a menu entry belongs to.
+func emulatorOf(entryID string) (Emulator, bool) {
+	for _, em := range Emulators {
+		for _, name := range em.Entries {
+			if strings.EqualFold(name, entryID) {
+				return em, true
+			}
+		}
+	}
+	return Emulator{}, false
+}
+
+// emulatorsForPage says which emulators are installed, and as what.
+func emulatorsForPage(installed []desktop.Entry) []Emulator {
+	out := make([]Emulator, len(Emulators))
+	for i, em := range Emulators {
+		// In the order of Entries: the system's own copy before a Flatpak one.
+	find:
+		for _, name := range em.Entries {
+			for _, e := range installed {
+				if strings.EqualFold(e.ID, name) && e.Command() != "" {
+					em.Desktop = e.ID
+					break find
+				}
+			}
+		}
+		out[i] = em
+	}
+	return out
+}
+
+// withArgs adds arguments to a command unless it has them already.
+func withArgs(command, args string) string {
+	have := strings.Fields(command)
+	for _, arg := range strings.Fields(args) {
+		if !slices.Contains(have, arg) {
+			have = append(have, arg)
+		}
+	}
+	return strings.Join(have, " ")
 }
 
 // presetsForPage marks which presets are websites.
@@ -369,6 +468,14 @@ func apply(base config.Config, f File, installed []desktop.Entry) (config.Config
 	}
 	if sys := f.System; sys != nil {
 		cfg.Update.Auto = sys.AutoUpdate
+		if sys.Cooling != nil {
+			switch {
+			case !*sys.Cooling:
+				cfg.System.CoolAbove = 0
+			case cfg.System.CoolAbove == 0:
+				cfg.System.CoolAbove = defaultCoolAbove
+			}
+		}
 	}
 	if l := f.Lock; l != nil {
 		cfg.Remote.PIN = l.PIN
@@ -392,33 +499,120 @@ func apply(base config.Config, f File, installed []desktop.Entry) (config.Config
 	}
 
 	if f.Apps != nil {
-		cfg.Apps = cfg.Apps[:0]
-		used := map[string]bool{}
-		for i, a := range *f.Apps {
-			app, err := resolve(a, base, installed)
-			if errors.Is(err, errNotInstalled) {
-				// Uninstalling a program must not undo every other setting: its
-				// tile just disappears, and comes back if it is installed again.
-				continue
-			}
-			if err != nil {
-				return cfg, fmt.Errorf("app %d (%s): %w", i+1, a.Name, err)
-			}
-			// Keep ids unique, whatever was typed as names.
-			id := app.ID
-			for n := 2; used[id]; n++ {
-				id = fmt.Sprintf("%s-%d", app.ID, n)
-			}
-			app.ID = id
-			used[id] = true
-			cfg.Apps = append(cfg.Apps, app)
+		apps, _, err := resolveAll(*f.Apps, base, installed)
+		if err != nil {
+			return cfg, err
 		}
+		cfg.Apps = apps
 	}
 
 	if err := cfg.Finish(); err != nil {
 		return cfg, err
 	}
 	return cfg, nil
+}
+
+// resolveAll turns the entries of the settings page into launcher apps.
+// from[i] is the position in entries that apps[i] came from: the two lists
+// differ in length when a program is not installed any more.
+func resolveAll(entries []App, base config.Config, installed []desktop.Entry) (apps []config.App, from []int, err error) {
+	apps = []config.App{}
+	used := map[string]bool{}
+	for i, a := range entries {
+		app, err := resolve(a, base, installed)
+		if errors.Is(err, errNotInstalled) {
+			// Uninstalling a program must not undo every other setting: its
+			// tile just disappears, and comes back if it is installed again.
+			continue
+		}
+		if err != nil {
+			return nil, nil, fmt.Errorf("app %d (%s): %w", i+1, a.Name, err)
+		}
+		// Keep ids unique, whatever was typed as names.
+		id := app.ID
+		for n := 2; used[id]; n++ {
+			id = fmt.Sprintf("%s-%d", app.ID, n)
+		}
+		app.ID = id
+		used[id] = true
+		apps = append(apps, app)
+		from = append(from, i)
+	}
+	return apps, from, nil
+}
+
+// ErrOrder is returned by ReorderApps for an order that does not name
+// exactly the apps of the app row.
+var ErrOrder = errors.New("the order does not match the apps in the app row")
+
+// ReorderApps puts the apps of the app row in the order of ids, the ids the
+// launcher knows them by, and saves that. It is what moving a tile with the
+// TV remote does; nothing else about the apps changes.
+func (s *Store) ReorderApps(ids []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// The entries as the settings page has them. Before the first save they
+	// are still the ones from config.toml.
+	var entries []App
+	if s.file.Apps != nil {
+		entries = append(entries, *s.file.Apps...)
+	} else {
+		for _, a := range s.base.Apps {
+			e := describe(a)
+			e.Detail = ""
+			entries = append(entries, e)
+		}
+	}
+	installed := s.installed()
+	apps, from, err := resolveAll(entries, s.base, installed)
+	if err != nil {
+		return err
+	}
+	if len(ids) != len(apps) {
+		return ErrOrder
+	}
+	entryOf := map[string]int{}
+	for i, a := range apps {
+		entryOf[a.ID] = from[i]
+	}
+	next := make([]App, 0, len(entries))
+	taken := map[int]bool{}
+	for _, id := range ids {
+		i, ok := entryOf[id]
+		if !ok || taken[i] {
+			return ErrOrder
+		}
+		taken[i] = true
+		next = append(next, entries[i])
+	}
+	// Programs that are not installed right now keep their place at the end.
+	for i, e := range entries {
+		if !taken[i] {
+			next = append(next, e)
+		}
+	}
+	// Two apps with the same name are told apart by a number that follows
+	// their order. Swapping those would swap what they are known as, and with
+	// it their browser profiles: such a move is refused.
+	after, _, err := resolveAll(next, s.base, installed)
+	if err != nil {
+		return err
+	}
+	for i, a := range after {
+		if a.ID != ids[i] {
+			return fmt.Errorf("%s and an app of the same name cannot change places", a.Name)
+		}
+	}
+	f := s.file
+	f.Apps = &next
+	if _, err := apply(s.base, f, installed); err != nil {
+		return err
+	}
+	if err := s.write(f); err != nil {
+		return err
+	}
+	s.file = f
+	return nil
 }
 
 // resolve turns a settings-page entry into a launcher app.
@@ -429,9 +623,18 @@ func resolve(a App, base config.Config, installed []desktop.Entry) (config.App, 
 			if e.ID != a.Desktop {
 				continue
 			}
-			app := config.App{ID: slug(e.ID), Name: e.Name, Command: e.Command(), Icon: e.Icon, Mode: config.AppModeDesktop}
+			app := config.App{ID: slug(e.ID), Name: e.Name, Command: e.Command(), Icon: e.Icon, Mode: config.AppModeDesktop, Window: e.Window}
 			if strings.TrimSpace(a.Name) != "" {
 				app.Name = strings.TrimSpace(a.Name)
+			}
+			// A known emulator gets its proper name and starts fullscreen.
+			if em, ok := emulatorOf(e.ID); ok {
+				if strings.TrimSpace(a.Name) == "" {
+					app.Name = em.Name
+				}
+				if app.Command != "" {
+					app.Command = withArgs(app.Command, em.Args)
+				}
 			}
 			if app.Command == "" {
 				return config.App{}, errNotInstalled
@@ -514,6 +717,8 @@ type View struct {
 	Presets  []Preset              `json:"presets"`
 	// Installed are the programs on the Pi that can be added to the app row.
 	Installed []desktop.Entry `json:"installed"`
+	// Emulators are the game emulators worth knowing about, installed or not.
+	Emulators []Emulator `json:"emulators"`
 }
 
 // WeatherView is the weather section.
@@ -565,6 +770,7 @@ func (s *Store) View() View {
 	}
 	v := View{
 		Installed: installed,
+		Emulators: emulatorsForPage(installed),
 		Weather: WeatherView{Location: cfg.Weather.Location, Name: cfg.Weather.Name, Units: cfg.Weather.Units,
 			Coordinates: cfg.Weather.Latitude != nil},
 		Photos: PhotosView{
@@ -578,7 +784,7 @@ func (s *Store) View() View {
 			ClockPosition: cfg.Display.ClockPosition, ClockSize: cfg.Display.ClockSize, View: cfg.Display.View, Background: cfg.Display.Background},
 		Calendar: Calendar{Links: []Link{}},
 		Home:     Home{URL: cfg.Home.URL, TokenSet: cfg.Home.Token != "", Entities: append([]string{}, cfg.Home.Entities...)},
-		System:   System{AutoUpdate: cfg.Update.Auto},
+		System:   System{AutoUpdate: cfg.Update.Auto, Cooling: boolPtr(cfg.System.CoolAbove > 0)},
 		Lock:     Lock{Set: cfg.Remote.PIN != ""},
 		Radio:    append([]config.RadioStation{}, cfg.Radio...),
 		Apps:     []App{},
@@ -789,3 +995,5 @@ func (s *Store) write(f File) error {
 	}
 	return os.Rename(tmp, s.path)
 }
+
+func boolPtr(b bool) *bool { return &b }

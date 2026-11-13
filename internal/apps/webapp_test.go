@@ -59,7 +59,7 @@ func TestFirefoxWebAppWithAdBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	profile := filepath.Join(data, "profiles", "youtube")
-	want := []string{filepath.Join(bin, "firefox"), "--kiosk", "--no-remote", "--profile", profile, "--class", "pidash-youtube", "https://www.youtube.com/tv"}
+	want := []string{filepath.Join(bin, "firefox"), "--kiosk", "--no-remote", "--profile", profile, "--name", "pidash-youtube", "--class", "pidash-youtube", "https://www.youtube.com/tv"}
 	if !slices.Equal(launch.Argv, want) {
 		t.Errorf("argv = %q\nwant  %q", launch.Argv, want)
 	}

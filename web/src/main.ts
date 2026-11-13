@@ -2,6 +2,7 @@ import { Ambient, iconPalette } from "./ambient";
 import { setLanguage, t } from "./i18n";
 import { Clock } from "./clock";
 import { Help } from "./help";
+import { StatusPanel } from "./status";
 import { Input } from "./input";
 import { Rail, type RailItem } from "./rail";
 import { Slideshow } from "./slideshow";
@@ -202,7 +203,7 @@ function wakeFromNight(): boolean {
 const WEATHER_ID = "__weather";
 const weatherEl = $("#weather");
 const weather: WeatherView = new WeatherView(weatherEl, $("#weather-panel"), (open) =>
-  stage.classList.toggle("panel-open", open || help.isOpen),
+  stage.classList.toggle("panel-open", open || help.isOpen || statusPanel.isOpen),
 );
 // With a mouse or touch screen, clicking the summary opens the details too.
 weatherEl.addEventListener("click", (e) => {
@@ -212,7 +213,21 @@ weatherEl.addEventListener("click", (e) => {
 
 // --- Help ---------------------------------------------------------------------
 
-const help = new Help($("#help"), (open) => stage.classList.toggle("panel-open", open || weather.isOpen));
+const help = new Help($("#help"), (open) => stage.classList.toggle("panel-open", open || weather.isOpen || statusPanel.isOpen));
+
+// --- Status ---------------------------------------------------------------------
+// How PiDash is doing, readable from the sofa.
+
+const STATUS_ID = "__status";
+const STATUS_GLYPH =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M2.8 12.5h4l2.2-6 4 12 2.6-8 1.4 2h4.2"/></svg>';
+let lastSystem: SystemState | null = null;
+const statusPanel: StatusPanel = new StatusPanel(
+  $("#status-panel"),
+  () => lastSystem,
+  (open) => stage.classList.toggle("panel-open", open || weather.isOpen || help.isOpen),
+);
 
 function openHelp() {
   const url = lanAddress ? `http://${lanAddress}:${location.port || "80"}/remote` : "";
@@ -356,6 +371,46 @@ const rail = new Rail(
   },
 );
 
+// What the buttons do in the app row, under the tiles.
+function showRailHint() {
+  const n = appsStatus.apps.length;
+  railHint.textContent = rail.isMoving
+    ? "◀ ▶ move  ·  OK put down  ·  Back leave it where it was"
+    : n > 1
+      ? "◀ ▶ choose  ·  OK open  ·  ▲ move an app  ·  Back close"
+      : n === 1
+        ? "◀ ▶ choose  ·  OK open  ·  Back close"
+        : "Add apps under Settings  ·  Back close";
+}
+rail.onMoving = showRailHint;
+
+// An app was put down in a new place: remember the order on the Pi.
+rail.onReorder = (ids) => {
+  // Shown at once; the Pi confirms with the same order a moment later.
+  const byId = new Map(appsStatus.apps.map((a) => [a.id, a]));
+  const apps = ids.map((id) => byId.get(id)).filter((a): a is NonNullable<typeof a> => !!a);
+  if (apps.length === appsStatus.apps.length) appsStatus = { ...appsStatus, apps };
+  rail.setItems(railItems());
+  void (async () => {
+    let problem = "";
+    try {
+      const res = await postJSON("/api/apps/order", { ids });
+      if (res.status === 401 || res.status === 429) problem = "The settings are locked, so apps can only be moved there: Settings, Apps.";
+      else if (!res.ok) problem = (await res.text()).trim() || "The new order could not be saved.";
+    } catch {
+      problem = "The new order could not be saved.";
+    }
+    if (!problem) return;
+    toast(problem, 8000);
+    // Back to the order the Pi has.
+    try {
+      onApps((await (await fetch("/api/apps")).json()) as AppsStatus);
+    } catch {
+      /* the next update from the Pi brings it */
+    }
+  })();
+};
+
 // The background takes on the colours of the selected app's icon, and returns
 // to its own when the row closes or a tile without an icon is selected.
 let paletteRequest = 0;
@@ -395,6 +450,7 @@ function railItems(): RailItem[] {
       id: a.id,
       label: a.name,
       icon: a.hasIcon ? `/api/apps/${encodeURIComponent(a.id)}/icon` : undefined,
+      movable: true,
       running,
       sub: running ? "Running · OK to stop" : "",
     });
@@ -423,6 +479,7 @@ function railItems(): RailItem[] {
       items.push({ id: HIDE_ID + keys[0], label: "Hide this photo", glyph: HIDE_GLYPH });
     }
   }
+  items.push({ id: STATUS_ID, label: "Status", glyph: STATUS_GLYPH });
   items.push({ id: SETTINGS_ID, label: "Settings", glyph: GEAR_GLYPH });
   items.push({ id: EXIT_ID, label: "Desktop", glyph: EXIT_GLYPH });
   return items;
@@ -433,9 +490,7 @@ function onApps(st: AppsStatus) {
   appsStatus = st;
   rail.setItems(railItems());
   updateSuspended();
-  railHint.textContent = st.apps.length
-    ? "◀ ▶ choose  ·  OK open  ·  Back close"
-    : "Add apps under Settings  ·  Back close";
+  showRailHint();
   // Do not replay an old problem when the page (re)connects.
   if (appsLoaded && st.error && st.error !== previousError) toast(st.error, 9000);
 }
@@ -461,6 +516,11 @@ async function activateRailItem(item: RailItem) {
   }
   if (item.id === SETTINGS_ID) {
     openSettings();
+    return;
+  }
+  if (item.id === STATUS_ID) {
+    rail.close();
+    statusPanel.open();
     return;
   }
   if (item.id.startsWith(RADIO_ID)) {
@@ -539,6 +599,11 @@ async function activateRailItem(item: RailItem) {
 
 let pixelShiftTimer = 0;
 
+// While the Pi is hot the page does without everything that moves all the
+// time: the flowing background and the movement of photos.
+let hot = false;
+let stillBackground = false;
+
 let runningVersion = "";
 let shownNotice = "";
 
@@ -563,7 +628,8 @@ function applyConfig(cfg: ClientConfig) {
   const locale = d.locale || (d.language && d.language !== "en" ? d.language : "");
   clock.configure(d.clock_24h, locale);
   clock24h = d.clock_24h;
-  ambient.setStill(d.background === "still");
+  stillBackground = d.background === "still";
+  ambient.setStill(stillBackground || hot);
   stage.dataset.clock = d.clock_position || "bottom-left";
   stage.dataset.clockSize = d.clock_size || "large";
   if (!viewChosen) {
@@ -688,6 +754,14 @@ function onState(entry: StateEntry) {
 
 function renderSystem(s: SystemState | null) {
   if (!s) return;
+  lastSystem = s;
+  statusPanel.refresh();
+  if (!!s.hot !== hot) {
+    hot = !!s.hot;
+    ambient.setStill(stillBackground || hot);
+    slideshow.setCalm(hot);
+    stage.dataset.hot = String(hot);
+  }
   lanAddress = s.addresses[0] ?? "";
   const up = formatUptime(s.uptimeSeconds);
   const temp = s.cpuTempC == null ? "" : ` · ${s.cpuTempC.toFixed(0)}°C`;
@@ -740,6 +814,7 @@ input.on((action) => {
     return;
   }
   if (help.handle(action)) return;
+  if (statusPanel.handle(action)) return;
   if (action === "settings") {
     openSettings();
     return;
@@ -885,6 +960,7 @@ window.addEventListener("pointerdown", pointerActive);
 // whatever is open.
 stage.addEventListener("click", (e) => {
   if (help.isOpen) return help.close();
+  if (statusPanel.isOpen) return statusPanel.close();
   if (weather.isOpen) return weather.close();
   if ((e.target as Element).closest("#hud")) return;
   if (rail.isOpen) rail.close();
@@ -903,7 +979,7 @@ window.addEventListener(
   "wheel",
   (e) => {
     e.preventDefault();
-    if (help.isOpen || weather.isOpen) return;
+    if (help.isOpen || weather.isOpen || statusPanel.isOpen) return;
     const now = performance.now();
     if (now - lastWheel < (rail.isOpen ? 110 : 450)) return;
     const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;

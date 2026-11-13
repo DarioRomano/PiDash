@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 )
@@ -34,6 +35,17 @@ type Remote struct {
 	OnAction func(action string)
 	// OnAppExit closes the running app.
 	OnAppExit func()
+	// OnPadAction, if set, gets the actions of game controllers instead of
+	// OnAction. A press on the TV's remote proves the TV is on; a press on a
+	// controller proves nothing of the kind.
+	OnPadAction func(action string)
+	// OnPadWake is called when a game controller is switched on, that is,
+	// when it appears after start-up, and when its logo button is pressed:
+	// the two things people do to say "I want to play".
+	OnPadWake func(name string)
+	// OnAppKey is called for every button pressed while an app is open, so
+	// that the app's window can be given the keyboard if it lost it.
+	OnAppKey func()
 	// Tap presses a key in the running app; nil when that is not possible.
 	Tap func(code uint16) error
 	Log *slog.Logger
@@ -42,6 +54,56 @@ type Remote struct {
 
 	hold        *holdDetector
 	tapWarnOnce sync.Once
+
+	// For the status page: what is being listened to and what was heard last.
+	seenMu  sync.Mutex
+	devices map[string]string // path → name
+	pads    map[string]bool   // path → is a game controller
+	last    Heard
+}
+
+// Heard is a button press as the backend read it from an input device.
+type Heard struct {
+	// Device is the name of the remote, keyboard or controller.
+	Device string `json:"device"`
+	// Key is the kernel's name for the button, such as KEY_OK.
+	Key string `json:"key"`
+	// Action is what the dashboard does on it; empty when nothing.
+	Action string    `json:"action,omitempty"`
+	At     time.Time `json:"at"`
+}
+
+// Devices names the remotes, keyboards and controllers being listened to.
+func (r *Remote) Devices() []string {
+	r.seenMu.Lock()
+	defer r.seenMu.Unlock()
+	out := make([]string, 0, len(r.devices))
+	for _, name := range r.devices {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Last returns the most recent button press, if there was one.
+func (r *Remote) Last() (Heard, bool) {
+	r.seenMu.Lock()
+	defer r.seenMu.Unlock()
+	return r.last, !r.last.At.IsZero()
+}
+
+func (r *Remote) listening(path, name string, pad, on bool) {
+	r.seenMu.Lock()
+	defer r.seenMu.Unlock()
+	if r.devices == nil {
+		r.devices, r.pads = map[string]string{}, map[string]bool{}
+	}
+	if on {
+		r.devices[path], r.pads[path] = name, pad
+	} else {
+		delete(r.devices, path)
+		delete(r.pads, path)
+	}
 }
 
 func (r *Remote) init() {
@@ -84,7 +146,20 @@ func (r *Remote) key(device string, code uint16, value int32) {
 	if value != 1 {
 		return
 	}
+	r.seenMu.Lock()
+	name, pad := r.devices[device], r.pads[device]
+	if name == "" {
+		name = filepath.Base(device)
+	}
+	r.last = Heard{Device: name, Key: KeyName(code), Action: r.Actions[code], At: time.Now()}
+	r.seenMu.Unlock()
+	if pad && code == btnMode && r.OnPadWake != nil {
+		r.OnPadWake(name)
+	}
 	if r.AppRunning() {
+		if r.OnAppKey != nil {
+			r.OnAppKey()
+		}
 		to, ok := appKeys[code]
 		if !ok || r.Tap == nil {
 			return
@@ -97,7 +172,11 @@ func (r *Remote) key(device string, code uint16, value int32) {
 		return
 	}
 	if action, ok := r.Actions[code]; ok {
-		r.OnAction(action)
+		if pad && r.OnPadAction != nil {
+			r.OnPadAction(action)
+		} else {
+			r.OnAction(action)
+		}
 	}
 }
 
@@ -114,6 +193,8 @@ func (r *Remote) Run(ctx context.Context) {
 	open := map[string]*os.File{}
 	skipped := map[string]bool{}
 	warned := false
+	// Controllers that are there when PiDash starts were not just switched on.
+	started := false
 
 	scan := func() {
 		paths, _ := filepath.Glob(filepath.Join(dir, "event*"))
@@ -141,10 +222,31 @@ func (r *Remote) Run(ctx context.Context) {
 			mu.Lock()
 			open[p] = f
 			mu.Unlock()
-			r.Log.Debug("listening to input device", "path", p)
+			name := deviceLabel(f)
+			if name == "" {
+				name = filepath.Base(p)
+			}
+			axes, isPad := padAxes(f)
+			r.listening(p, name, isPad, true)
+			r.Log.Debug("listening to input device", "path", p, "name", name, "controller", isPad)
+			if isPad && started && r.OnPadWake != nil {
+				r.Log.Info("a game controller was switched on", "name", name)
+				r.OnPadWake(name)
+			}
 			go func(p string, f *os.File) {
-				readEvents(f, func(code uint16, value int32) { r.key(p, code, value) })
+				// A game controller's stick and direction pad become arrow keys.
+				pad := newStick(axes)
+				readEvents(f, func(code uint16, value int32) { r.key(p, code, value) }, func(axis uint16, value int32) {
+					release, press := pad.move(axis, value)
+					if release != 0 {
+						r.key(p, release, 0)
+					}
+					if press != 0 {
+						r.key(p, press, 1)
+					}
+				})
 				f.Close()
+				r.listening(p, "", false, false)
 				r.hold.forget(p)
 				mu.Lock()
 				delete(open, p)
@@ -165,6 +267,7 @@ func (r *Remote) Run(ctx context.Context) {
 	defer t.Stop()
 	for {
 		scan()
+		started = true
 		select {
 		case <-ctx.Done():
 			mu.Lock()

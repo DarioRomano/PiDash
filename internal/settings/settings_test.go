@@ -467,3 +467,180 @@ func TestLockRadioAndScreenSettings(t *testing.T) {
 		t.Error("a backup with a mistake in it was loaded")
 	}
 }
+
+func appIDs(t *testing.T, s *Store) string {
+	t.Helper()
+	cfg, err := s.Effective()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{}
+	for _, a := range cfg.Apps {
+		ids = append(ids, a.ID)
+	}
+	return strings.Join(ids, " ")
+}
+
+func TestReorderingAppsFromTheTV(t *testing.T) {
+	// Straight from config.toml, before anything was ever saved.
+	s, path := open(t)
+	before, _ := s.Effective()
+	if err := s.ReorderApps([]string{"retro", "youtube", "netflix"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := appIDs(t, s); got != "retro youtube netflix" {
+		t.Errorf("order = %s", got)
+	}
+	// Nothing but the order changed: the hand-written command is still the
+	// one from config.toml, and YouTube kept its ad blocker.
+	after, _ := s.Effective()
+	if after.Apps[0].Command != "retroarch --fullscreen" || !after.Apps[1].AdBlock || after.Apps[1].UserAgent != before.Apps[0].UserAgent {
+		t.Errorf("apps changed by reordering: %+v", after.Apps)
+	}
+	if data, _ := os.ReadFile(path); strings.Contains(string(data), "retroarch --fullscreen") {
+		t.Errorf("a command ended up in settings.json: %s", data)
+	}
+	// It survives a restart.
+	again, err := Open(path, base())
+	if err != nil {
+		t.Fatal(err)
+	}
+	again.installed = func() []desktop.Entry { return nil }
+	if got := appIDs(t, again); got != "retro youtube netflix" {
+		t.Errorf("order after a restart = %s", got)
+	}
+
+	// Orders that do not name exactly these apps change nothing.
+	for _, bad := range [][]string{{"retro", "youtube"}, {"retro", "youtube", "plex"}, {"retro", "retro", "netflix"}, nil} {
+		if err := s.ReorderApps(bad); err == nil {
+			t.Errorf("order %v was accepted", bad)
+		}
+	}
+	if got := appIDs(t, s); got != "retro youtube netflix" {
+		t.Errorf("a refused order changed the row: %s", got)
+	}
+}
+
+func TestReorderingKeepsProgramsThatAreNotInstalledRightNow(t *testing.T) {
+	s, _ := open(t)
+	installed := []desktop.Entry{{ID: "steam", Name: "Steam", Exec: "steam %U"}}
+	s.installed = func() []desktop.Entry { return installed }
+	if err := s.Save(Update{Apps: &[]App{{Kind: KindDesktop, Desktop: "steam"}, {Kind: KindPreset, Preset: "netflix"}, {Kind: KindPreset, Preset: "youtube"}}}); err != nil {
+		t.Fatal(err)
+	}
+	installed = nil // Steam is gone for now: the row shows Netflix and YouTube
+	if err := s.ReorderApps([]string{"youtube", "netflix"}); err != nil {
+		t.Fatal(err)
+	}
+	installed = []desktop.Entry{{ID: "steam", Name: "Steam", Exec: "steam %U"}}
+	if got := appIDs(t, s); got != "youtube netflix steam" {
+		t.Errorf("order with Steam back = %s, want youtube netflix steam", got)
+	}
+}
+
+func TestAppsOfTheSameNameCannotChangePlaces(t *testing.T) {
+	s, _ := open(t)
+	if err := s.Save(Update{Apps: &[]App{
+		{Kind: KindWeb, Name: "News", URL: "https://one.example"},
+		{Kind: KindWeb, Name: "News", URL: "https://two.example"},
+		{Kind: KindPreset, Preset: "netflix"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := appIDs(t, s); got != "news news-2 netflix" {
+		t.Fatalf("ids = %s", got)
+	}
+	// Each keeps its browser profile, which is named after the id.
+	if err := s.ReorderApps([]string{"news-2", "news", "netflix"}); err == nil {
+		t.Error("swapping two apps of the same name would swap their ids; it must be refused")
+	}
+	if err := s.ReorderApps([]string{"netflix", "news", "news-2"}); err != nil {
+		t.Errorf("moving another app around them: %v", err)
+	}
+	cfg, _ := s.Effective()
+	if cfg.Apps[1].URL != "https://one.example" || cfg.Apps[2].URL != "https://two.example" {
+		t.Errorf("apps = %+v", cfg.Apps)
+	}
+}
+
+func TestCoolingSwitch(t *testing.T) {
+	s, _ := open(t)
+	if v := s.View(); v.System.Cooling == nil || !*v.System.Cooling {
+		t.Fatalf("cooling is on unless switched off: %+v", v.System)
+	}
+	off, on := false, true
+	if err := s.Save(Update{System: &System{Cooling: &off}}); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _ := s.Effective(); cfg.System.CoolAbove != 0 {
+		t.Errorf("cool_above = %v after switching it off", cfg.System.CoolAbove)
+	}
+	if err := s.Save(Update{System: &System{Cooling: &on}}); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _ := s.Effective(); cfg.System.CoolAbove != 75 {
+		t.Errorf("cool_above = %v after switching it on", cfg.System.CoolAbove)
+	}
+	// Settings saved by a version without the switch leave it as it is.
+	if err := s.Save(Update{System: &System{AutoUpdate: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _ := s.Effective(); cfg.System.CoolAbove != 75 || !cfg.Update.Auto {
+		t.Errorf("cool_above = %v, auto = %v", cfg.System.CoolAbove, cfg.Update.Auto)
+	}
+}
+
+func TestEmulatorsAreOfferedAndStartFullscreen(t *testing.T) {
+	s, path := open(t)
+	installed := []desktop.Entry{
+		{ID: "retroarch", Name: "RetroArch", Exec: "retroarch", Icon: "retroarch", Window: "retroarch"},
+		// A Flatpak: its menu entry runs it through flatpak.
+		{ID: "org.ppsspp.PPSSPP", Name: "PPSSPP", Exec: "/usr/bin/flatpak run --command=PPSSPPSDL org.ppsspp.PPSSPP @@ %f @@", Window: "org.ppsspp.PPSSPP"},
+		{ID: "dosbox", Name: "DOSBox Emulator", Exec: "dosbox -fullscreen"},
+		{ID: "org.videolan.VLC", Name: "VLC media player", Exec: "vlc %U"},
+	}
+	s.installed = func() []desktop.Entry { return installed }
+
+	found := map[string]string{}
+	for _, em := range s.View().Emulators {
+		found[em.ID] = em.Desktop
+		if em.Name == "" || em.Systems == "" || em.Description == "" || em.Install == "" {
+			t.Errorf("%s lacks a text for the page: %+v", em.ID, em)
+		}
+	}
+	if len(found) != len(Emulators) || found["retroarch"] != "retroarch" || found["ppsspp"] != "org.ppsspp.PPSSPP" || found["dosbox"] != "dosbox" || found["mame"] != "" || found["scummvm"] != "" {
+		t.Errorf("emulators found installed = %v", found)
+	}
+
+	// The page adds one like any installed program: by the name of its menu entry.
+	err := s.Save(Update{Apps: &[]App{
+		{Kind: KindDesktop, Desktop: "retroarch"},
+		{Kind: KindDesktop, Desktop: "org.ppsspp.PPSSPP"},
+		{Kind: KindDesktop, Desktop: "dosbox", Name: "Old games"},
+		{Kind: KindDesktop, Desktop: "org.videolan.VLC"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := s.Effective()
+	if err != nil || len(cfg.Apps) != 4 {
+		t.Fatalf("apps = %+v, err %v", cfg.Apps, err)
+	}
+	retro, psp, dos, vlc := cfg.Apps[0], cfg.Apps[1], cfg.Apps[2], cfg.Apps[3]
+	if retro.Command != "retroarch -f" || retro.Window != "retroarch" || retro.Name != "RetroArch" {
+		t.Errorf("RetroArch = %+v", retro)
+	}
+	if psp.Command != "/usr/bin/flatpak run --command=PPSSPPSDL org.ppsspp.PPSSPP @@ @@ --fullscreen" {
+		t.Errorf("PPSSPP command = %q", psp.Command)
+	}
+	// Already fullscreen in its menu entry: not said twice. A name typed on the page wins.
+	if dos.Command != "dosbox -fullscreen" || dos.Name != "Old games" {
+		t.Errorf("DOSBox = %+v", dos)
+	}
+	if vlc.Command != "vlc" {
+		t.Errorf("other programs must start exactly as from the menu: %q", vlc.Command)
+	}
+	if data, _ := os.ReadFile(path); strings.Contains(string(data), "fullscreen") || strings.Contains(string(data), "flatpak") {
+		t.Errorf("commands belong to the Pi, not to settings.json: %s", data)
+	}
+}

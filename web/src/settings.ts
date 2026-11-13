@@ -65,13 +65,14 @@ interface Info {
   screen: { nightStart: string; nightEnd: string; language: string; clockPosition: string; clockSize: string; view: string; background: string };
   calendar: { links: CalendarLink[] };
   home: { url: string; tokenSet: boolean; entities: string[] };
-  system: { autoUpdate: boolean };
+  system: { autoUpdate: boolean; cooling?: boolean };
   lock: { set: boolean };
   radio: Station[];
   apps: AppEntry[];
   presets: Preset[];
   /** Programs installed on the Pi, as its application menu lists them. */
   installed: { id: string; name: string; comment?: string }[];
+  emulators?: { id: string; name: string; systems: string; description: string; install: string; desktop?: string }[];
   consoleReady: boolean;
   pinRequired: boolean;
   version: string;
@@ -184,7 +185,7 @@ function readForm() {
     apps: apps.map(({ detail: _detail, missing: _missing, ...rest }) => rest),
     calendar: { links: calendars.map((l) => (l.url ? { url: l.url } : { key: l.key })) },
     home: { url: val("h-url").trim(), token: val("h-token").trim(), entities: homeTiles },
-    system: { autoUpdate: $<HTMLInputElement>("sys-auto").checked },
+    system: { autoUpdate: $<HTMLInputElement>("sys-auto").checked, cooling: $<HTMLInputElement>("sys-cool").checked },
     // Empty leaves the PIN as it is.
     lock: { pin: val("l-pin").trim(), remove: removeLock },
     radio: stations.map(({ name, url }) => ({ name, url })),
@@ -264,6 +265,7 @@ function fill(i: Info) {
   homeTiles = [...i.home.entities];
   renderHomeTiles();
   $<HTMLInputElement>("sys-auto").checked = i.system.autoUpdate;
+  $<HTMLInputElement>("sys-cool").checked = i.system.cooling ?? true;
   stations = i.radio.map((s) => ({ ...s }));
   renderStations();
   removeLock = false;
@@ -664,13 +666,19 @@ function renderApps() {
 
 const OTHER = "__website";
 const INSTALLED = "__installed";
+/** Followed by the emulator's id. */
+const EMULATOR = "__emulator:";
 
 function renderAddChoices() {
   const kind = $<HTMLSelectElement>("add-kind");
   const previous = kind.value;
   const used = new Set(apps.filter((a) => a.kind === "preset").map((a) => a.preset));
+  // Emulators are listed whether installed or not: choosing one that is not
+  // says how to install it.
+  const inRow = new Set(apps.filter((a) => a.kind === "desktop").map((a) => a.desktop));
   kind.replaceChildren(
     ...info.presets.filter((p) => !used.has(p.id)).map((p) => new Option(p.name, p.id)),
+    ...(info.emulators ?? []).filter((em) => !em.desktop || !inRow.has(em.desktop)).map((em) => new Option(`${em.name} · ${t(em.systems)}`, EMULATOR + em.id)),
     new Option("A program installed on the Pi…", INSTALLED),
     new Option("Another website…", OTHER),
   );
@@ -706,11 +714,23 @@ function showAddFields() {
         "It starts the way it does from the Pi's menu. Programs made for a mouse need one: the phone remote has a touchpad."
       : "No more programs were found in the Pi's application menu.";
   }
+  const em = emulatorChosen();
+  if (em) {
+    desc = t(em.description) + " ";
+    desc += em.desktop
+      ? t("Holding the controller's logo button, or Back on the remote, for two seconds returns to PiDash.")
+      : t("It is not installed yet. In a terminal on the Pi: {command}  Then open this page again.", { command: em.install });
+  }
   if (p?.console && !info.consoleReady) {
     desc += " It runs outside the desktop, which needs a one-time setup on the Pi: bash deploy/install.sh --console-apps";
   }
   $("add-desc").textContent = desc;
   setResult($("add-result"), "");
+}
+
+function emulatorChosen() {
+  const choice = val("add-kind");
+  return choice.startsWith(EMULATOR) ? (info.emulators ?? []).find((x) => x.id === choice.slice(EMULATOR.length)) : undefined;
 }
 
 $("add-kind").addEventListener("change", showAddFields);
@@ -725,6 +745,11 @@ $("add-btn").addEventListener("click", () => {
     if (!name) return setResult(result, "Give it a name.", "error");
     if (!/^https?:\/\/\S+\.\S+|^https?:\/\/[^\s/]+/.test(url)) return setResult(result, "Enter the full address, starting with http:// or https://", "error");
     apps.push({ kind: "web", name, url, adblock: $<HTMLInputElement>("add-adblock").checked });
+  } else if (choice.startsWith(EMULATOR)) {
+    const em = emulatorChosen();
+    if (!em) return;
+    if (!em.desktop) return setResult(result, t("{name} is not installed on the Pi yet.", { name: em.name }), "error");
+    apps.push({ kind: "desktop", desktop: em.desktop, name: em.name });
   } else if (choice === INSTALLED) {
     const e = info.installed.find((x) => x.id === val("add-installed"));
     if (!e) return setResult(result, "Choose a program first.", "error");
@@ -806,7 +831,7 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
-for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "n-start", "n-end", "h-url", "h-token", "sys-auto", "l-pin", "d-language", "d-position", "d-size", "d-view", "d-background"]) {
+for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "n-start", "n-end", "h-url", "h-token", "sys-auto", "sys-cool", "l-pin", "d-language", "d-position", "d-size", "d-view", "d-background"]) {
   $(id).addEventListener("input", refresh);
   $(id).addEventListener("change", refresh);
 }

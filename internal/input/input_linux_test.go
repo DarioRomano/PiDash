@@ -22,7 +22,7 @@ func TestReadEventsFeedsTheDetector(t *testing.T) {
 		value int32
 	}
 	var got []key
-	readEvents(&stream, func(code uint16, value int32) { got = append(got, key{code, value}) })
+	readEvents(&stream, func(code uint16, value int32) { got = append(got, key{code, value}) }, nil)
 	want := []key{{keyExit, 1}, {keyExit, 2}, {keyExit, 0}}
 	if len(got) != len(want) {
 		t.Fatalf("got %v, want %v", got, want)

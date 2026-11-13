@@ -24,6 +24,9 @@ type Entry struct {
 	Exec string `json:"-"`
 	// Icon is an icon-theme name or an absolute path.
 	Icon string `json:"-"`
+	// Window is the name of the program's window: StartupWMClass if the entry
+	// has one, else the entry's id, which is what well-behaved programs use.
+	Window string `json:"-"`
 }
 
 // DataDirs returns the XDG data directories, the user's first, including
@@ -70,6 +73,9 @@ func List(dataDirs []string) []Entry {
 			seen[id] = true // even when unusable: a user's hidden copy masks the system's
 			if e, ok := read(path); ok {
 				e.ID = id
+				if e.Window == "" {
+					e.Window = id
+				}
 				out = append(out, e)
 			}
 			return nil
@@ -140,7 +146,7 @@ func read(path string) (Entry, bool) {
 			return Entry{}, false
 		}
 	}
-	return Entry{Name: kv["Name"], Comment: kv["Comment"], Exec: kv["Exec"], Icon: kv["Icon"]}, true
+	return Entry{Name: kv["Name"], Comment: kv["Comment"], Exec: kv["Exec"], Icon: kv["Icon"], Window: kv["StartupWMClass"]}, true
 }
 
 // fieldCode matches the placeholders of an Exec line (%f, %U, …), with the

@@ -93,6 +93,9 @@ type Service struct {
 	// when it last announced that it is switching off.
 	lastPoll     time.Time
 	heardStandby time.Time
+	// lastLook and lastWakeLook are when a game controller last made the
+	// service ask the TV whether it is on, and ask in order to wake it.
+	lastLook, lastWakeLook time.Time
 	// sleepAt is when the sleep timer switches the TV off; zero when not set.
 	sleepAt      time.Time
 	sleepMinutes int
@@ -281,6 +284,64 @@ func (s *Service) NoteAwake() {
 	s.mu.Unlock()
 	s.opt.Log.Info("the TV is on again; carrying on")
 	fn(st)
+}
+
+// lookAgain is the shortest time between two looks at the TV on behalf of a
+// game controller, whose buttons can arrive many times a second.
+const lookAgain = 5 * time.Second
+
+// WakeIfOff switches the TV on, and to the Pi's input, if it is in standby.
+// A TV that is on is left alone: it may be showing something else, and
+// taking its input away would be rude. It reports whether the TV was woken.
+func (s *Service) WakeIfOff(ctx context.Context) (bool, error) { return s.look(ctx, true) }
+
+// Recheck asks the TV whether it is on, when it is believed to be off. It
+// is for a button pressed on a game controller, which unlike the TV's own
+// remote does not prove that the TV is on.
+func (s *Service) Recheck(ctx context.Context) { _, _ = s.look(ctx, false) }
+
+func (s *Service) look(ctx context.Context, wake bool) (bool, error) {
+	if !s.opt.TV.Available() {
+		return false, nil
+	}
+	now := time.Now()
+	s.mu.Lock()
+	// Counted apart: the logo button asks for both at once, and the question
+	// must not use up the wake-up's turn.
+	last := &s.lastLook
+	if wake {
+		last = &s.lastWakeLook
+	}
+	if now.Sub(*last) < lookAgain {
+		s.mu.Unlock()
+		return false, nil
+	}
+	*last = now
+	believedOff := s.asleep
+	s.mu.Unlock()
+
+	power, _ := s.opt.TV.PowerStatus(ctx)
+	// A TV that does not say is taken to be as it was last known.
+	off := power == cec.PowerStandby || (power != cec.PowerOn && believedOff)
+	if !off {
+		s.mu.Lock()
+		was := s.asleep
+		s.asleep, s.standbyAt = false, time.Time{}
+		st, fn := s.statusLocked(), s.onChange
+		s.mu.Unlock()
+		if was {
+			s.opt.Log.Info("the TV is on again; carrying on")
+			fn(st)
+		}
+		return false, nil
+	}
+	if !wake {
+		return false, nil
+	}
+	if err := s.setPower(ctx, true, now); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // SetSleep starts the sleep timer: the TV is switched off in that many

@@ -64,7 +64,8 @@ func PrepareWebApp(app config.App, dataDir string, env []string, log *slog.Logge
 			env = append(env, "MOZ_ENABLE_WAYLAND=1")
 		}
 		return WebLaunch{
-			Argv: []string{bin, "--kiosk", "--no-remote", "--profile", profile, "--class", "pidash-" + app.ID, app.URL},
+			// --name is what the window is called on Wayland, --class on X11.
+			Argv: []string{bin, "--kiosk", "--no-remote", "--profile", profile, "--name", "pidash-" + app.ID, "--class", "pidash-" + app.ID, app.URL},
 			Env:  env,
 		}, nil
 

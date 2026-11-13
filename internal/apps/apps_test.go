@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -247,5 +248,35 @@ func TestConsoleEnvDropsDisplayVariables(t *testing.T) {
 	got := envMap(ConsoleEnv([]string{"PATH=/bin", "WAYLAND_DISPLAY=wayland-0", "DISPLAY=:0", "XAUTHORITY=/x", "HOME=/h"}))
 	if len(got) != 2 || got["PATH"] != "/bin" || got["HOME"] != "/h" {
 		t.Errorf("env = %v", got)
+	}
+}
+
+func TestReorderKeepsTheSameAppsInANewOrder(t *testing.T) {
+	list := []config.App{{ID: "a", Name: "A", Command: "a"}, {ID: "b", Name: "B", Command: "b"}, {ID: "c", Name: "C", Command: "c"}}
+	m := NewManager(list, &Mock{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	var seen []string
+	m.OnChange(func(st Status) {
+		seen = nil
+		for _, a := range st.Apps {
+			seen = append(seen, a.ID)
+		}
+	})
+	if !m.Reorder([]string{"c", "a", "b"}) {
+		t.Fatal("a valid order was refused")
+	}
+	if got := strings.Join(seen, ","); got != "c,a,b" {
+		t.Errorf("order announced = %s, want c,a,b", got)
+	}
+	for _, bad := range [][]string{{"a", "b"}, {"a", "b", "x"}, {"a", "a", "b"}, {}} {
+		if m.Reorder(bad) {
+			t.Errorf("order %v must be refused", bad)
+		}
+	}
+	var ids []string
+	for _, a := range m.Status().Apps {
+		ids = append(ids, a.ID)
+	}
+	if got := strings.Join(ids, ","); got != "c,a,b" {
+		t.Errorf("a refused order changed the row: %s", got)
 	}
 }

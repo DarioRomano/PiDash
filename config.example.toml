@@ -48,6 +48,10 @@ locale = ""
 [system]
 enabled = true
 interval = "10s"
+# Above this temperature (°C) the background stands still and photos stop
+# moving, until the Pi is 7° cooler again. A Pi 5 slows itself down from 80°.
+# 0 = never.
+cool_above = 75
 
 [kiosk]
 # systemd user unit that runs the fullscreen browser. It powers "Show on TV" and
@@ -63,6 +67,10 @@ unit = "pidash-kiosk.service"
 [tv]
 off = ""    # e.g. "23:30"
 on = ""     # e.g. "06:30"
+# Switching a game controller on (or pressing its logo button) while the TV is
+# in standby switches the TV on and to the Pi, the way a games console does.
+# A TV that is on and showing something else is left alone.
+wake_on_controller = true
 
 # --- Phone remote --------------------------------------------------------------
 [remote]
@@ -246,9 +254,15 @@ app_exit_hold = "2s"
 
 # Extra remote buttons for the dashboard, for example the colour keys.
 # Actions are the same as under [input.keys] below; "none" switches one off.
+#
+# A game controller works as a remote without anything here: stick and
+# direction pad are the arrows, the bottom button is OK, the right one Back,
+# Start opens the app row. Its buttons can be changed here too (BTN_SOUTH,
+# BTN_EAST, BTN_NORTH, BTN_WEST, BTN_TL, BTN_TR, BTN_START, BTN_SELECT, BTN_MODE).
 [input.remote_keys]
 # KEY_RED = "weather"
 # KEY_BLUE = "settings"
+# BTN_NORTH = "weather"
 
 # --- Keys on the dashboard ----------------------------------------------------
 # Which key does what while the dashboard is showing: TV remote buttons and a

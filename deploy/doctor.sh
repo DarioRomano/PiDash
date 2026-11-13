@@ -87,6 +87,11 @@ elif [ -e /dev/uinput ]; then
 else
   echo "virtual keyboard: /dev/uinput does not exist (sudo modprobe uinput)"
 fi
+if have wlrctl; then
+  echo "keyboard for open apps: wlrctl is installed (PiDash can hand the keyboard to an app's window)"
+else
+  echo "keyboard for open apps: wlrctl is not installed (sudo apt install wlrctl)"
+fi
 
 section "TV over HDMI-CEC"
 if have cec-ctl; then "$APP_DIR/pidash" -cec status 2>&1; else echo "cec-ctl is not installed (sudo apt install v4l-utils)"; fi

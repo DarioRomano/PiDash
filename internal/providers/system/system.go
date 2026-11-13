@@ -8,14 +8,43 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 // Provider reports system statistics read from /proc and /sys.
-type Provider struct{ interval time.Duration }
+type Provider struct {
+	interval time.Duration
+	// CoolAbove is the temperature in °C from which the Pi counts as hot;
+	// 0 never calls it hot.
+	CoolAbove float64
+
+	mu  sync.Mutex
+	hot bool
+}
+
+// coolBy is how far below CoolAbove the temperature has to fall before the
+// Pi no longer counts as hot. Without the gap the effects would switch on
+// and off every few seconds around the limit.
+const coolBy = 7
 
 // New returns a system provider polled every interval.
 func New(interval time.Duration) *Provider { return &Provider{interval: interval} }
+
+// judge takes a temperature reading and says whether the Pi is hot.
+func (p *Provider) judge(temp float64) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	switch {
+	case p.CoolAbove <= 0:
+		p.hot = false
+	case temp >= p.CoolAbove:
+		p.hot = true
+	case temp <= p.CoolAbove-coolBy:
+		p.hot = false
+	}
+	return p.hot
+}
 
 // Name implements providers.Provider.
 func (p *Provider) Name() string { return "system" }
@@ -32,6 +61,8 @@ type State struct {
 	MemUsedMB     int64    `json:"memUsedMB"`
 	CPUTempC      *float64 `json:"cpuTempC"`
 	Addresses     []string `json:"addresses"`
+	// Hot asks the dashboard to do less until the Pi has cooled down.
+	Hot bool `json:"hot"`
 }
 
 // Fetch implements providers.Provider.
@@ -73,6 +104,7 @@ func (p *Provider) Fetch(_ context.Context) (any, error) {
 		if v, err := strconv.ParseFloat(strings.TrimSpace(string(b)), 64); err == nil {
 			t := v / 1000
 			s.CPUTempC = &t
+			s.Hot = p.judge(t)
 		}
 	}
 	if ifaces, err := net.Interfaces(); err == nil {

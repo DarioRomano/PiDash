@@ -26,6 +26,7 @@ import (
 	"github.com/DarioRomano/PiDash/internal/hass"
 	"github.com/DarioRomano/PiDash/internal/input"
 	"github.com/DarioRomano/PiDash/internal/kiosk"
+	"github.com/DarioRomano/PiDash/internal/logring"
 	"github.com/DarioRomano/PiDash/internal/photos"
 	"github.com/DarioRomano/PiDash/internal/providers"
 	"github.com/DarioRomano/PiDash/internal/providers/calendar"
@@ -48,6 +49,8 @@ type Server struct {
 	input      *input.Service
 	tv         *tv.Service
 	updater    *update.Service
+	remote     *input.Remote
+	problems   *logring.Ring
 	photoState string
 	pin        pinGuard
 	version    string
@@ -82,6 +85,11 @@ type Deps struct {
 	PhotoStatePath string
 	// Updater looks for and installs new releases; may be nil.
 	Updater *update.Service
+	// Remote reads the TV remote and game controllers; nil when it does not
+	// (-mock). Problems holds the latest warnings; may be nil. Both are for
+	// the status page.
+	Remote   *input.Remote
+	Problems *logring.Ring
 	// Version is the PiDash version, shown on the phone remote.
 	Version string
 	// Notices are start-up problems to show on the TV.
@@ -111,6 +119,7 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("GET /events", s.handleEvents)
 	s.mux.HandleFunc("GET /api/config", s.handleConfig)
 	s.mux.HandleFunc("GET /api/state", s.handleState)
+	s.mux.HandleFunc("GET /api/status", s.handleStatus)
 	s.mux.HandleFunc("POST /api/input", s.handleInput)
 	if d.TestHooks {
 		// For the end-to-end tests: a button press as if read from the TV remote.
@@ -130,6 +139,7 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("GET /api/apps", s.handleApps)
 	s.mux.HandleFunc("POST /api/apps/start", s.handleAppStart)
 	s.mux.HandleFunc("POST /api/apps/stop", s.handleAppStop)
+	s.mux.HandleFunc("POST /api/apps/order", s.handleAppOrder)
 	s.mux.HandleFunc("GET /api/apps/{id}/icon", s.handleAppIcon)
 	if ps != nil {
 		ps.OnChange(func(st photos.Status) { s.hub.broadcast("photos", st) })
@@ -162,6 +172,7 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("POST /api/settings/home-entities", s.handleHomeEntities)
 	s.mux.HandleFunc("POST /api/home/activate", s.handleHomeActivate)
 	s.updater = d.Updater
+	s.remote, s.problems = d.Remote, d.Problems
 	s.mux.HandleFunc("GET /api/update", s.handleUpdate)
 	s.mux.HandleFunc("POST /api/update/check", s.handleUpdate)
 	s.mux.HandleFunc("POST /api/update/install", s.handleUpdateInstall)
@@ -395,6 +406,51 @@ func (s *Server) handleAppStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	writeJSON(w, s.apps.Status())
+}
+
+// handleAppOrder saves a new order of the app row, after a tile was moved
+// with the TV remote. It changes the settings, so it needs the settings PIN
+// when there is one.
+func (s *Server) handleAppOrder(w http.ResponseWriter, r *http.Request) {
+	if !s.pin.allow(w, r) {
+		return
+	}
+	var req struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	// The same apps in another order, or nothing is changed.
+	now := s.apps.Status().Apps
+	have := map[string]bool{}
+	for _, a := range now {
+		have[a.ID] = true
+	}
+	for _, id := range req.IDs {
+		if !have[id] {
+			http.Error(w, settings.ErrOrder.Error(), http.StatusConflict)
+			return
+		}
+		delete(have, id)
+	}
+	if len(req.IDs) != len(now) {
+		http.Error(w, settings.ErrOrder.Error(), http.StatusConflict)
+		return
+	}
+	if s.settings != nil {
+		if err := s.settings.ReorderApps(req.IDs); err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, settings.ErrOrder) {
+				status = http.StatusConflict
+			}
+			http.Error(w, err.Error(), status)
+			return
+		}
+	}
+	s.apps.Reorder(req.IDs)
 	writeJSON(w, s.apps.Status())
 }
 

@@ -178,6 +178,51 @@ func eviocgbit(ev, length int) uintptr {
 	return 2<<30 | uintptr(length)<<16 | 'E'<<8 | uintptr(0x20+ev)
 }
 
+// deviceLabel returns the name an input device gives itself, such as the
+// TV's name for a remote that arrives over HDMI.
+func deviceLabel(f *os.File) string {
+	raw, err := f.SyscallConn()
+	if err != nil {
+		return ""
+	}
+	var name [128]byte
+	var nameErr error
+	if raw.Control(func(fd uintptr) {
+		nameErr = ioctl(int(fd), eviocgname(len(name)), uintptr(unsafe.Pointer(&name[0])))
+	}) != nil || nameErr != nil {
+		return ""
+	}
+	return cString(name[:])
+}
+
+// eviocgabs asks for the range of one axis (struct input_absinfo, 24 bytes).
+func eviocgabs(axis int) uintptr { return 2<<30 | 24<<16 | 'E'<<8 | uintptr(0x40+axis) }
+
+// padAxes reports whether the device is a game controller and, if so, the
+// ranges of its left stick and direction pad. Touchpads and tablets have
+// axes too, but none of them has a controller's buttons.
+func padAxes(f *os.File) (axes map[uint16][2]int32, isPad bool) {
+	raw, err := f.SyscallConn()
+	if err != nil {
+		return nil, false
+	}
+	out := map[uint16][2]int32{}
+	_ = raw.Control(func(fd uintptr) {
+		bits := make([]byte, 0x300/8)
+		if ioctl(int(fd), eviocgbit(evKey, len(bits)), uintptr(unsafe.Pointer(&bits[0]))) != nil || bits[btnSouth/8]&(1<<(btnSouth%8)) == 0 {
+			return
+		}
+		isPad = true
+		for _, axis := range []uint16{absX, absY, absHat0X, absHat0Y} {
+			var info [6]int32 // value, minimum, maximum, fuzz, flat, resolution
+			if ioctl(int(fd), eviocgabs(int(axis)), uintptr(unsafe.Pointer(&info[0]))) == nil && info[2] > info[1] {
+				out[axis] = [2]int32{info[1], info[2]}
+			}
+		}
+	})
+	return out, isPad
+}
+
 // openRemote opens an input device if it can send any of the wanted keys and
 // is not PiDash's own virtual device.
 func openRemote(path string, wanted []uint16) (*os.File, error) {

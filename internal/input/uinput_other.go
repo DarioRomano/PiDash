@@ -23,4 +23,6 @@ func (d *virtualDevice) scroll(dx, dy int) error     { return errUnsupported }
 func (d *virtualDevice) key(uint16, bool) error      { return errUnsupported }
 func (d *virtualDevice) close()                      {}
 func openRemote(string, []uint16) (*os.File, error)  { return nil, errNotARemote }
+func padAxes(*os.File) (map[uint16][2]int32, bool)   { return nil, false }
+func deviceLabel(*os.File) string                    { return "" }
 func decodeEvent([]byte) (typ, code uint16, v int32) { return 0, 0, 0 }

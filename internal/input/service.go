@@ -259,13 +259,17 @@ func (s *Service) Type(ctx context.Context, text string) error {
 }
 
 // readEvents reads key events from a device until it fails or is closed.
-func readEvents(r io.Reader, onKey func(code uint16, value int32)) {
+// onAxis, if not nil, gets the positions of sticks and direction pads.
+func readEvents(r io.Reader, onKey func(code uint16, value int32), onAxis func(axis uint16, value int32)) {
 	buf := make([]byte, eventSize*32)
 	for {
 		n, err := r.Read(buf)
 		for off := 0; off+eventSize <= n; off += eventSize {
-			if typ, code, value := decodeEvent(buf[off : off+eventSize]); typ == evKey {
+			switch typ, code, value := decodeEvent(buf[off : off+eventSize]); {
+			case typ == evKey:
 				onKey(code, value)
+			case typ == evAbs && onAxis != nil:
+				onAxis(code, value)
 			}
 		}
 		if err != nil {
