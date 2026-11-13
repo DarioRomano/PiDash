@@ -37,6 +37,21 @@ export interface SystemState {
   addresses: string[];
 }
 
+export interface AppInfo {
+  id: string;
+  name: string;
+  mode: "desktop" | "console";
+  hasIcon: boolean;
+}
+
+export interface AppsStatus {
+  apps: AppInfo[];
+  /** id of the running app, or "". */
+  running: string;
+  consoleReady: boolean;
+  error?: string;
+}
+
 /** The complete remote-control vocabulary. Everything else is ignored. */
 export type Action =
   | "up" | "down" | "left" | "right"

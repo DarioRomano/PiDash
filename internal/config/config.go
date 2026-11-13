@@ -4,6 +4,8 @@ package config
 import (
 	"fmt"
 	"os"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -16,6 +18,7 @@ type Config struct {
 	Input   Input   `toml:"input"`
 	System  System  `toml:"system"`
 	Kiosk   Kiosk   `toml:"kiosk"`
+	Apps    []App   `toml:"apps"`
 }
 
 // Server holds HTTP settings.
@@ -57,6 +60,28 @@ type Kiosk struct {
 	// "Show on TV" / "Exit to desktop" controls.
 	Unit string `toml:"unit"`
 }
+
+// App launch modes.
+const (
+	AppModeDesktop = "desktop"
+	AppModeConsole = "console"
+)
+
+// App is an external program that can be launched from the dashboard.
+type App struct {
+	// ID is a short unique name used in URLs and unit names: a-z, 0-9 and "-".
+	ID string `toml:"id"`
+	// Name is shown on the TV. Defaults to ID.
+	Name string `toml:"name"`
+	// Command is run with `sh -c` as the desktop user.
+	Command string `toml:"command"`
+	// Mode is "desktop" (default) or "console" (own virtual terminal).
+	Mode string `toml:"mode"`
+	// Icon is an optional path to an image (SVG or PNG) shown on the tile.
+	Icon string `toml:"icon"`
+}
+
+var appIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
 // Duration is a time.Duration that decodes from TOML strings like "30s".
 type Duration struct{ time.Duration }
@@ -108,7 +133,7 @@ func Default() Config {
 func Load(path string) (Config, error) {
 	cfg := Default()
 	if path == "" {
-		return cfg, cfg.validate()
+		return cfg, cfg.finish()
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -134,7 +159,37 @@ func Load(path string) (Config, error) {
 	if undecoded := md.Undecoded(); len(undecoded) > 0 {
 		return cfg, fmt.Errorf("%s: unknown key(s): %v", path, undecoded)
 	}
-	return cfg, cfg.validate()
+	return cfg, cfg.finish()
+}
+
+// finish fills in per-entry defaults and validates the configuration.
+func (c *Config) finish() error {
+	seen := map[string]bool{}
+	for i := range c.Apps {
+		a := &c.Apps[i]
+		a.ID = strings.TrimSpace(a.ID)
+		if !appIDPattern.MatchString(a.ID) {
+			return fmt.Errorf("apps[%d].id %q must be 1-32 characters of a-z, 0-9 or '-', starting with a letter or digit", i, a.ID)
+		}
+		if seen[a.ID] {
+			return fmt.Errorf("apps: duplicate id %q", a.ID)
+		}
+		seen[a.ID] = true
+		if strings.TrimSpace(a.Name) == "" {
+			a.Name = a.ID
+		}
+		if strings.TrimSpace(a.Command) == "" {
+			return fmt.Errorf("apps[%d] (%s): command is required", i, a.ID)
+		}
+		switch a.Mode {
+		case "":
+			a.Mode = AppModeDesktop
+		case AppModeDesktop, AppModeConsole:
+		default:
+			return fmt.Errorf("apps[%d] (%s): mode must be %q or %q, got %q", i, a.ID, AppModeDesktop, AppModeConsole, a.Mode)
+		}
+	}
+	return c.validate()
 }
 
 func (c Config) validate() error {

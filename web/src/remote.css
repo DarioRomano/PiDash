@@ -45,3 +45,12 @@ input:focus { outline: 2px solid var(--accent); }
 #kiosk button { font-size: 17px; padding: 14px; }
 #kiosk button.current { outline: 2px solid var(--accent); color: var(--accent); }
 [hidden] { display: none !important; }
+
+#apps { display: flex; flex-direction: column; gap: 10px; }
+#app-list { display: flex; gap: 10px; overflow-x: auto; scrollbar-width: none; padding: 3px; margin: -3px; }
+#app-list button { flex: 0 0 auto; font-size: 17px; padding: 14px 18px; white-space: nowrap; }
+#app-list button.current { outline: 2px solid #46a758; color: #6fd08c; }
+#running { align-items: center; background: #12261a; border-radius: 16px; padding: 8px 8px 8px 16px; }
+#running-name { flex: 2; font-size: 16px; color: #6fd08c; }
+#app-stop { flex: 3; font-size: 17px; padding: 14px; background: #46a758; color: #06130a; font-weight: 600; }
+#app-msg { font-size: 14px; color: #f2a0a3; line-height: 1.35; }

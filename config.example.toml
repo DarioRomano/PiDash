@@ -28,6 +28,42 @@ interval = "10s"
 # Set to "" to disable those controls.
 unit = "pidash-kiosk.service"
 
+# --- Apps -------------------------------------------------------------------
+# Programs you can launch from the dashboard: press OK to open the app row.
+# Add one [[apps]] block per program.
+#
+#   id       short unique name: a-z, 0-9 and "-"
+#   name     what the TV shows (defaults to id)
+#   command  what to run, exactly as you would type it in a terminal
+#   mode     "desktop" (default): runs on the desktop like any other program.
+#            "console": runs on its own virtual terminal, outside the desktop,
+#                       so the app drives the screen directly. Best for game
+#                       streaming and video players: lower latency, HDR and
+#                       refresh-rate switching. Needs a one-time setup:
+#                       bash deploy/install.sh --console-apps
+#   icon     optional path to an SVG or PNG for the tile
+#
+# While an app is running, the phone remote shows "Back to dashboard".
+# Uncomment and adjust the examples you want:
+#
+# [[apps]]
+# id = "moonlight"
+# name = "Moonlight"
+# command = "moonlight-qt"
+# mode = "console"
+#
+# [[apps]]
+# id = "kodi"
+# name = "Kodi"
+# command = "kodi-standalone"
+# mode = "console"
+#
+# [[apps]]
+# id = "steamlink"
+# name = "Steam Link"
+# command = "steamlink"
+# mode = "desktop"
+
 # Map browser KeyboardEvent.code values to actions.
 # Actions: up down left right select back menu home playpause exit 0-9
 # "exit" closes the dashboard and returns to the desktop. Holding any key mapped

@@ -76,6 +76,61 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") refreshKiosk();
 });
 
+// --- Apps: launch on the TV, and get back to the dashboard -------------------
+
+interface AppsStatus {
+  apps: { id: string; name: string; mode: string }[];
+  running: string;
+  consoleReady: boolean;
+  error?: string;
+}
+
+const appsEl = document.getElementById("apps")!;
+const appList = document.getElementById("app-list")!;
+const runningRow = document.getElementById("running")!;
+const runningName = document.getElementById("running-name")!;
+const appMsg = document.getElementById("app-msg")!;
+
+function showApps(st: AppsStatus) {
+  appsEl.hidden = st.apps.length === 0;
+  const running = st.apps.find((a) => a.id === st.running);
+  runningRow.hidden = !running;
+  runningName.textContent = running ? `${running.name} is on the TV` : "";
+  appMsg.hidden = !st.error;
+  appMsg.textContent = st.error ?? "";
+  appList.replaceChildren(
+    ...st.apps.map((a) => {
+      const b = document.createElement("button");
+      b.textContent = a.name;
+      b.classList.toggle("current", a.id === st.running);
+      b.addEventListener("click", () => appRequest("/api/apps/start", { id: a.id }));
+      return b;
+    }),
+  );
+}
+
+async function appRequest(url: string, body: unknown) {
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    statusDot.classList.toggle("ok", res.ok);
+    if (res.ok) showApps(await res.json());
+  } catch {
+    statusDot.classList.remove("ok");
+  }
+}
+
+document.getElementById("app-stop")!.addEventListener("click", () => appRequest("/api/apps/stop", {}));
+
+// Live updates, so the phone notices when an app is closed with the controller.
+const events = new EventSource("/events");
+events.addEventListener("apps", (e) => showApps(JSON.parse((e as MessageEvent).data)));
+events.addEventListener("open", () => statusDot.classList.add("ok"));
+events.addEventListener("error", () => statusDot.classList.remove("ok"));
+
 // Keyboard on a laptop works too.
 const keymap: Record<string, string> = {
   ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",

@@ -1,0 +1,37 @@
+# systemd SYSTEM template unit: /etc/systemd/system/pidash-console@.service
+# Installed only by `install.sh --console-apps`.
+#
+# Runs one PiDash app (the instance name is the app id from config.toml) on its
+# own virtual terminal, outside the desktop compositor, so it can drive the
+# display directly. This is the equivalent of pressing Ctrl+Alt+F8, logging in
+# and starting the app by hand, and of pressing Ctrl+Alt+F7 when it exits.
+#
+# The app itself runs as the normal desktop user, never as root. Only the two
+# terminal switches (the lines starting with "+") run privileged.
+[Unit]
+Description=PiDash console app: %i
+After=systemd-user-sessions.service
+Conflicts=getty@tty@VT@.service
+ConditionPathExists=/dev/tty0
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=~
+# A real login session on this terminal: gives the app the seat's display,
+# input and audio devices the same way a console login would.
+PAMName=login
+TTYPath=/dev/tty@VT@
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty-fail
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty@VT@
+UtmpMode=user
+ExecStartPre=+/usr/local/lib/pidash/vt-switch.sh enter @VT@
+ExecStart=@HOME@/.local/share/pidash/pidash -config @HOME@/.config/pidash/config.toml -exec-app %i
+# Always return to the screen we came from, whether the app quit, crashed or was stopped.
+ExecStopPost=+/usr/local/lib/pidash/vt-switch.sh leave @VT@
+TimeoutStopSec=10

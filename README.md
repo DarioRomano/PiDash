@@ -12,9 +12,10 @@ See [docs/PLAN.md](docs/PLAN.md) for the architecture and roadmap.
 
 ## Status
 
-Milestone 1: fullscreen dashboard with a clock on top of the existing desktop,
-start/exit controls, remote-control input mapping with on-screen key debugging,
-phone remote, system stats. Photos and weather are next.
+Working today: fullscreen dashboard with a clock on top of the existing desktop,
+start/exit controls, an app launcher (Moonlight, Kodi, Steam Link, …),
+remote-control input mapping with on-screen key debugging, phone remote, system
+stats. Photos and weather are next.
 
 ## Install on your Pi
 
@@ -54,12 +55,15 @@ What the installer does:
 | Two systemd *user* services (backend, fullscreen browser) | `~/.config/systemd/user/` |
 | "PiDash" entry in the desktop menu | `~/.local/share/applications/` |
 | Packages, only if missing | `chromium`, `v4l-utils`, `curl`, `fonts-inter` |
+| Only with `--console-apps` | three system files, see [Apps](#apps-moonlight-kodi-steam-link-and-others) |
 
 ## Using it
 
 | To… | Do this |
 |-----|---------|
 | Show the dashboard on the TV | Open **PiDash** from the desktop menu, tap **Show on TV** on the phone remote, or run `systemctl --user start pidash-kiosk` |
+| Launch an app | Press **OK** on the dashboard to open the app row, choose with ◀ ▶ and press OK. Or tap the app on the phone remote |
+| Get back from an app | Quit the app, or tap **Back to dashboard** on the phone remote |
 | Go back to the desktop | **Hold Back for 2 seconds** on the TV remote, press **Alt+F4** or **F10** on a keyboard, or tap **Exit to desktop** on the phone remote |
 | Use the phone remote | Open `http://<pi-ip>:8080/remote` on any device on your network |
 | Change settings | Edit `~/.config/pidash/config.toml`, then `systemctl --user restart pidash` |
@@ -70,6 +74,58 @@ The screen stays awake while the dashboard is showing; your normal screen
 blanking applies again once you exit. The layout scales to whatever resolution
 the desktop uses. For the smoothest result on a 4K TV, set the desktop to
 1920x1080 in *Preferences → Screen Configuration*.
+
+### Apps: Moonlight, Kodi, Steam Link and others
+
+Add the programs you want on the TV to `~/.config/pidash/config.toml`, one block
+each, then restart the backend:
+
+```toml
+[[apps]]
+id = "moonlight"
+name = "Moonlight"
+command = "moonlight-qt"
+mode = "console"
+
+[[apps]]
+id = "steamlink"
+name = "Steam Link"
+command = "steamlink"
+```
+
+Each app has a `mode`:
+
+- **`desktop`** (the default) runs the program on the desktop, as if you had
+  started it from the menu. No extra setup.
+- **`console`** runs it on its own screen outside the desktop, the one you would
+  reach with Ctrl+Alt+F8. The app then drives the display directly, which is
+  what Moonlight and Kodi want: lower latency, HDR, and switching the refresh
+  rate to match the content. When the app ends you are returned to where you
+  were, and the desktop is untouched underneath.
+
+Console mode needs a one-time setup, because starting something on another
+screen requires system permissions:
+
+```sh
+make install PI_HOST=pi@raspberrypi.local INSTALL_FLAGS=--console-apps
+# or, on the Pi:  bash deploy/install.sh --console-apps
+```
+
+This is the only system-wide part of PiDash. It adds three files: a systemd
+unit, a small script that switches screens, and a rule that lets your user start
+and stop that unit without a password. Apps still run as you, not as root. The
+uninstaller removes all three.
+
+While a console app is on screen, the dashboard cannot see the TV remote. Use the
+app's own quit shortcut, or **Back to dashboard** on the phone remote, which
+always works. An optional `icon = "/path/to/icon.svg"` puts a picture on the tile.
+
+If an app does not start, the TV shows a message. Details are in the logs:
+
+```sh
+journalctl --user -u 'pidash-app-*' -e        # desktop-mode apps
+journalctl -u 'pidash-console@*' -e           # console-mode apps
+```
 
 ### Mapping your TV remote
 
@@ -122,6 +178,7 @@ internal/server/     HTTP, SSE hub, input API, static files
 internal/providers/  provider interface + runner, system/ stats
 web/                 Vite + TypeScript frontend (dashboard + phone remote)
 internal/kiosk/      start/stop the fullscreen browser (systemd user unit)
+internal/apps/       app launcher (desktop and console modes)
 deploy/              install.sh, uninstall.sh, systemd user units, kiosk and CEC scripts
 ```
 

@@ -1,6 +1,8 @@
 #!/bin/bash
 # Removes PiDash for the current user. Your settings are kept unless --purge is given.
-# apt packages installed by install.sh (chromium, v4l-utils, curl, fonts-inter) are left alone.
+# apt packages installed by install.sh (chromium, v4l-utils, curl, fonts-inter, kbd) are left alone.
+# If console mode was set up (install.sh --console-apps), its three system files
+# are removed too, which needs sudo.
 set -uo pipefail
 
 if [ "$(id -u)" -eq 0 ]; then
@@ -19,6 +21,17 @@ rm -f "$HOME/.config/systemd/user/pidash.service" \
       "$HOME/.local/share/applications/pidash.desktop" \
       "$HOME/.config/autostart/pidash.desktop"
 systemctl --user daemon-reload >/dev/null 2>&1
+
+# System-wide pieces of console mode, present only after `install.sh --console-apps`.
+if [ -e "/etc/systemd/system/pidash-console@.service" ] || [ -e /etc/polkit-1/rules.d/50-pidash-console.rules ] || [ -e /usr/local/lib/pidash/vt-switch.sh ]; then
+  echo "Removing console mode (needs sudo)"
+  sudo systemctl stop 'pidash-console@*.service' >/dev/null 2>&1
+  sudo rm -f "/etc/systemd/system/pidash-console@.service" \
+             /etc/polkit-1/rules.d/50-pidash-console.rules \
+             /usr/local/lib/pidash/vt-switch.sh
+  sudo rmdir /usr/local/lib/pidash 2>/dev/null
+  sudo systemctl daemon-reload
+fi
 
 rm -f "$HOME/.local/share/pidash/pidash" \
       "$HOME/.local/share/pidash/kiosk.sh" \

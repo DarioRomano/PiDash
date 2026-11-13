@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DarioRomano/PiDash/internal/apps"
 	"github.com/DarioRomano/PiDash/internal/config"
 	"github.com/DarioRomano/PiDash/internal/kiosk"
 	"github.com/DarioRomano/PiDash/internal/providers"
@@ -27,13 +28,14 @@ type Server struct {
 	hub    *hub
 	runner *providers.Runner
 	kiosk  *kiosk.Controller
+	apps   *apps.Manager
 	static fs.FS
 	mux    *http.ServeMux
 }
 
 // New wires the HTTP handlers. static is the built frontend (web/dist).
-func New(cfg config.Config, log *slog.Logger, static fs.FS, k *kiosk.Controller, newRunner func(publish func(providers.Entry)) *providers.Runner) *Server {
-	s := &Server{cfg: cfg, log: log, hub: newHub(), kiosk: k, static: static, mux: http.NewServeMux()}
+func New(cfg config.Config, log *slog.Logger, static fs.FS, k *kiosk.Controller, am *apps.Manager, newRunner func(publish func(providers.Entry)) *providers.Runner) *Server {
+	s := &Server{cfg: cfg, log: log, hub: newHub(), kiosk: k, apps: am, static: static, mux: http.NewServeMux()}
 	s.runner = newRunner(func(e providers.Entry) { s.hub.broadcast("state", e) })
 
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
@@ -43,6 +45,11 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, k *kiosk.Controller,
 	s.mux.HandleFunc("POST /api/input", s.handleInput)
 	s.mux.HandleFunc("GET /api/kiosk", s.handleKioskStatus)
 	s.mux.HandleFunc("POST /api/kiosk", s.handleKioskControl)
+	am.OnChange(func(st apps.Status) { s.hub.broadcast("apps", st) })
+	s.mux.HandleFunc("GET /api/apps", s.handleApps)
+	s.mux.HandleFunc("POST /api/apps/start", s.handleAppStart)
+	s.mux.HandleFunc("POST /api/apps/stop", s.handleAppStop)
+	s.mux.HandleFunc("GET /api/apps/{id}/icon", s.handleAppIcon)
 	s.mux.HandleFunc("GET /remote", s.servePage("remote.html"))
 	s.mux.HandleFunc("GET /remote/", s.servePage("remote.html"))
 	s.mux.Handle("GET /", http.FileServerFS(static))
@@ -52,6 +59,7 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, k *kiosk.Controller,
 // Run starts the provider runner and serves HTTP until ctx is cancelled.
 func (s *Server) Run(ctx context.Context) error {
 	go s.runner.Run(ctx)
+	go s.apps.Run(ctx)
 
 	srv := &http.Server{
 		Addr:              s.cfg.Server.Listen,
@@ -170,6 +178,55 @@ func (s *Server) handleKioskControl(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, kioskStatus{Available: true, Active: active})
 }
 
+func (s *Server) handleApps(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, s.apps.Status())
+}
+
+// handleAppStart launches an app: POST /api/apps/start {"id":"moonlight"}.
+func (s *Server) handleAppStart(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	err := s.apps.Start(r.Context(), req.ID)
+	switch {
+	case errors.Is(err, apps.ErrUnknownApp):
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	case errors.Is(err, apps.ErrConsoleNotReady):
+		http.Error(w, err.Error(), http.StatusPreconditionFailed)
+		return
+	case err != nil:
+		s.log.Error("app start", "app", req.ID, "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, s.apps.Status())
+}
+
+// handleAppStop stops the running app, which brings the dashboard back.
+func (s *Server) handleAppStop(w http.ResponseWriter, r *http.Request) {
+	if err := s.apps.Stop(r.Context()); err != nil {
+		s.log.Error("app stop", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, s.apps.Status())
+}
+
+func (s *Server) handleAppIcon(w http.ResponseWriter, r *http.Request) {
+	path, ok := s.apps.Icon(r.PathValue("id"))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Cache-Control", "max-age=3600")
+	http.ServeFile(w, r, path)
+}
+
 // handleEvents streams config, current state and subsequent updates as SSE.
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	fl, ok := w.(http.Flusher)
@@ -210,6 +267,9 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		if err := send("state", e); err != nil {
 			return
 		}
+	}
+	if err := send("apps", s.apps.Status()); err != nil {
+		return
 	}
 
 	ping := time.NewTicker(15 * time.Second)

@@ -16,6 +16,7 @@ with the TV's own remote (HDMI-CEC) or a phone.
 | Config      | One `config.toml`                                       | Human-editable on the Pi over SSH.                                  |
 | Remote      | HDMI-CEC (primary) + phone web remote (fallback)        | No extra hardware; the phone covers text entry and TVs without CEC. |
 | First panels| Clock & date, weather (Open-Meteo), photo slideshow     | No API keys required.                                               |
+| Apps        | Launcher with two modes: desktop, and console (own VT)  | Makes the dashboard the TV's home screen; console mode gives Moonlight/Kodi direct display access. |
 
 ## Experience
 
@@ -107,6 +108,7 @@ like a key press. Bound to the LAN only.
 │   ├─ GET  /events        SSE: config + state + input           │
 │   ├─ POST /api/input     from phone remote                     │
 │   ├─ GET/POST /api/kiosk start/stop the fullscreen browser     │
+│   ├─ /api/apps           list, start, stop launcher apps       │
 │   ├─ GET  /photos/{id}   resized, cached            (planned)  │
 │   └─ providers: system, weather, photos             (planned)  │
 └────────────────────────────────────────────────────────────────┘
@@ -121,6 +123,7 @@ internal/config/       TOML loading + defaults + validation
 internal/server/       HTTP mux, SSE hub, input endpoint, static embed
 internal/providers/    weather/ (Open-Meteo), photos/ (scan, resize, cache), system/
 internal/kiosk/        start/stop the fullscreen browser via its systemd user unit
+internal/apps/         app launcher: manager, systemd backend, session env detection
 internal/cec/          optional, later: schedule TV standby/wake via cec-ctl
 web/                   Vite + TS: src/panels/*, src/input.ts, src/sse.ts, remote/
 deploy/                install.sh, uninstall.sh, systemd user units, kiosk.sh, cec-setup.sh
@@ -128,6 +131,42 @@ config.example.toml
 Makefile               dev / build / deploy / lint
 docs/PLAN.md           this file
 ```
+
+## Apps (launcher)
+
+Pressing OK on the dashboard opens the panel rail: a row of large tiles, one per
+configured app plus "Desktop". Apps are `[[apps]]` entries in `config.toml` with
+an id, name, command and a launch mode.
+
+| Mode      | Where it runs                           | Use for                          | Setup |
+|-----------|-----------------------------------------|----------------------------------|-------|
+| `desktop` | In the desktop session, like the menu   | Steam Link, anything windowed    | None  |
+| `console` | On its own virtual terminal (tty8)      | Moonlight, Kodi: direct display access for low latency, HDR, refresh-rate switching | `install.sh --console-apps` |
+
+How it works:
+
+- Both modes run the app as a systemd unit whose command is
+  `pidash -exec-app <id>`. That looks the command up in the config and replaces
+  itself with it, so the command lives in one place and never passes through a
+  privileged component.
+- **Desktop mode** uses a transient *user* unit (`systemd-run --user`,
+  `pidash-app-<id>.service`). `-exec-app` locates the Wayland socket or X display.
+- **Console mode** uses a *system* template unit `pidash-console@<id>.service`.
+  It opens a real login session for the desktop user on tty8 (`PAMName=login`),
+  so the app gets the display, input and audio devices like a console login.
+  A root-owned helper switches to tty8 before the app starts and back to the
+  previous terminal when it ends, however it ends. The desktop and dashboard
+  stay alive in the background and stop rendering while hidden.
+- A polkit rule lets the desktop user start and stop only
+  `pidash-console@*.service`. These three files (unit, helper, rule) are the
+  only system-wide parts of PiDash, and only exist after `--console-apps`.
+- The backend polls the unit state, so it notices when an app is quit with a
+  controller, and adopts an app that is already running after a backend restart.
+  An app that exits within five seconds of starting is reported as a failed launch.
+- One app at a time. Starting another stops the first.
+- While a console app owns the screen the dashboard cannot see TV-remote keys,
+  so the **phone remote shows "Back to dashboard"**. The app's own quit shortcut
+  works too.
 
 ## Install & operations
 
@@ -163,14 +202,14 @@ PiDash is a guest on the existing desktop. It never changes how the Pi boots.
 1. **Clock on the TV, and a way back.** *(done)* User-level installer, backend,
    fullscreen kiosk on the desktop with start/exit controls, key mapping with
    on-screen debug to confirm CEC key events reach the browser, phone remote.
-2. **Ambient screen.** Photo provider with resize cache and crossfade; clock and
-   weather overlay; overlay density levels; pixel shift.
-3. **Input.** Action vocabulary, key mapping from config, panel rail, phone
-   remote page.
-4. **Resilience & schedule.** Stale caching, reconnect handling, TV standby/wake
-   via CEC, service hardening.
-5. **Polish & docs.** Weather detail panel, system panel, README with a 10-minute
-   setup guide.
+2. **Panel rail and apps.** *(done)* Rail navigation with the remote, app
+   launcher with desktop and console modes, launch feedback on the TV, app
+   controls and "Back to dashboard" on the phone remote.
+3. **Ambient screen.** Photo provider with resize cache and crossfade; clock and
+   weather overlay; overlay density levels.
+4. **Resilience & schedule.** Reconnect handling, TV standby/wake via CEC.
+5. **Polish & docs.** Weather detail panel, system panel, app icons shipped for
+   common apps.
 
 ## Later ideas (not in scope now)
 

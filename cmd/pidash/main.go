@@ -10,8 +10,10 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
+	"github.com/DarioRomano/PiDash/internal/apps"
 	"github.com/DarioRomano/PiDash/internal/config"
 	"github.com/DarioRomano/PiDash/internal/kiosk"
 	"github.com/DarioRomano/PiDash/internal/providers"
@@ -30,6 +32,7 @@ func main() {
 		mock      = flag.Bool("mock", false, "use canned data for providers that need the network")
 		verbose   = flag.Bool("v", false, "debug logging")
 		showVer   = flag.Bool("version", false, "print version and exit")
+		execApp   = flag.String("exec-app", "", "internal: replace this process with the configured app of this id")
 	)
 	flag.Parse()
 
@@ -48,6 +51,13 @@ func main() {
 	if err != nil {
 		log.Error("config", "err", err)
 		os.Exit(2)
+	}
+	if *execApp != "" {
+		// Does not return on success.
+		if err := runApp(cfg, *execApp); err != nil {
+			log.Error("exec-app", "app", *execApp, "err", err)
+			os.Exit(1)
+		}
 	}
 	if *listen != "" {
 		cfg.Server.Listen = *listen
@@ -72,7 +82,25 @@ func main() {
 		return providers.NewRunner(log, publish, ps...)
 	}
 
-	srv := server.New(cfg, log, static, kiosk.New(cfg.Kiosk.Unit, *mock, log), newRunner)
+	var appBackend apps.Backend = &apps.Mock{Log: log}
+	if !*mock {
+		exe, err := os.Executable()
+		if err != nil {
+			log.Error("locate own binary", "err", err)
+			os.Exit(1)
+		}
+		absCfg := *cfgPath
+		if absCfg != "" {
+			if absCfg, err = filepath.Abs(absCfg); err != nil {
+				log.Error("config path", "err", err)
+				os.Exit(1)
+			}
+		}
+		appBackend = &apps.Systemd{Exe: exe, ConfigPath: absCfg, Log: log}
+	}
+	appManager := apps.NewManager(cfg.Apps, appBackend, log)
+
+	srv := server.New(cfg, log, static, kiosk.New(cfg.Kiosk.Unit, *mock, log), appManager, newRunner)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -82,4 +110,23 @@ func main() {
 		log.Error("server", "err", err)
 		os.Exit(1)
 	}
+}
+
+// runApp replaces this process with the command of the configured app. It is
+// what the systemd units for both launch modes execute, so an app's command
+// lives only in config.toml.
+func runApp(cfg config.Config, id string) error {
+	for _, a := range cfg.Apps {
+		if a.ID != id {
+			continue
+		}
+		env := os.Environ()
+		if a.Mode == config.AppModeConsole {
+			env = apps.ConsoleEnv(env)
+		} else {
+			env = apps.DesktopEnv(env)
+		}
+		return syscall.Exec("/bin/sh", []string{"sh", "-c", a.Command}, env)
+	}
+	return fmt.Errorf("no app with id %q in the config", id)
 }

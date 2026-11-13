@@ -9,9 +9,13 @@
 # Remove everything again with deploy/uninstall.sh.
 #
 # Usage (as your normal user, NOT with sudo):
-#   bash deploy/install.sh [--autostart] [--binary PATH]
-#     --autostart   also open the dashboard automatically when the desktop starts
-#     --binary      path to the pidash binary (default: looks next to deploy/)
+#   bash deploy/install.sh [--autostart] [--console-apps] [--binary PATH]
+#     --autostart     also open the dashboard automatically when the desktop starts
+#     --console-apps  allow apps with mode = "console" (Moonlight, Kodi, ...) to run
+#                     on their own virtual terminal. This is the one part that is
+#                     system-wide: it adds a systemd unit, a small helper script
+#                     and a polkit rule under /etc and /usr/local (needs sudo).
+#     --binary        path to the pidash binary (default: looks next to deploy/)
 set -euo pipefail
 
 if [ "$(id -u)" -eq 0 ]; then
@@ -22,12 +26,15 @@ fi
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 AUTOSTART=0
+CONSOLE_APPS=0
+CONSOLE_VT="${PIDASH_CONSOLE_VT:-8}"
 BINARY=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --autostart) AUTOSTART=1 ;;
+    --console-apps) CONSOLE_APPS=1 ;;
     --binary) BINARY="${2:?--binary needs a path}"; shift ;;
-    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 1 ;;
   esac
   shift
@@ -55,6 +62,9 @@ command -v chromium >/dev/null 2>&1 || command -v chromium-browser >/dev/null 2>
 command -v cec-ctl >/dev/null 2>&1 || missing+=(v4l-utils)
 command -v curl >/dev/null 2>&1 || missing+=(curl)
 fc-list 2>/dev/null | grep -qi '/inter' || missing+=(fonts-inter)
+if [ "$CONSOLE_APPS" -eq 1 ]; then
+  command -v chvt >/dev/null 2>&1 || missing+=(kbd)
+fi
 if [ ${#missing[@]} -gt 0 ]; then
   echo "    installing: ${missing[*]} (needs sudo)"
   sudo apt-get update -qq
@@ -90,6 +100,22 @@ if [ "$AUTOSTART" -eq 1 ]; then
   echo "    autostart enabled (remove $AUTOSTART_DIR/pidash.desktop to disable)"
 fi
 
+if [ "$CONSOLE_APPS" -eq 1 ]; then
+  echo "==> Setting up console mode for apps (system-wide, needs sudo)"
+  case "$CONSOLE_VT" in ''|*[!0-9]*) echo "PIDASH_CONSOLE_VT must be a number" >&2; exit 1 ;; esac
+  tmp="$(mktemp -d)"
+  sed -e "s|@USER@|$USER|g" -e "s|@HOME@|$HOME|g" -e "s|@VT@|$CONSOLE_VT|g" \
+    "$HERE/pidash-console@.service" > "$tmp/pidash-console@.service"
+  sed -e "s|@USER@|$USER|g" "$HERE/50-pidash-console.rules" > "$tmp/50-pidash-console.rules"
+  sudo install -d -m 0755 /usr/local/lib/pidash
+  sudo install -m 0755 -o root -g root "$HERE/vt-switch.sh" /usr/local/lib/pidash/vt-switch.sh
+  sudo install -m 0644 -o root -g root "$tmp/pidash-console@.service" "/etc/systemd/system/pidash-console@.service"
+  sudo install -m 0644 -o root -g root "$tmp/50-pidash-console.rules" /etc/polkit-1/rules.d/50-pidash-console.rules
+  sudo systemctl daemon-reload
+  rm -r "$tmp"
+  echo "    console apps will use virtual terminal $CONSOLE_VT (Ctrl+Alt+F$CONSOLE_VT)"
+fi
+
 if ! id -nG | tr ' ' '\n' | grep -qx video; then
   echo "NOTE: you are not in the 'video' group, so the TV remote (CEC) will not work."
   echo "      Fix with: sudo usermod -aG video $USER   (then log out and in again)"
@@ -105,6 +131,7 @@ PiDash is installed.
   Back to desktop  : hold Back on the TV remote for 2 seconds, press Alt+F4,
                      or use the phone remote
   Phone remote     : http://${IP:-<pi-ip>}:8080/remote
+  Apps             : press OK on the dashboard; add them under [[apps]] in the settings
   Settings         : $CONF_DIR/config.toml  (then: systemctl --user restart pidash)
   Logs             : journalctl --user -u pidash -u pidash-kiosk -f
   Uninstall        : bash $APP_DIR/uninstall.sh

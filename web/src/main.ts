@@ -1,13 +1,16 @@
 import { Clock } from "./clock";
 import { Input } from "./input";
+import { Rail, type RailItem } from "./rail";
 import { connect } from "./sse";
-import type { ClientConfig, StateEntry, SystemState } from "./types";
+import type { AppsStatus, ClientConfig, StateEntry, SystemState } from "./types";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 
 const fit = $("#fit");
 const stage = $("#stage");
 const exitHint = $("#exit-hint");
+const toastEl = $("#toast");
+const railHint = $("#rail-hint");
 const overlay = $("#overlay");
 const conn = $("#conn");
 const stale = $("#stale");
@@ -72,6 +75,88 @@ async function exitToDesktop() {
       exitHint.classList.remove("visible");
       exitHint.textContent = "Keep holding to exit to the desktop…";
     }, 4000);
+  }
+}
+
+// --- Toast --------------------------------------------------------------------
+
+let toastTimer = 0;
+function toast(text: string, ms = 4000) {
+  toastEl.textContent = text;
+  toastEl.classList.add("visible");
+  clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => toastEl.classList.remove("visible"), ms);
+}
+
+// --- Panel rail and apps ------------------------------------------------------
+
+const EXIT_ID = "__desktop";
+const EXIT_GLYPH =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
+  '<rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>';
+
+let appsStatus: AppsStatus = { apps: [], running: "", consoleReady: true };
+let appsLoaded = false;
+
+const rail = new Rail(
+  $("#rail"),
+  $("#rail-strip"),
+  activateRailItem,
+  (open) => stage.classList.toggle("rail-open", open),
+);
+
+function railItems(): RailItem[] {
+  const items: RailItem[] = appsStatus.apps.map((a) => {
+    const running = appsStatus.running === a.id;
+    return {
+      id: a.id,
+      label: a.name,
+      icon: a.hasIcon ? `/api/apps/${encodeURIComponent(a.id)}/icon` : undefined,
+      running,
+      sub: running ? "Running · OK to stop" : "",
+    };
+  });
+  items.push({ id: EXIT_ID, label: "Desktop", glyph: EXIT_GLYPH });
+  return items;
+}
+
+function onApps(st: AppsStatus) {
+  const previousError = appsStatus.error;
+  appsStatus = st;
+  rail.setItems(railItems());
+  railHint.textContent = st.apps.length
+    ? "◀ ▶ choose  ·  OK open  ·  Back close"
+    : "Add apps under [[apps]] in ~/.config/pidash/config.toml  ·  Back close";
+  // Do not replay an old problem when the page (re)connects.
+  if (appsLoaded && st.error && st.error !== previousError) toast(st.error, 9000);
+}
+onApps(appsStatus);
+
+async function postJSON(url: string, body: unknown): Promise<Response> {
+  return fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+async function activateRailItem(item: RailItem) {
+  if (item.id === EXIT_ID) {
+    exitToDesktop();
+    return;
+  }
+  const stopping = appsStatus.running === item.id;
+  toast(stopping ? `Closing ${item.label}…` : `Starting ${item.label}…`);
+  try {
+    const res = stopping
+      ? await postJSON("/api/apps/stop", {})
+      : await postJSON("/api/apps/start", { id: item.id });
+    // Launch problems arrive as an "apps" event with an error message, which
+    // is shown as a toast; only report what that channel cannot.
+    if (!res.ok && res.status >= 500 && !appsStatus.error) toast((await res.text()).trim(), 9000);
+    if (res.ok && !stopping) rail.close();
+  } catch {
+    toast("The PiDash backend is not reachable.", 6000);
   }
 }
 
@@ -144,7 +229,16 @@ function formatUptime(sec: number): string {
 // --- Actions ----------------------------------------------------------------
 
 input.on((action) => {
+  if (action === "exit") {
+    exitToDesktop();
+    return;
+  }
+  if (rail.handle(action)) return;
   switch (action) {
+    case "select":
+    case "menu":
+      rail.open();
+      break;
     case "up":
       density = Math.min(DENSITIES.length - 1, density + 1);
       overlay.dataset.density = DENSITIES[density];
@@ -157,11 +251,7 @@ input.on((action) => {
       density = 1;
       overlay.dataset.density = DENSITIES[density];
       break;
-    case "exit":
-      exitToDesktop();
-      break;
-    // left/right/select/back/playpause/digits are wired up with the photo
-    // slideshow and the panel rail in the next milestone.
+    // left/right/playpause are wired up with the photo slideshow.
   }
 });
 
@@ -171,5 +261,9 @@ connect("/events", {
   onConfig: applyConfig,
   onState,
   onInput: (ev) => input.fromRemote(ev),
+  onApps: (st) => {
+    onApps(st);
+    appsLoaded = true;
+  },
   onStatus: (ok) => conn.classList.toggle("ok", ok),
 });
