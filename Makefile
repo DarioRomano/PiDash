@@ -4,6 +4,8 @@
 #   make dev            run backend (-mock) + Vite dev server with HMR
 #   make build          build frontend and a native binary into bin/pidash
 #   make lint test      static checks and tests
+#   make e2e            end-to-end tests: the TV remote on the real pages, in a
+#                       browser (needs "make build" and Playwright's Chromium)
 #
 # Your own Pi, straight from this checkout (override with PI_HOST=pi@192.168.1.50)
 #   make install        first-time install over SSH
@@ -26,7 +28,7 @@ LDFLAGS   = -s -w -X main.version=$(VERSION)
 INSTALL_FLAGS ?=
 APP_DIR   = .local/share/pidash
 
-.PHONY: dev dev-backend dev-web build build-web build-pi deploy install install-local uninstall lint test clean dist release
+.PHONY: dev dev-backend dev-web build build-web build-pi deploy install install-local uninstall lint test e2e clean dist release
 
 dev:
 	@$(MAKE) -j2 dev-backend dev-web
@@ -73,6 +75,11 @@ lint:
 
 test:
 	go test ./...
+
+# Drives the real pages with the buttons of a TV remote. See web/e2e/.
+e2e:
+	@test -x bin/pidash || (echo 'bin/pidash is missing: run "make build" first'; exit 1)
+	node --test web/e2e/*.test.cjs
 
 dist: build-web
 	scripts/dist.sh $(VERSION)

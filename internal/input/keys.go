@@ -62,6 +62,11 @@ func DefaultRemoteActions() map[uint16]string {
 	m := map[uint16]string{
 		keyOK: "select", keySelect: "select",
 		keyExit: "back", keyBack: "back",
+		// The arrows would reach the browser as ordinary keys, but only while
+		// its window has the keyboard focus, which it can lose (another window
+		// opening, the TV being switched off and on). Read here as well, they
+		// work regardless; the page drops the copy it gets twice.
+		keyUp: "up", keyDown: "down", keyLeft: "left", keyRight: "right",
 		keyMenu: "menu", keySetup: "menu", keyCtxMenu: "menu",
 		keyHomepage: "home",
 		keyPlayCD:   "playpause", keyPauseCD: "playpause", keyPlayPause: "playpause", keyPlay: "playpause",

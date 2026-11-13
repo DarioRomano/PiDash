@@ -184,12 +184,17 @@ func TestRemoteOnTheDashboard(t *testing.T) {
 	h.press(keyExit)
 	h.press(keyNumeric0 + 3)
 	h.press(keyPlayCD)
-	// Arrows and letters are left to the browser, which understands them.
+	// The arrows too: the browser only gets them while its window has the
+	// keyboard focus, and the remote must work without that.
 	h.press(keyUp)
+	h.press(keyDown)
+	h.press(keyLeft)
+	h.press(keyRight)
+	// Letters are left to the browser.
 	h.press(30) // KEY_A
 
 	actions, taps, exits := h.snapshot()
-	want := []string{"select", "back", "3", "playpause"}
+	want := []string{"select", "back", "3", "playpause", "up", "down", "left", "right"}
 	if strings.Join(actions, ",") != strings.Join(want, ",") {
 		t.Errorf("dashboard actions = %v, want %v", actions, want)
 	}

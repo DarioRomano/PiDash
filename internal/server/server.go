@@ -74,6 +74,9 @@ type Deps struct {
 	Photos *photos.Service // nil when no photo source is configured
 	Input  *input.Service
 	TV     *tv.Service
+	// TestHooks adds endpoints the end-to-end tests need. Never set outside
+	// development (-mock).
+	TestHooks bool
 	// PhotoStatePath is where the slideshow keeps its chosen folders, for
 	// restoring a backup while no photo source is set up.
 	PhotoStatePath string
@@ -109,6 +112,18 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("GET /api/config", s.handleConfig)
 	s.mux.HandleFunc("GET /api/state", s.handleState)
 	s.mux.HandleFunc("POST /api/input", s.handleInput)
+	if d.TestHooks {
+		// For the end-to-end tests: a button press as if read from the TV remote.
+		s.mux.HandleFunc("POST /api/test/remote", func(w http.ResponseWriter, r *http.Request) {
+			var req inputRequest
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil || req.Action == "" {
+				http.Error(w, "bad request", http.StatusBadRequest)
+				return
+			}
+			s.RemoteAction(req.Action)
+			w.WriteHeader(http.StatusNoContent)
+		})
+	}
 	s.mux.HandleFunc("GET /api/kiosk", s.handleKioskStatus)
 	s.mux.HandleFunc("POST /api/kiosk", s.handleKioskControl)
 	am.OnChange(func(st apps.Status) { s.hub.broadcast("apps", st) })

@@ -33,6 +33,12 @@ jobs:
       - name: Test
         run: go test -race ./...
 
+      - name: End-to-end tests (the TV remote on the real pages)
+        run: |
+          go build -o bin/pidash ./cmd/pidash
+          (cd web && npm install --no-save playwright && npx playwright install --with-deps chromium)
+          make e2e
+
       - name: Build the release packages
         run: scripts/dist.sh ci
 

@@ -851,8 +851,10 @@ never pulls the TV to the Pi's input by itself; that only happens when the
 dashboard starts and with **TV on**.
 
 The arrows, OK, Back, the number buttons, play/pause, menu and channel up/down
-work without any setup. OK and Back are not keyboard keys, so PiDash reads them
-from the remote directly rather than through the browser.
+work without any setup. PiDash reads all of them from the remote directly,
+rather than relying on the browser to receive them as keys: OK and Back are
+not keyboard keys at all, and the arrows only reach the browser while its
+window has the keyboard, which it can lose.
 
 To give other buttons a job, for example the colour keys, add them by their
 Linux key name:
@@ -959,6 +961,15 @@ make lint test      # static checks (Go, TypeScript, shell) and tests
 launches, so everything can be worked on without a Pi, a NAS or a TV. Arrow
 keys, Enter, Escape and the mouse work as on the TV; hold Escape for two
 seconds to trigger "exit to desktop".
+
+**Tests.** `make test` runs the Go tests. `make e2e` starts PiDash with sample
+data and drives the real pages in a browser with the buttons of a TV remote:
+the dashboard, the app row, the settings and their on-screen keyboard. Every
+button press is tried the three ways it can arrive on a Pi: read from the
+remote by the backend, as a key in the browser, and both at once, which must
+count as one press. It needs `make build` first and Playwright's Chromium
+(`cd web && npm install --no-save playwright && npx playwright install
+chromium`). Both run on every push and before every release.
 
 To try a change on your own Pi straight from the checkout, without making a
 release:

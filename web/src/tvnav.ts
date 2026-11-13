@@ -46,7 +46,13 @@ export function startTVNav(opts: Options) {
     (e) => {
       if (e.ctrlKey || e.altKey || e.metaKey) return;
       const press = keyPress(e);
-      if (!press) return;
+      if (!press) {
+        // An arrow that moves the cursor inside a text field. The backend
+        // reports the same press; remember it so that copy is dropped.
+        const arrow = ({ ArrowLeft: "left", ArrowRight: "right" } as Record<string, Press>)[e.key];
+        if (arrow) seen(arrow, "key");
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       if (!e.repeat || press !== "select") dispatch(press, "key");
@@ -59,7 +65,16 @@ export function startTVNav(opts: Options) {
   const events = new EventSource("/events");
   events.addEventListener("input", (e) => {
     const ev = JSON.parse((e as MessageEvent).data) as { action: string; source: string };
-    if (["up", "down", "left", "right", "select", "back", "exit"].includes(ev.action)) dispatch(ev.action as Press, ev.source);
+    if (!["up", "down", "left", "right", "select", "back", "exit"].includes(ev.action)) return;
+    const press = ev.action as Press;
+    // In a text field, Left and Right belong to the cursor as long as the
+    // browser gets the keys itself. Only when it does not (its window has
+    // lost the keyboard) are the backend's reports all there is to go by.
+    if (ev.source === "evdev" && (press === "left" || press === "right") && !layer && isText(document.activeElement) && document.hasFocus()) {
+      seen(press, "evdev"); // pairs up with the key press, whichever came first
+      return;
+    }
+    dispatch(press, ev.source);
   });
 
   // The first control gets the highlight once the page has filled itself in.
@@ -106,18 +121,24 @@ function cursorAt(input: HTMLInputElement, where: "start" | "end"): boolean {
 // One press of a remote button can arrive twice: as a key in the browser and
 // from the backend. The second of such a pair is dropped.
 let recent: { press: Press; source: string; at: number }[] = [];
-function dispatch(press: Press, source: string) {
-  if (source === "key" || source === "evdev") {
-    const now = performance.now();
-    recent = recent.filter((r) => now - r.at < 300);
-    const other = source === "key" ? "evdev" : "key";
-    const twin = recent.findIndex((r) => r.press === press && r.source === other);
-    if (twin >= 0) {
-      recent.splice(twin, 1);
-      return;
-    }
-    recent.push({ press, source, at: now });
+
+/** Notes a press; returns true when it is the second report of one already seen. */
+function seen(press: Press, source: string): boolean {
+  if (source !== "key" && source !== "evdev") return false;
+  const now = performance.now();
+  recent = recent.filter((r) => now - r.at < 300);
+  const other = source === "key" ? "evdev" : "key";
+  const twin = recent.findIndex((r) => r.press === press && r.source === other);
+  if (twin >= 0) {
+    recent.splice(twin, 1);
+    return true;
   }
+  recent.push({ press, source, at: now });
+  return false;
+}
+
+function dispatch(press: Press, source: string) {
+  if (seen(press, source)) return;
   if (press === "exit") {
     // Back held for two seconds: out to the desktop, as on the dashboard.
     void fetch("/api/kiosk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "stop" }) });
