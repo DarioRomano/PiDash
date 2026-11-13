@@ -9,8 +9,20 @@ export interface DisplayConfig {
   /** Night mode hours, "HH:MM"; both empty when it is off. */
   night_start: string;
   night_end: string;
+  /** "en", "de", "fr" or "it"; empty means English. */
+  language: string;
+  /** Corner of the clock, its size, and what shows at start. */
+  clock_position: string;
+  clock_size: string;
+  view: string;
   clock_24h: boolean;
   locale: string;
+}
+
+/** An internet radio station in the app row. */
+export interface RadioStation {
+  name: string;
+  url: string;
 }
 
 export interface ClientConfig {
@@ -19,6 +31,7 @@ export interface ClientConfig {
   version: string;
   notices: string[];
   started: number;
+  radio?: RadioStation[];
 }
 
 export interface StateEntry<T = unknown> {
@@ -125,6 +138,8 @@ export interface PhotoItem {
   taken: string;
   /** Where it was taken, when known. */
   place?: string;
+  /** A video clip rather than a photo. */
+  video?: boolean;
   v: string;
 }
 

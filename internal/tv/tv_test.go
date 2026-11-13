@@ -195,3 +195,32 @@ func TestManualPower(t *testing.T) {
 		t.Errorf("status = %+v", st)
 	}
 }
+
+func TestSleepTimer(t *testing.T) {
+	fake := &fakeTV{power: cec.PowerOn}
+	stopped := 0
+	s := New(Options{TV: fake, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), OnSleep: func() { stopped++ }})
+	start := time.Now()
+	s.Step(context.Background(), start)
+
+	st := s.SetSleep(30)
+	if st.SleepAt == nil || st.SleepMinutes != 30 {
+		t.Fatalf("status = %+v", st)
+	}
+	s.Step(context.Background(), start.Add(29*time.Minute))
+	if fake.standbys != 0 {
+		t.Fatal("the TV was switched off early")
+	}
+	s.Step(context.Background(), start.Add(31*time.Minute))
+	if fake.standbys != 1 || stopped != 1 || s.Status().SleepAt != nil {
+		t.Errorf("standbys %d, apps stopped %d, status %+v; want one of each and the timer cleared", fake.standbys, stopped, s.Status())
+	}
+
+	// Cancelled in time, nothing happens.
+	s.SetSleep(10)
+	s.SetSleep(0)
+	s.Step(context.Background(), start.Add(3*time.Hour))
+	if fake.standbys != 1 {
+		t.Errorf("a cancelled timer switched the TV off")
+	}
+}

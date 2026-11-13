@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type { Action } from "./types";
 
 /** What each action does, in the order shown on the help screen. */
@@ -122,7 +123,7 @@ export class Help {
     side.appendChild(el("h3", "", "Mouse or touchpad"));
     for (const [gesture, what] of MOUSE) side.appendChild(row([gesture], what));
     side.appendChild(el("h3", "help-gap", "Phone"));
-    side.appendChild(el("p", "help-text", remoteURL ? `Open ${remoteURL} on a phone in your home network.` : "Open the PiDash address followed by /remote on your phone."));
+    side.appendChild(el("p", "help-text", remoteURL ? t("Open {address} on a phone in your home network.", { address: remoteURL }) : "Open the PiDash address followed by /remote on your phone."));
 
     const grid = el("div", "help-grid");
     grid.append(keyboard, side);

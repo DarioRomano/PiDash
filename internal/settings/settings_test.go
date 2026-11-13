@@ -404,3 +404,66 @@ func TestCalendarLinksAndTheHomeTokenStayOnThePi(t *testing.T) {
 		t.Errorf("settings.json is readable by others: %v", fi.Mode().Perm())
 	}
 }
+
+func TestLockRadioAndScreenSettings(t *testing.T) {
+	s, _ := open(t)
+	stations := []config.RadioStation{{Name: " Jazz ", URL: "https://stream.example/jazz.mp3"}}
+	err := s.Save(Update{
+		Lock:   &Lock{PIN: "4711"},
+		Radio:  &stations,
+		Screen: &Screen{Language: "de", ClockPosition: "top-right", ClockSize: "small", View: "details"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := s.Effective()
+	d := cfg.Display
+	if cfg.Remote.PIN != "4711" || len(cfg.Radio) != 1 || cfg.Radio[0].Name != "Jazz" || d.Language != "de" || d.ClockPosition != "top-right" || d.ClockSize != "small" || d.View != "details" {
+		t.Fatalf("pin %q, radio %+v, display %+v", cfg.Remote.PIN, cfg.Radio, d)
+	}
+	// The page learns that a PIN exists, never which.
+	v := s.View()
+	if page, _ := json.Marshal(v); strings.Contains(string(page), "4711") || !v.Lock.Set {
+		t.Errorf("lock on the page: %+v, page %s", v.Lock, page)
+	}
+	// Sending nothing keeps the PIN; "remove" deletes it.
+	if err := s.Save(Update{Lock: &Lock{}}); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _ = s.Effective(); cfg.Remote.PIN != "4711" {
+		t.Errorf("the PIN was lost: %q", cfg.Remote.PIN)
+	}
+	if err := s.Save(Update{Lock: &Lock{Remove: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _ = s.Effective(); cfg.Remote.PIN != "" || s.View().Lock.Set {
+		t.Errorf("the PIN was not removed: %q", cfg.Remote.PIN)
+	}
+
+	for name, bad := range map[string]Update{
+		"a short PIN":                {Lock: &Lock{PIN: "12"}},
+		"a PIN with letters":         {Lock: &Lock{PIN: "12ab"}},
+		"a station without a stream": {Radio: &[]config.RadioStation{{Name: "x", URL: "ftp://x"}}},
+		"an unknown language":        {Screen: &Screen{Language: "xx"}},
+		"an unknown corner":          {Screen: &Screen{ClockPosition: "middle"}},
+	} {
+		if err := s.Save(bad); err == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+
+	// A backup carries everything, and loading it puts it back.
+	saved := s.Export()
+	other, _ := open(t)
+	if err := other.Import(saved); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _ := other.Effective(); len(cfg.Radio) != 1 || cfg.Display.Language != "de" {
+		t.Errorf("after loading the backup: %+v, language %q", cfg.Radio, cfg.Display.Language)
+	}
+	broken := saved
+	broken.Screen = &Screen{Language: "xx"}
+	if err := other.Import(broken); err == nil {
+		t.Error("a backup with a mistake in it was loaded")
+	}
+}

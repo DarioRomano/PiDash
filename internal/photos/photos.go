@@ -50,6 +50,9 @@ type Item struct {
 	Taken  time.Time `json:"taken"`
 	// Place is where the photo was taken, when the source knows: "Lisbon, Portugal".
 	Place string `json:"place,omitempty"`
+	// Video marks a video clip; Size is its file size in bytes, when known.
+	Video bool  `json:"video,omitempty"`
+	Size  int64 `json:"-"`
 	// Version changes when the photo is edited, so stale renders are not reused.
 	Version string `json:"-"`
 	// ID is what the source needs to fetch the photo.
@@ -119,6 +122,10 @@ type Options struct {
 	PairPortraits bool
 	// OnThisDay puts photos taken on today's date in earlier years first.
 	OnThisDay bool
+	// Videos lets video clips the source lists into the slideshow, up to
+	// VideoMaxBytes each (default 90 MB).
+	Videos        bool
+	VideoMaxBytes int64
 	// Now is the clock, for tests; nil means time.Now.
 	Now func() time.Time
 	// Motion is "whole" to prepare photos for slow movement that never cuts
@@ -403,6 +410,7 @@ func (s *Service) index(ctx context.Context) {
 
 	s.mu.Lock()
 	items = s.withoutHiddenLocked(items)
+	items = s.playableLocked(items)
 	s.indexing = false
 	switch {
 	case ctx.Err() != nil:
@@ -533,9 +541,6 @@ func (s *Service) Slides(limit int) (version int, slides []Slide) {
 	if limit <= 0 || limit > n {
 		limit = n
 	}
-	partners := s.partnersLocked()
-	used := make(map[string]bool, limit)
-	slides = make([]Slide, 0, limit)
 	order := rand.Perm(n)
 	if s.opt.OnThisDay {
 		// Photos from this day in earlier years come first, still shuffled
@@ -548,6 +553,60 @@ func (s *Service) Slides(limit int) (version int, slides []Slide) {
 			return onThisDay(s.items[order[a]].Taken, now) && !onThisDay(s.items[order[b]].Taken, now)
 		})
 	}
+	return s.version, s.slidesLocked(order, limit)
+}
+
+// SlidesFrom returns the photos of one folder or album in the order they
+// were taken, starting after the photo with the key after: for staying with
+// an occasion instead of jumping around the whole library.
+func (s *Service) SlidesFrom(folder, after string, limit int) (version int, slides []Slide) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var order []int
+	for i, it := range s.items {
+		if it.Folder == folder {
+			order = append(order, i)
+		}
+	}
+	sort.SliceStable(order, func(a, b int) bool {
+		x, y := s.items[order[a]], s.items[order[b]]
+		if !x.Taken.Equal(y.Taken) {
+			return x.Taken.Before(y.Taken)
+		}
+		return x.Key < y.Key
+	})
+	// Carry on after the photo that is showing, and come round to the start.
+	firstKey, _, _ := strings.Cut(after, pairSep)
+	lastKey := after[strings.LastIndex(after, pairSep)+1:]
+	at := -1
+	for i, idx := range order {
+		if k := s.items[idx].Key; k == lastKey || k == firstKey {
+			at = i // of two side by side, the later one
+		}
+	}
+	if at >= 0 {
+		order = append(order[at+1:len(order):len(order)], order[:at]...)
+		// Without the photos on screen themselves.
+		kept := order[:0]
+		for _, idx := range order {
+			if k := s.items[idx].Key; k != lastKey && k != firstKey {
+				kept = append(kept, idx)
+			}
+		}
+		order = kept
+	}
+	if limit <= 0 || limit > len(order) {
+		limit = len(order)
+	}
+	return s.version, s.slidesLocked(order, limit)
+}
+
+// slidesLocked turns photos, given by their position in s.items, into slides
+// in that order, putting upright photos together with their partner.
+func (s *Service) slidesLocked(order []int, limit int) []Slide {
+	partners := s.partnersLocked()
+	used := make(map[string]bool, limit)
+	slides := make([]Slide, 0, limit)
 	for _, i := range order {
 		if len(slides) == limit {
 			break
@@ -568,7 +627,7 @@ func (s *Service) Slides(limit int) (version int, slides []Slide) {
 		}
 		slides = append(slides, Slide{Key: item.Key, Items: []Item{item}})
 	}
-	return s.version, slides
+	return slides
 }
 
 type partner struct {
@@ -721,6 +780,152 @@ func (s *Service) ShowHidden() error {
 	return err
 }
 
+// State is what a backup keeps of the slideshow: which folders and albums
+// were chosen, and which photos are hidden.
+type State struct {
+	Selection Selection `json:"selection"`
+	Hidden    []string  `json:"hidden"`
+}
+
+// Export returns the slideshow's state for a backup.
+func (s *Service) Export() State {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := State{Selection: s.selection, Hidden: make([]string, 0, len(s.hidden))}
+	for k := range s.hidden {
+		st.Hidden = append(st.Hidden, k)
+	}
+	sort.Strings(st.Hidden)
+	return st
+}
+
+// WriteState stores a backed-up state where a service started with the same
+// statePath will find it. It works without a running service, since the
+// backup may bring the photo source with it.
+func WriteState(statePath string, st State) error {
+	if statePath == "" {
+		return nil
+	}
+	tmp := &Service{opt: Options{StatePath: statePath}, hidden: map[string]bool{}}
+	for _, k := range st.Hidden {
+		tmp.hidden[k] = true
+	}
+	if err := tmp.saveSelection(st.Selection); err != nil {
+		return err
+	}
+	return tmp.saveHiddenLocked()
+}
+
+// --- Video clips ------------------------------------------------------------------
+
+// shapeUnplayable marks, in the shape table, a video the TV could not play.
+const shapeUnplayable = "x"
+
+// FilePather is implemented by sources whose photos are files on this
+// machine, which can be played from where they are.
+type FilePather interface {
+	FilePath(item Item) (string, error)
+}
+
+// playableLocked drops the videos that must not be shown: all of them when
+// videos are switched off, and otherwise those too large or known not to play.
+func (s *Service) playableLocked(items []Item) []Item {
+	limit := s.opt.VideoMaxBytes
+	if limit <= 0 {
+		limit = 90 << 20
+	}
+	out := items[:0:0]
+	for _, it := range items {
+		if it.Video && (!s.opt.Videos || it.Size > limit || s.shapes[shapeKey(it)] == shapeUnplayable) {
+			continue
+		}
+		out = append(out, it)
+	}
+	return out
+}
+
+// Video returns the path of a video clip's file, fetching it into the cache
+// first when the source is not on this machine.
+func (s *Service) Video(ctx context.Context, key string) (path, name string, err error) {
+	s.mu.Lock()
+	item, ok := s.byKey[key]
+	s.mu.Unlock()
+	if !ok || !item.Video {
+		return "", "", ErrNotFound
+	}
+	if fp, ok := s.opt.Source.(FilePather); ok {
+		p, err := fp.FilePath(item)
+		return p, item.Name, err
+	}
+	sum := sha1.Sum([]byte(item.Key + "|" + item.Version))
+	path = filepath.Join(s.opt.CacheDir, hex.EncodeToString(sum[:12])+".vid")
+	if fi, err := os.Stat(path); err == nil && fi.Size() > 0 {
+		if time.Since(fi.ModTime()) > 24*time.Hour {
+			now := time.Now()
+			_ = os.Chtimes(path, now, now)
+		}
+		return path, item.Name, nil
+	}
+
+	// Several requests for the same clip share one download.
+	s.flightMu.Lock()
+	if call, ok := s.flight[path]; ok {
+		s.flightMu.Unlock()
+		select {
+		case <-call.done:
+			return call.path, item.Name, call.err
+		case <-ctx.Done():
+			return "", "", ctx.Err()
+		}
+	}
+	call := &flightCall{done: make(chan struct{})}
+	s.flight[path] = call
+	s.flightMu.Unlock()
+
+	work, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Minute)
+	data, _, ferr := s.opt.Source.Fetch(work, item, true)
+	cancel()
+	if ferr == nil {
+		ferr = os.WriteFile(path+".part", data, 0o600)
+	}
+	if ferr == nil {
+		ferr = os.Rename(path+".part", path)
+	}
+	if ferr == nil {
+		call.path = path
+		s.evict()
+	}
+	call.err = ferr
+	s.flightMu.Lock()
+	delete(s.flight, path)
+	s.flightMu.Unlock()
+	close(call.done)
+	return call.path, item.Name, call.err
+}
+
+// Unplayable records that the TV could not play a video clip, so it is not
+// tried again, and takes it out of the slideshow.
+func (s *Service) Unplayable(key string) {
+	s.mu.Lock()
+	item, ok := s.byKey[key]
+	if ok && item.Video {
+		s.shapes[shapeKey(item)] = shapeUnplayable
+		delete(s.byKey, key)
+		kept := s.items[:0:0]
+		for _, it := range s.items {
+			if it.Key != key {
+				kept = append(kept, it)
+			}
+		}
+		s.items = kept
+	}
+	s.mu.Unlock()
+	if ok && item.Video {
+		s.saveShapes()
+		s.notify()
+	}
+}
+
 // --- Which photos are upright ----------------------------------------------------
 
 const (
@@ -769,7 +974,7 @@ func (s *Service) shapesPath() string {
 
 func (s *Service) loadShapes() {
 	s.shapes = map[string]string{}
-	if p := s.shapesPath(); p != "" && s.opt.PairPortraits {
+	if p := s.shapesPath(); p != "" && (s.opt.PairPortraits || s.opt.Videos) {
 		if data, err := os.ReadFile(p); err == nil {
 			_ = json.Unmarshal(data, &s.shapes)
 		}
@@ -790,6 +995,12 @@ func (s *Service) saveShapes() {
 				current[shapeKey(it)] = shape
 			}
 		}
+		// Videos that do not play are no longer among the items; remember them all the same.
+		for k, shape := range s.shapes {
+			if shape == shapeUnplayable {
+				current[k] = shape
+			}
+		}
 		s.shapes = current
 	}
 	data, err := json.Marshal(s.shapes)
@@ -808,7 +1019,7 @@ func (s *Service) scanShapes(ctx context.Context) {
 	s.mu.Lock()
 	var todo []Item
 	for _, it := range s.items {
-		if _, ok := s.shapes[shapeKey(it)]; !ok {
+		if _, ok := s.shapes[shapeKey(it)]; !ok && !it.Video {
 			todo = append(todo, it)
 		}
 	}
@@ -886,7 +1097,7 @@ func (s *Service) Image(ctx context.Context, key string) (string, error) {
 	s.mu.Lock()
 	for _, k := range keys {
 		item, ok := s.byKey[k]
-		if !ok {
+		if !ok || item.Video {
 			s.mu.Unlock()
 			return "", ErrNotFound
 		}
@@ -1037,7 +1248,7 @@ func (s *Service) evict() {
 	var total int64
 	for _, e := range entries {
 		name := e.Name()
-		if e.IsDir() || !(strings.HasSuffix(name, ".jpg") || strings.HasSuffix(name, ".part")) {
+		if e.IsDir() || !(strings.HasSuffix(name, ".jpg") || strings.HasSuffix(name, ".vid") || strings.HasSuffix(name, ".part")) {
 			continue
 		}
 		fi, err := e.Info()

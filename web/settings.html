@@ -96,6 +96,7 @@
         <p id="p-motion-hint" class="hint"></p>
         <label class="check" id="p-pairs-row"><input id="p-pairs" type="checkbox" /><span>Show two upright photos side by side</span></label>
         <label class="check" id="p-today-row"><input id="p-today" type="checkbox" /><span>Start with photos taken on this day in earlier years</span></label>
+        <label class="check" id="p-videos-row"><input id="p-videos" type="checkbox" /><span>Also show video clips, without sound</span></label>
         <div id="p-hidden-row" class="pair" hidden>
           <p id="p-hidden" class="hint"></p>
           <button id="p-unhide" type="button" class="secondary">Show them again</button>
@@ -149,6 +150,61 @@
       </section>
 
       <section class="card">
+        <h2>Radio</h2>
+        <p class="hint">Stations appear as tiles in the app row and play while the photos carry on. The remote's play button pauses.</p>
+        <ul id="r-list" class="rows"></ul>
+        <div class="pair">
+          <label class="field">
+            <span>Find a station by name</span>
+            <input id="r-query" type="text" autocomplete="off" />
+          </label>
+          <button id="r-search" type="button" class="secondary">Search</button>
+        </div>
+        <p id="r-result" class="result"></p>
+        <div id="r-add" class="add" hidden>
+          <label class="field">
+            <span>Found</span>
+            <select id="r-pick"></select>
+          </label>
+          <button id="r-add-btn" type="button" class="secondary wide">Add to the app row</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Screen</h2>
+        <label class="field">
+          <span>Language</span>
+          <select id="d-language"></select>
+        </label>
+        <label class="field">
+          <span>Clock position</span>
+          <select id="d-position">
+            <option value="bottom-left">Bottom left</option>
+            <option value="bottom-right">Bottom right</option>
+            <option value="top-left">Top left</option>
+            <option value="top-right">Top right</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Clock size</span>
+          <select id="d-size">
+            <option value="large">Large</option>
+            <option value="medium">Medium</option>
+            <option value="small">Small</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Shown at start</span>
+          <select id="d-view">
+            <option value="clock">Clock, date and calendar</option>
+            <option value="details">Also the weather and the photo's caption</option>
+            <option value="photo">Only the photo</option>
+          </select>
+        </label>
+        <p class="hint">Up and Down on the remote switch between these three at any time.</p>
+      </section>
+
+      <section class="card">
         <h2>Night</h2>
         <p class="hint">Between these times the TV shows only a dim clock on black. Any button brings the dashboard back for a minute.</p>
         <div class="pair">
@@ -197,6 +253,16 @@
       </section>
 
       <section class="card">
+        <h2>Lock</h2>
+        <p class="hint">With a PIN, settings can be looked at but not changed without it.</p>
+        <label class="field">
+          <span>PIN (4 to 12 digits)</span>
+          <input id="l-pin" type="password" inputmode="numeric" autocomplete="new-password" />
+        </label>
+        <button id="l-remove" type="button" class="secondary wide" hidden>Remove the lock</button>
+      </section>
+
+      <section class="card">
         <h2>Updates</h2>
         <p id="up-status" class="hint"></p>
         <label class="check" id="up-auto-row"><input id="sys-auto" type="checkbox" /><span>Install new versions automatically</span></label>
@@ -206,6 +272,21 @@
           <button id="up-install" type="button" class="secondary wide" hidden>Install it now</button>
         </div>
         <p id="up-result" class="result"></p>
+      </section>
+
+      <section class="card">
+        <h2>Backup</h2>
+        <p class="hint">
+          One file with everything set up here, to move to another Pi or a new memory card. It contains the passwords
+          and links stored on the Pi, so keep it to yourself.
+        </p>
+        <div class="pair" id="b-buttons">
+          <button id="b-save" type="button" class="secondary wide">Save a backup file</button>
+          <button id="b-load" type="button" class="secondary wide">Load a backup file</button>
+        </div>
+        <input id="b-file" type="file" accept="application/json,.json" hidden />
+        <p id="b-tv" class="hint" hidden>Files can only be saved and loaded on a computer or phone: open this TV's address followed by /settings there.</p>
+        <p id="b-result" class="result"></p>
       </section>
 
       <p id="kb-problem" class="hint warn" hidden></p>

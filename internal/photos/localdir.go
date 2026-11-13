@@ -17,6 +17,8 @@ import (
 // Folder ids are paths relative to the root; "." is the root itself.
 type LocalDir struct {
 	root string
+	// Videos lists video files along with the photos.
+	Videos bool
 }
 
 // NewLocalDir returns a source rooted at dir.
@@ -103,7 +105,8 @@ func (l *LocalDir) Items(_ context.Context, folder Folder) ([]Item, error) {
 	}
 	var out []Item
 	for _, e := range entries {
-		if hidden(e.Name()) || !decodable(e.Name()) {
+		video := l.Videos && isVideoName(e.Name())
+		if hidden(e.Name()) || !(decodable(e.Name()) || video) {
 			continue
 		}
 		fi, err := os.Stat(filepath.Join(dir, e.Name()))
@@ -118,11 +121,25 @@ func (l *LocalDir) Items(_ context.Context, folder Folder) ([]Item, error) {
 			Folder:  folder.Path,
 			Taken:   fi.ModTime().UTC(),
 			Version: fmt.Sprintf("%d-%d", fi.ModTime().Unix(), fi.Size()),
+			Video:   video,
+			Size:    fi.Size(),
 			ID:      rel,
 		})
 	}
 	return out, nil
 }
+
+// isVideoName reports files a browser may be able to play as video.
+func isVideoName(name string) bool {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".mp4", ".m4v", ".mov", ".webm":
+		return true
+	}
+	return false
+}
+
+// FilePath implements FilePather: videos are played from where they are.
+func (l *LocalDir) FilePath(item Item) (string, error) { return l.abs(item.ID) }
 
 // Peek implements Peeker: the start of the file holds its size and rotation.
 // When that is not enough, the caller reads the whole file instead.

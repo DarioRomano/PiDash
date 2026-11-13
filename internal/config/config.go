@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -30,6 +31,15 @@ type Config struct {
 	Home Home `toml:"homeassistant"`
 	// Update controls automatic updates.
 	Update Update `toml:"update"`
+	// Radio lists internet radio stations, shown as tiles in the app row.
+	Radio []RadioStation `toml:"radio"`
+}
+
+// RadioStation is one internet radio station.
+type RadioStation struct {
+	Name string `toml:"name" json:"name"`
+	// URL is the address of the stream (MP3, AAC or Ogg).
+	URL string `toml:"url" json:"url"`
 }
 
 // Calendar lists calendar links.
@@ -80,6 +90,17 @@ func (c *Config) validateExtras() error {
 	if c.Calendar.Days < 1 || c.Calendar.Days > 60 {
 		return fmt.Errorf("calendar.days must be between 1 and 60, got %d", c.Calendar.Days)
 	}
+	if len(c.Radio) > 12 {
+		return fmt.Errorf("at most 12 radio stations can be shown")
+	}
+	for i := range c.Radio {
+		st := &c.Radio[i]
+		st.Name, st.URL = strings.TrimSpace(st.Name), strings.TrimSpace(st.URL)
+		parsed, err := url.Parse(st.URL)
+		if st.Name == "" || err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return fmt.Errorf("radio station %d needs a name and the http:// or https:// address of its stream", i+1)
+		}
+	}
 	c.Home.URL = strings.TrimRight(strings.TrimSpace(c.Home.URL), "/")
 	if c.Home.URL != "" {
 		parsed, err := url.Parse(c.Home.URL)
@@ -121,6 +142,17 @@ type Display struct {
 	// dashboard shows only a dim clock on black. Both empty switches it off.
 	NightStart string `toml:"night_start" json:"night_start"`
 	NightEnd   string `toml:"night_end" json:"night_end"`
+	// Language of everything on screen: "en", "de", "fr" or "it".
+	Language string `toml:"language" json:"language"`
+	// ClockPosition is the corner the clock sits in: "bottom-left" (default),
+	// "bottom-right", "top-left" or "top-right".
+	ClockPosition string `toml:"clock_position" json:"clock_position"`
+	// ClockSize is "large" (default), "medium" or "small".
+	ClockSize string `toml:"clock_size" json:"clock_size"`
+	// View is what the dashboard shows when it starts: "clock" (default),
+	// "details" (also the weather and the photo's caption) or "photo" (only
+	// the photo). Up and Down switch between them at any time.
+	View string `toml:"view" json:"view"`
 	// Use 24-hour time.
 	Clock24h bool `toml:"clock_24h" json:"clock_24h"`
 	// Locale used for date formatting, e.g. "en-GB". Empty uses the browser default.
@@ -235,6 +267,8 @@ type Photos struct {
 	PairPortraits bool `toml:"pair_portraits"`
 	// OnThisDay shows photos taken on today's date in earlier years first.
 	OnThisDay bool `toml:"on_this_day"`
+	// Videos also shows short video clips, without sound.
+	Videos bool `toml:"videos"`
 	// CacheMB limits the disk space used for rendered photos.
 	CacheMB  int            `toml:"cache_mb"`
 	Synology SynologyPhotos `toml:"synology"`
@@ -546,6 +580,20 @@ func (p *Photos) validate() error {
 }
 
 func (c Config) validate() error {
+	for _, choice := range []struct {
+		name  string
+		value *string
+		of    []string
+	}{
+		{"language", &c.Display.Language, []string{"en", "de", "fr", "it"}},
+		{"clock_position", &c.Display.ClockPosition, []string{"bottom-left", "bottom-right", "top-left", "top-right"}},
+		{"clock_size", &c.Display.ClockSize, []string{"large", "medium", "small"}},
+		{"view", &c.Display.View, []string{"clock", "details", "photo"}},
+	} {
+		if *choice.value != "" && !slices.Contains(choice.of, *choice.value) {
+			return fmt.Errorf("display.%s must be one of %s, got %q", choice.name, strings.Join(choice.of, ", "), *choice.value)
+		}
+	}
 	if (c.Display.NightStart == "") != (c.Display.NightEnd == "") {
 		return fmt.Errorf("display.night_start and display.night_end must both be set, or both be empty")
 	}
@@ -579,9 +627,15 @@ type Client struct {
 	// Started identifies this run of the backend. The dashboard reloads when
 	// it changes, which is how saved settings reach the TV.
 	Started int64 `json:"started"`
+	// Radio are the stations in the app row.
+	Radio []RadioStation `json:"radio"`
 }
 
 // ForClient returns the browser-facing view of the configuration.
 func (c Config) ForClient() Client {
-	return Client{Display: c.Display, Keys: c.Input.Keys}
+	stations := c.Radio
+	if stations == nil {
+		stations = []RadioStation{}
+	}
+	return Client{Display: c.Display, Keys: c.Input.Keys, Radio: stations}
 }

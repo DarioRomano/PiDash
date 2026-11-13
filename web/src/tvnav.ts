@@ -395,3 +395,81 @@ function openKeyboard(input: HTMLInputElement) {
   showValue();
   draw();
 }
+
+// --- A number pad, for the PIN -------------------------------------------------------
+
+/** Asks for a PIN; resolves to the digits, or null when Back was pressed. */
+export function enterPIN(title: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const box = document.createElement("div");
+    box.className = "tv-layer tv-keyboard tv-pin";
+    box.dataset.tvLayer = "";
+    const label = document.createElement("div");
+    label.className = "tv-kb-label";
+    label.textContent = title;
+    const value = document.createElement("div");
+    value.className = "tv-kb-value";
+    const keys = document.createElement("div");
+    keys.className = "tv-keys";
+    box.append(label, value, keys);
+    document.body.append(box);
+
+    let pin = "";
+    let focused: HTMLElement | null = null;
+    const show = () => (value.textContent = "•".repeat(pin.length) || " ");
+    const done = (result: string | null) => {
+      box.remove();
+      layer = null;
+      window.removeEventListener("keydown", typed, true);
+      resolve(result);
+    };
+    const key = (text: string, act: () => void, cls = "") => {
+      const b = document.createElement("div");
+      b.className = "tv-key " + cls;
+      b.textContent = text;
+      b.addEventListener("click", act);
+      return b;
+    };
+    for (const line of ["123", "456", "789"]) {
+      const row = document.createElement("div");
+      row.className = "tv-key-row";
+      for (const d of line) row.append(key(d, () => ((pin += d), show())));
+      keys.append(row);
+    }
+    const last = document.createElement("div");
+    last.className = "tv-key-row";
+    last.append(
+      key("⌫", () => ((pin = pin.slice(0, -1)), show())),
+      key("0", () => ((pin += "0"), show())),
+      key("OK", () => done(pin), "done"),
+    );
+    keys.append(last);
+    const all = () => [...keys.querySelectorAll<HTMLElement>(".tv-key")];
+    const setFocus = (el: HTMLElement | null) => {
+      if (!el) return;
+      focused?.classList.remove("tv-focus");
+      focused = el;
+      el.classList.add("tv-focus");
+    };
+    // A real keyboard, and the number buttons of a remote, type directly.
+    const typed = (e: KeyboardEvent) => {
+      if (/^[0-9]$/.test(e.key)) {
+        pin += e.key;
+        show();
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener("keydown", typed, true);
+    layer = {
+      handle(press) {
+        if (press === "back") return done(null);
+        if (press === "select") return focused?.click();
+        if (press === "exit" || !focused) return;
+        setFocus(nearest(focused.getBoundingClientRect(), press, all().filter((k) => k !== focused)));
+      },
+    };
+    show();
+    setFocus(all()[4]);
+  });
+}

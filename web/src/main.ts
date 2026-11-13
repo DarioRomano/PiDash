@@ -1,11 +1,12 @@
 import { Ambient, iconPalette } from "./ambient";
+import { setLanguage, t } from "./i18n";
 import { Clock } from "./clock";
 import { Help } from "./help";
 import { Input } from "./input";
 import { Rail, type RailItem } from "./rail";
 import { Slideshow } from "./slideshow";
 import { connect } from "./sse";
-import type { Action, AppsStatus, CalendarState, ClientConfig, HomeEntity, PhotoItem, PhotosStatus, StateEntry, SystemState, WeatherState } from "./types";
+import type { Action, AppsStatus, CalendarState, ClientConfig, HomeEntity, PhotoItem, RadioStation, PhotosStatus, StateEntry, SystemState, WeatherState } from "./types";
 import { WeatherView } from "./weather";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
@@ -22,6 +23,8 @@ const debug = $("#debug");
 
 const DENSITIES = ["photo", "compact", "detailed"] as const;
 let density = 1;
+/** True once Up or Down was used: the configured start view no longer applies. */
+let viewChosen = false;
 
 const clock = new Clock($("#hm"), $("#ampm"), $("#date"));
 clock.start();
@@ -147,6 +150,8 @@ function updateSuspended() {
   // Do not load photos while an app covers the dashboard, the page is hidden,
   // the TV has been switched off for the night, or night mode shows only a clock.
   slideshow.setSuspended(appsStatus.running !== "" || document.visibilityState !== "visible" || tvAsleep || nightNow);
+  // An app brings its own sound, and a TV that is off needs none.
+  if (appsStatus.running !== "" || tvAsleep) stopRadio();
   updateAmbient();
 }
 
@@ -254,6 +259,80 @@ function homeGlyph(e: HomeEntity): string {
   return svg('<circle cx="12" cy="12" r="7"/>');
 }
 
+// "More from this album": the slideshow stays with the album of the photo on screen.
+const MORE_ID = "__more";
+const MORE_GLYPH = svg('<rect x="3" y="6" width="13" height="13" rx="1.500"/><path d="M7 6V4.500A1.500 1.500 0 0 1 8.500 3H19.500A1.500 1.500 0 0 1 21 4.500V15.500A1.500 1.500 0 0 1 19.500 17H16"/>');
+
+// --- Radio ----------------------------------------------------------------------
+// Stations play in the background while the photos carry on. The play button
+// of the remote pauses and resumes the station; opening an app stops it.
+
+const RADIO_ID = "__radio:";
+const RADIO_GLYPH = svg('<rect x="3" y="9" width="18" height="11" rx="2"/><path d="M7 9l9-5"/><circle cx="8.500" cy="14.500" r="2.500"/><path d="M14 13h4M14 16h4"/>');
+let radioStations: RadioStation[] = [];
+let radioPlaying = -1;
+const radio = new Audio();
+radio.preload = "none";
+const radioLabel = document.createElement("div");
+radioLabel.id = "radio";
+radioLabel.hidden = true;
+stage.appendChild(radioLabel);
+
+function showRadio() {
+  const st = radioStations[radioPlaying];
+  radioLabel.hidden = !st;
+  radioLabel.textContent = st ? `♪  ${st.name}${radio.paused ? "  ·  " + t("paused") : ""}` : "";
+  rail.setItems(railItems());
+}
+
+function stopRadio() {
+  if (radioPlaying < 0) return;
+  radioPlaying = -1;
+  radio.pause();
+  radio.removeAttribute("src");
+  radio.load(); // drops the connection to the station
+  showRadio();
+}
+
+function toggleRadio(index: number) {
+  if (radioPlaying === index) return stopRadio();
+  const st = radioStations[index];
+  if (!st) return;
+  radioPlaying = index;
+  radio.src = st.url;
+  radio.play().catch((err: unknown) => {
+    // Pausing before the station has started is not a failure.
+    if (radioPlaying !== index || (err instanceof DOMException && err.name === "AbortError")) return;
+    toast(t("{name} cannot be played right now.", { name: st.name }), 6000);
+    stopRadio();
+  });
+  showRadio();
+}
+radio.addEventListener("error", () => {
+  const st = radioStations[radioPlaying];
+  if (!st) return;
+  toast(t("{name} cannot be played right now.", { name: st.name }), 6000);
+  stopRadio();
+});
+radio.addEventListener("pause", showRadio);
+radio.addEventListener("playing", showRadio);
+
+const SLEEP_ID = "__sleep";
+const SLEEP_GLYPH = svg('<path d="M20 14.500A8 8 0 0 1 9.500 4a8 8 0 1 0 10.500 10.500z"/>');
+let tvAvailable = false;
+let sleepAt = 0; // when the TV will be switched off, in milliseconds; 0 when not set
+let sleepMinutes = 0;
+let sleepWarned = 0;
+// The tile counts down, and a minute before the end the screen says so.
+window.setInterval(() => {
+  if (!sleepAt) return;
+  rail.setItems(railItems());
+  if (sleepAt - Date.now() < 75_000 && sleepWarned !== sleepAt) {
+    sleepWarned = sleepAt;
+    toast("The TV switches off in a minute. The sleep timer in the app row changes that.", 12000);
+  }
+}, 30_000);
+
 const HIDE_ID = "__hide:";
 const HIDE_GLYPH =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
@@ -320,12 +399,22 @@ function railItems(): RailItem[] {
       sub: running ? "Running · OK to stop" : "",
     });
   }
+  radioStations.forEach((st, i) => {
+    const playing = radioPlaying === i;
+    items.push({ id: RADIO_ID + i, label: st.name, glyph: RADIO_GLYPH, running: playing, sub: playing ? "Playing · OK to stop" : "Radio" });
+  });
+  // The sleep timer: each OK sets it to the next length, then off again.
+  if (tvAvailable) {
+    const left = Math.max(1, Math.round((sleepAt - Date.now()) / 60_000));
+    items.push({ id: SLEEP_ID, label: "Sleep timer", glyph: SLEEP_GLYPH, running: sleepAt > 0, sub: sleepAt > 0 ? t("TV off in {n} min", { n: left }) : "Off" });
+  }
   for (const e of homeEntities) {
     items.push({ id: HOME_ID + e.id, label: e.name, sub: e.text, glyph: homeGlyph(e), running: e.on });
   }
   // A photo that should not come up again can be hidden; of two side by
-  // side, either one.
+  // side, either one. Or the slideshow can stay with its album for a while.
   if (shownPhoto) {
+    items.push({ id: MORE_ID, label: "More from this album", glyph: MORE_GLYPH, sub: shownPhoto.folder.split(" / ").pop() });
     const keys = shownPhoto.key.split("+");
     if (keys.length === 2) {
       items.push({ id: HIDE_ID + keys[0], label: "Hide left photo", glyph: HIDE_GLYPH });
@@ -374,10 +463,43 @@ async function activateRailItem(item: RailItem) {
     openSettings();
     return;
   }
+  if (item.id.startsWith(RADIO_ID)) {
+    toggleRadio(Number(item.id.slice(RADIO_ID.length)));
+    return;
+  }
+  if (item.id === MORE_ID && shownPhoto) {
+    rail.close();
+    try {
+      const where = `folder=${encodeURIComponent(shownPhoto.folder)}&after=${encodeURIComponent(shownPhoto.key)}&limit=30`;
+      const data: { items: PhotoItem[] } = await (await fetch(`/api/photos/playlist?${where}`)).json();
+      slideshow.queue(data.items);
+      const album = shownPhoto.folder.split(" / ").pop() ?? "";
+      toast(
+        data.items.length === 0
+          ? t("There are no other photos in “{album}”.", { album })
+          : t("Staying with “{album}” for the next {n} pictures.", { album, n: data.items.length }),
+        5000,
+      );
+      if (data.items.length > 0) slideshow.next();
+    } catch {
+      toast("The PiDash backend is not reachable.", 6000);
+    }
+    return;
+  }
+  if (item.id === SLEEP_ID) {
+    const steps = [0, 30, 60, 90, 120];
+    const next = steps[(steps.indexOf(sleepMinutes) + 1) % steps.length];
+    try {
+      await postJSON("/api/tv/sleep", { minutes: next });
+    } catch {
+      toast("The PiDash backend is not reachable.", 6000);
+    }
+    return;
+  }
   if (item.id.startsWith(HOME_ID)) {
     const e = homeEntities.find((x) => HOME_ID + x.id === item.id);
     if (!e?.actionable) {
-      toast(e?.available === false ? `${item.label} is not available right now.` : `${item.label} only shows a value.`, 3000);
+      toast(e?.available === false ? t("{name} is not available right now.", { name: item.label }) : t("{name} only shows a value.", { name: item.label }), 3000);
       return;
     }
     try {
@@ -399,7 +521,7 @@ async function activateRailItem(item: RailItem) {
     return;
   }
   const stopping = appsStatus.running === item.id;
-  toast(stopping ? `Closing ${item.label}…` : `Starting ${item.label}…`);
+  toast(t(stopping ? "Closing {name}…" : "Starting {name}…", { name: item.label }));
   try {
     const res = stopping
       ? await postJSON("/api/apps/stop", {})
@@ -436,13 +558,29 @@ function applyConfig(cfg: ClientConfig) {
   shownNotice = notice;
   const d = cfg.display;
   document.documentElement.style.setProperty("--safe", `${(d.safe_area * 100).toFixed(2)}%`);
-  clock.configure(d.clock_24h, d.locale);
+  // Dates follow the language unless a locale is set for them.
+  setLanguage(d.language || "en");
+  const locale = d.locale || (d.language && d.language !== "en" ? d.language : "");
+  clock.configure(d.clock_24h, locale);
   clock24h = d.clock_24h;
-  weather.configure(d.clock_24h, d.locale);
-  dateLocale = d.locale || undefined;
+  stage.dataset.clock = d.clock_position || "bottom-left";
+  stage.dataset.clockSize = d.clock_size || "large";
+  if (!viewChosen) {
+    density = d.view === "details" ? 2 : d.view === "photo" ? 0 : 1;
+    overlay.dataset.density = DENSITIES[density];
+  }
+  weather.configure(d.clock_24h, locale);
+  dateLocale = locale || undefined;
+  renderAgenda();
   input.setKeyMap(cfg.keys);
   input.setDebugElement(d.debug_keys ? debug : null);
   if (!d.debug_keys) debug.hidden = true;
+  const stations = cfg.radio ?? [];
+  if (JSON.stringify(stations) !== JSON.stringify(radioStations)) {
+    stopRadio();
+    radioStations = stations;
+    rail.setItems(railItems());
+  }
   startPixelShift(d.pixel_shift);
   nightHours = d.night_start && d.night_end ? [minutesOf(d.night_start), minutesOf(d.night_end)] : null;
   updateNight();
@@ -626,10 +764,12 @@ input.on((action) => {
       rail.open();
       break;
     case "up":
+      viewChosen = true;
       density = Math.min(DENSITIES.length - 1, density + 1);
       overlay.dataset.density = DENSITIES[density];
       break;
     case "down":
+      viewChosen = true;
       density = Math.max(0, density - 1);
       overlay.dataset.density = DENSITIES[density];
       break;
@@ -644,6 +784,12 @@ input.on((action) => {
       slideshow.next();
       break;
     case "playpause":
+      if (radioPlaying >= 0) {
+        // A live station cannot be resumed where it stopped: pausing mutes it.
+        if (radio.paused) void radio.play().catch(() => stopRadio());
+        else radio.pause();
+        break;
+      }
       if (slideshow.hasPhotos) toast(slideshow.togglePause() ? "Slideshow paused" : "Slideshow resumed", 2000);
       refreshHud();
       break;
@@ -780,6 +926,10 @@ connect("/events", {
   onPhotos,
   onTV: (st) => {
     tvAsleep = st.asleep;
+    tvAvailable = !!st.available;
+    sleepAt = st.sleepAt ? new Date(st.sleepAt).getTime() : 0;
+    sleepMinutes = st.sleepMinutes ?? 0;
+    rail.setItems(railItems());
     updateSuspended();
   },
   onStatus: (ok) => conn.classList.toggle("ok", ok),

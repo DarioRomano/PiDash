@@ -1,5 +1,6 @@
 // Picker for the folders and albums of the background slideshow. Opened from the
 // phone remote and from the settings page.
+import { t } from "./i18n";
 import { ask, onTV, startTVNav } from "./tvnav";
 import type { PhotoFolder, PhotoSelection, PhotosStatus } from "./types";
 
@@ -58,7 +59,7 @@ function refresh() {
         span.textContent = f.path;
         const remove = document.createElement("button");
         remove.textContent = "×";
-        remove.setAttribute("aria-label", `Remove ${f.path}`);
+        remove.setAttribute("aria-label", t("Remove {name}", { name: f.path }));
         remove.addEventListener("click", () => {
           chosen.delete(f.id);
           refresh();
@@ -71,7 +72,7 @@ function refresh() {
   const dirty = selectionKey(current()) !== selectionKey(saved);
   saveBtn.disabled = !dirty || saving;
   saveBtn.textContent = saving ? "Saving…" : "Use these photos";
-  summary.textContent = chosen.size === 0 ? "Nothing chosen" : `${chosen.size} chosen`;
+  summary.textContent = chosen.size === 0 ? "Nothing chosen" : t("{n} chosen", { n: chosen.size });
 }
 
 function showStatus(st: PhotosStatus) {
@@ -88,10 +89,10 @@ function showStatus(st: PhotosStatus) {
     statusEl.textContent = st.error;
     statusEl.classList.add("error");
   } else if (st.indexing) {
-    statusEl.textContent = `${st.source} · reading your choice…`;
+    statusEl.textContent = t("{source} · reading your choice…", { source: t(st.source) });
   } else {
     const n = st.count.toLocaleString();
-    statusEl.textContent = `${st.source} · ${n} ${st.count === 1 ? "photo" : "photos"} in the slideshow`;
+    statusEl.textContent = t(st.count === 1 ? "{source} · 1 photo in the slideshow" : "{source} · {n} photos in the slideshow", { source: t(st.source), n });
     if (st.count > 0) statusEl.classList.add("ok");
   }
 }
@@ -131,7 +132,7 @@ function makeNode(folder: PhotoFolder, ancestors: string[], depth: number): HTML
   const expand = document.createElement("button");
   expand.className = "expand";
   expand.textContent = "›";
-  expand.setAttribute("aria-label", `Show what is inside ${folder.name}`);
+  expand.setAttribute("aria-label", t("Show what is inside {name}", { name: folder.name }));
   if (folder.leaf) {
     // An album has nothing to open; the empty space keeps the names aligned.
     expand.disabled = true;

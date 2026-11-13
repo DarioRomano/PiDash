@@ -30,6 +30,7 @@ import (
 	"github.com/DarioRomano/PiDash/internal/providers"
 	"github.com/DarioRomano/PiDash/internal/providers/calendar"
 	"github.com/DarioRomano/PiDash/internal/providers/weather"
+	"github.com/DarioRomano/PiDash/internal/radio"
 	"github.com/DarioRomano/PiDash/internal/settings"
 	"github.com/DarioRomano/PiDash/internal/tv"
 	"github.com/DarioRomano/PiDash/internal/update"
@@ -37,20 +38,21 @@ import (
 
 // Server is the PiDash HTTP server.
 type Server struct {
-	cfg     config.Config
-	log     *slog.Logger
-	hub     *hub
-	runner  *providers.Runner
-	kiosk   *kiosk.Controller
-	apps    *apps.Manager
-	photos  *photos.Service // nil when no photo source is configured
-	input   *input.Service
-	tv      *tv.Service
-	updater *update.Service
-	pin     pinGuard
-	version string
-	urlFile string
-	static  fs.FS
+	cfg        config.Config
+	log        *slog.Logger
+	hub        *hub
+	runner     *providers.Runner
+	kiosk      *kiosk.Controller
+	apps       *apps.Manager
+	photos     *photos.Service // nil when no photo source is configured
+	input      *input.Service
+	tv         *tv.Service
+	updater    *update.Service
+	photoState string
+	pin        pinGuard
+	version    string
+	urlFile    string
+	static     fs.FS
 
 	noticeMu sync.Mutex
 	notices  []string
@@ -72,6 +74,9 @@ type Deps struct {
 	Photos *photos.Service // nil when no photo source is configured
 	Input  *input.Service
 	TV     *tv.Service
+	// PhotoStatePath is where the slideshow keeps its chosen folders, for
+	// restoring a backup while no photo source is set up.
+	PhotoStatePath string
 	// Updater looks for and installs new releases; may be nil.
 	Updater *update.Service
 	// Version is the PiDash version, shown on the phone remote.
@@ -118,6 +123,8 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("GET /api/photos/folders", s.handlePhotoFolders)
 	s.mux.HandleFunc("PUT /api/photos/selection", s.handlePhotoSelection)
 	s.mux.HandleFunc("GET /api/photos/playlist", s.handlePhotoPlaylist)
+	s.mux.HandleFunc("GET /videos/{key}", s.handleVideo)
+	s.mux.HandleFunc("POST /api/photos/unplayable", s.handleUnplayable)
 	s.mux.HandleFunc("POST /api/photos/hide", s.handlePhotoHide)
 	s.mux.HandleFunc("POST /api/photos/unhide", s.handlePhotoUnhide)
 	s.mux.HandleFunc("GET /photos/{key}", s.handlePhotoImage)
@@ -127,6 +134,11 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("POST /api/pointer", s.handlePointer)
 	s.mux.HandleFunc("POST /api/type", s.handleType)
 	s.mux.HandleFunc("POST /api/tv", s.handleTVPower)
+	s.mux.HandleFunc("POST /api/tv/sleep", s.handleTVSleep)
+	s.mux.HandleFunc("GET /api/radio/search", s.handleRadioSearch)
+	s.photoState = d.PhotoStatePath
+	s.mux.HandleFunc("POST /api/settings/backup", s.handleBackup)
+	s.mux.HandleFunc("POST /api/settings/restore", s.handleRestore)
 	s.mux.HandleFunc("GET /api/settings", s.handleSettings)
 	s.mux.HandleFunc("PUT /api/settings", s.handleSettingsSave)
 	s.mux.HandleFunc("POST /api/settings/test-synology", s.handleTestSynology)
@@ -706,6 +718,88 @@ func (s *Server) handleType(w http.ResponseWriter, r *http.Request) {
 	s.inputError(w, s.input.Type(r.Context(), req.Text))
 }
 
+// backup is the content of a backup file.
+type backup struct {
+	// PiDash marks the file, so that some other JSON file is not mistaken for one.
+	PiDash   string        `json:"pidash"`
+	Version  string        `json:"version"`
+	Settings settings.File `json:"settings"`
+	Photos   *photos.State `json:"photos,omitempty"`
+}
+
+// handleBackup returns everything set up on the settings page as one file.
+// It contains the passwords and links stored on the Pi, so it asks for the
+// PIN when there is one. A POST, so that the PIN can be sent along.
+func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
+	if s.settings == nil {
+		http.Error(w, "settings are not available", http.StatusNotFound)
+		return
+	}
+	if !s.pin.allow(w, r) {
+		return
+	}
+	b := backup{PiDash: "backup", Version: s.version, Settings: s.settings.Export()}
+	if s.photos != nil {
+		st := s.photos.Export()
+		b.Photos = &st
+	}
+	w.Header().Set("Content-Disposition", `attachment; filename="pidash-backup.json"`)
+	writeJSON(w, b)
+}
+
+// handleRestore replaces the settings with those of a backup file and
+// restarts to apply them.
+func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
+	if s.settings == nil {
+		http.Error(w, "settings are not available", http.StatusNotFound)
+		return
+	}
+	if !s.pin.allow(w, r) {
+		return
+	}
+	var b backup
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<20)).Decode(&b); err != nil || b.PiDash != "backup" {
+		http.Error(w, "This is not a PiDash backup file.", http.StatusUnprocessableEntity)
+		return
+	}
+	if err := s.settings.Import(b.Settings); err != nil {
+		http.Error(w, "The backup does not fit this Pi: "+err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+	if b.Photos != nil {
+		if err := photos.WriteState(s.photoState, *b.Photos); err != nil {
+			s.log.Warn("restoring the photo selection", "err", err)
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
+	// Let the answer reach the page before restarting.
+	time.AfterFunc(400*time.Millisecond, s.requestRestart)
+}
+
+// handleRadioSearch looks radio stations up by name, for the settings page.
+func (s *Server) handleRadioSearch(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+	stations, err := radio.Search(ctx, r.URL.Query().Get("q"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, map[string]any{"stations": stations})
+}
+
+// handleTVSleep sets the sleep timer: POST /api/tv/sleep {"minutes":60}; 0 cancels.
+func (s *Server) handleTVSleep(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Minutes int `json:"minutes"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil || req.Minutes < 0 || req.Minutes > 600 {
+		http.Error(w, "minutes must be between 0 and 600", http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, s.tv.SetSleep(req.Minutes))
+}
+
 // handleTVPower switches the TV on or off: POST /api/tv {"power":"off"}.
 func (s *Server) handleTVPower(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -767,6 +861,48 @@ func (s *Server) handlePhotoSelection(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.photos.Status())
 }
 
+// handleVideo serves a video clip of the slideshow. The browser asks for it
+// in parts, which http.ServeFile takes care of.
+func (s *Server) handleVideo(w http.ResponseWriter, r *http.Request) {
+	if s.photos == nil {
+		http.NotFound(w, r)
+		return
+	}
+	path, name, err := s.photos.Video(r.Context(), r.PathValue("key"))
+	switch {
+	case errors.Is(err, photos.ErrNotFound):
+		http.NotFound(w, r)
+		return
+	case err != nil:
+		s.log.Warn("video", "err", err)
+		http.Error(w, "the video is not available", http.StatusBadGateway)
+		return
+	}
+	// The cached copy has no file extension to tell its kind by.
+	kind := "video/mp4"
+	if strings.HasSuffix(strings.ToLower(name), ".webm") {
+		kind = "video/webm"
+	}
+	w.Header().Set("Content-Type", kind)
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	http.ServeFile(w, r, path)
+}
+
+// handleUnplayable is told by the dashboard that a video clip did not play.
+func (s *Server) handleUnplayable(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Key string `json:"key"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil || req.Key == "" {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if s.photos != nil {
+		s.photos.Unplayable(req.Key)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // handlePhotoHide takes photos out of the slideshow for good.
 func (s *Server) handlePhotoHide(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -807,6 +943,7 @@ type playlistItem struct {
 	Folder string    `json:"folder"`
 	Taken  time.Time `json:"taken"`
 	Place  string    `json:"place,omitempty"`
+	Video  bool      `json:"video,omitempty"`
 	// V changes when the photo is edited, so the browser does not show a stale copy.
 	V string `json:"v"`
 }
@@ -822,6 +959,10 @@ func (s *Server) handlePhotoPlaylist(w http.ResponseWriter, r *http.Request) {
 			limit = 200
 		}
 		version, slides := s.photos.Slides(limit)
+		if folder := r.URL.Query().Get("folder"); folder != "" {
+			// "More from this album": that folder's photos, in the order taken.
+			version, slides = s.photos.SlidesFrom(folder, r.URL.Query().Get("after"), limit)
+		}
 		out.Version = version
 		for _, slide := range slides {
 			// A slide is one photo, or two upright ones side by side; the
@@ -835,7 +976,7 @@ func (s *Server) handlePhotoPlaylist(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			sum := sha1.Sum([]byte(versions + s.photos.Variant()))
-			out.Items = append(out.Items, playlistItem{Key: slide.Key, Name: name, Folder: first.Folder, Taken: first.Taken, Place: first.Place, V: hex.EncodeToString(sum[:4])})
+			out.Items = append(out.Items, playlistItem{Key: slide.Key, Name: name, Folder: first.Folder, Taken: first.Taken, Place: first.Place, Video: first.Video, V: hex.EncodeToString(sum[:4])})
 		}
 	}
 	writeJSON(w, out)

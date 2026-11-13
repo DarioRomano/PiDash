@@ -55,7 +55,10 @@ type Options struct {
 	// AppRunning reports whether something is being watched or played. The TV
 	// is never switched off in the middle of that.
 	AppRunning func() bool
-	Log        *slog.Logger
+	// OnSleep is called when the sleep timer runs out, before the TV is
+	// switched off: the place to close an app that is still playing.
+	OnSleep func()
+	Log     *slog.Logger
 }
 
 // Status is sent to the dashboard and the phone remote.
@@ -67,6 +70,10 @@ type Status struct {
 	Asleep bool   `json:"asleep"`
 	Off    string `json:"off,omitempty"`
 	On     string `json:"on,omitempty"`
+	// SleepAt is when the sleep timer switches the TV off; SleepMinutes what
+	// it was set to.
+	SleepAt      *time.Time `json:"sleepAt,omitempty"`
+	SleepMinutes int        `json:"sleepMinutes,omitempty"`
 }
 
 // settle is how long a TV may take to report "standby" after being told to.
@@ -82,6 +89,9 @@ type Service struct {
 	standbyAt  time.Time // when we last sent the TV to standby; zero if we did not
 	asleep     bool
 	onChange   func(Status)
+	// sleepAt is when the sleep timer switches the TV off; zero when not set.
+	sleepAt      time.Time
+	sleepMinutes int
 }
 
 // New returns a TV service.
@@ -107,7 +117,11 @@ func (s *Service) Status() Status {
 }
 
 func (s *Service) statusLocked() Status {
-	st := Status{Available: s.opt.TV.Available(), Asleep: s.asleep}
+	st := Status{Available: s.opt.TV.Available(), Asleep: s.asleep, SleepMinutes: s.sleepMinutes}
+	if !s.sleepAt.IsZero() {
+		at := s.sleepAt
+		st.SleepAt = &at
+	}
 	if s.opt.Off != nil {
 		st.Off = s.opt.Off.String()
 	}
@@ -150,7 +164,23 @@ func (s *Service) Step(ctx context.Context, now time.Time) {
 	}
 	pending := s.pendingOff
 	standbyAt := s.standbyAt
+	sleepDue := !s.sleepAt.IsZero() && !now.Before(s.sleepAt)
+	if sleepDue {
+		s.sleepAt, s.sleepMinutes = time.Time{}, 0
+	}
 	s.mu.Unlock()
+
+	if sleepDue {
+		// Whoever set the timer has fallen asleep: close what is playing, too.
+		s.opt.Log.Info("sleep timer: switching the TV off")
+		if s.opt.OnSleep != nil {
+			s.opt.OnSleep()
+		}
+		if err := s.setPower(ctx, false, now); err != nil {
+			s.opt.Log.Warn("sleep timer: switch off failed", "err", err)
+		}
+		return
+	}
 
 	switch {
 	case turnOn:
@@ -197,6 +227,21 @@ func (s *Service) Step(ctx context.Context, now time.Time) {
 			fn(st)
 		}
 	}
+}
+
+// SetSleep starts the sleep timer: the TV is switched off in that many
+// minutes. Zero cancels it.
+func (s *Service) SetSleep(minutes int) Status {
+	s.mu.Lock()
+	if minutes <= 0 {
+		s.sleepAt, s.sleepMinutes = time.Time{}, 0
+	} else {
+		s.sleepAt, s.sleepMinutes = time.Now().Add(time.Duration(minutes)*time.Minute), minutes
+	}
+	st, fn := s.statusLocked(), s.onChange
+	s.mu.Unlock()
+	fn(st)
+	return st
 }
 
 // SetPower switches the TV on or off now, from the phone remote.

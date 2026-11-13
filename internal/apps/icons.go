@@ -119,6 +119,8 @@ func builtinNameFor(app config.App) string {
 		return "youtube"
 	case id == "netflix" || hostIs("netflix.com"):
 		return "netflix"
+	case id == "spotify" || hostIs("spotify.com"):
+		return "spotify"
 	case strings.Contains(id, "synology") || strings.Contains(query, "syno.foto") ||
 		(app.URL != "" && (path == "/photo" || strings.HasPrefix(path, "/photo/"))):
 		return "synology-photos"

@@ -254,7 +254,7 @@ func (n *fakeNAS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				additional["address"] = map[string]any{"city": "", "town": "Sintra", "country": "Portugal", "country_id": "PT"}
 			}
 			entry := map[string]any{
-				"id": it.ID, "filename": it.Filename, "type": it.Type, "time": 1700000000 + it.ID,
+				"id": it.ID, "filename": it.Filename, "type": it.Type, "time": 1700000000 + it.ID, "filesize": 5000 + it.ID,
 				"additional": additional,
 			}
 			if owners != nil && !n.hideOwner {

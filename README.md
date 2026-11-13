@@ -189,6 +189,9 @@ What it covers:
   a **Check link** button.
 - **Smart home:** the connection to Home Assistant and which of its devices
   appear as tiles in the app row.
+- **Radio:** internet radio stations for the app row, found by name.
+- **Screen:** the language, where the clock sits and how large it is, and
+  what the dashboard shows when it starts.
 - **Night:** hours in which the TV shows only a dim clock on black. Any button
   brings the dashboard back for a minute.
 - **Apps:** the app row. Websites have a **size** next to them: 150% or 200%
@@ -218,6 +221,9 @@ lets them pick a program by name. The command always comes from the menu entry
 on the Pi itself. A program that needs its own command or options still goes
 into `config.toml`.
 
+- **Lock:** a PIN without which settings can be looked at but not changed.
+- **Backup:** one file with everything set up here, to save or load from a
+  computer.
 - **Updates:** which version runs, whether a newer one exists, a button to
   install it, and a switch to have that done automatically at night.
 
@@ -325,6 +331,65 @@ Locks and alarm panels are never offered: a remote lying on the sofa should
 not open the door. Only the tiles you put on the app row can be switched
 from PiDash. The token stays on the Pi and is never shown again.
 
+### Language and layout
+
+Under **Screen** on the settings page:
+
+- **Language:** English, German, French or Italian, for the dashboard, the
+  settings and the dates. Messages that come from the Pi itself, such as "the
+  NAS cannot be reached", stay in English.
+- **Clock position and size:** any of the four corners, in three sizes. The
+  calendar takes the bottom corner the clock leaves free.
+- **Shown at start:** the clock with date and calendar, the same plus weather
+  and the photo's caption, or nothing but the photo. Up and Down on the
+  remote switch between these three at any time.
+
+The translations live in one table, `scripts/translations.py`; running it
+writes the language files.
+
+### Radio
+
+Internet radio stations sit in the app row as tiles. **OK** on a station
+plays it while the photos carry on; **OK** again stops it. The remote's play
+button pauses and resumes. Opening an app, or the TV being switched off, stops
+the radio.
+
+Add stations on the settings page under **Radio**: type part of the name,
+press **Search**, pick the station from the results and add it. The search
+uses the community directory radio-browser.info. Stations can also be written
+into `config.toml` with the address of their stream:
+
+```toml
+[[radio]]
+name = "Radio Swiss Jazz"
+url = "https://stream.srg-ssr.ch/m/rsj/mp3_128"
+```
+
+### Sleep timer
+
+The **Sleep timer** tile in the app row switches the TV off after a while.
+Each **OK** sets the next length (30, 60, 90 or 120 minutes) and then off
+again; the tile shows the time left. A minute before the end the screen says
+so. When the time is up, an app that is still playing is closed and the TV
+is switched to standby. The tile only appears when the TV can be switched
+over HDMI-CEC.
+
+### Lock
+
+With a PIN set under **Lock**, the settings can still be opened and looked
+at, but saving, installing an update and backups ask for the PIN. On the TV
+it is typed on a number pad with the remote, and the TV does not remember it.
+If you forget it, remove the `lock` entry from
+`~/.config/pidash/settings.json` on the Pi and restart PiDash.
+
+### Backup
+
+**Save a backup file** on the settings page, opened on a computer or phone,
+downloads one file with everything set up there, the chosen photo folders
+and the hidden photos. **Load a backup file** puts it back, on this Pi or
+another one. The file contains the passwords and links stored on the Pi, so
+keep it to yourself.
+
 ### Night mode
 
 Between two times of day, set on the settings page under **Night**, the TV
@@ -424,6 +489,18 @@ photo means slower movement. After changing the setting, photos are prepared
 again as they come up. If the system is set to reduce motion, photos stand
 still.
 
+**More from this album.** While a photo is showing, the **More from this
+album** tile in the app row makes the slideshow stay with that folder or
+album: the next up to 30 pictures come from it, in the order they were taken.
+Then the usual mix returns.
+
+**Video clips.** With **Also show video clips, without sound**
+(`videos = true`), clips from the chosen folders and albums take their turn in
+the slideshow. A clip plays once, for at most 45 seconds, always muted. Clips
+over 90 MB are left out, and so are clips the Pi's browser cannot play, which
+includes many phone videos in the HEVC format: the first failed attempt is
+remembered and the clip is not tried again. Live photos are shown as stills.
+
 **On this day.** With **Start with photos taken on this day in earlier
 years** (`on_this_day = true`), each round of the slideshow begins with the
 photos from today's date in past years, when there are any.
@@ -487,6 +564,14 @@ The easiest way to add apps is the [settings page](#settings). They can also
 be defined in `~/.config/pidash/config.toml`, one `[[apps]]` block each. After
 editing, run `systemctl --user restart pidash`. An app is either a website or
 a program.
+
+#### Spotify
+
+**Spotify** in the list of ready-made apps opens the Spotify web player in
+Chromium. It is made for a mouse: with only the TV remote, OK and the play
+button work on whatever is selected, but moving around the page needs a mouse
+or the phone's touchpad. Setting its size to 150% or more helps on a 4K
+screen.
 
 #### YouTube, Netflix and other websites
 

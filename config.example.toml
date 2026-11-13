@@ -23,6 +23,17 @@ pixel_shift = 4
 # Close the app row and return to the clock after this many seconds without a
 # key press. 0 = keep it open until Back is pressed.
 app_row_timeout = 30
+# Language of everything on screen: "en", "de", "fr" or "it". Messages that
+# come from the Pi itself, such as connection errors, stay in English.
+language = "en"
+# Where the clock sits: "bottom-left", "bottom-right", "top-left", "top-right".
+clock_position = "bottom-left"
+# "large", "medium" or "small".
+clock_size = "large"
+# What the dashboard shows when it starts: "clock", "details" (also weather
+# and the photo's caption) or "photo" (nothing but the photo). Up and Down on
+# the remote switch between them.
+view = "clock"
 # Night mode: between these times the TV shows only a dim clock on black. Any
 # button brings the dashboard back for a minute. Leave both empty for none.
 night_start = ""
@@ -107,6 +118,10 @@ motion = "off"
 pair_portraits = false
 # Start every round with the photos taken on today's date in earlier years.
 on_this_day = false
+# Also show video clips from the chosen folders and albums, without sound, up
+# to 45 seconds each. Clips over 90 MB, and ones the Pi's browser cannot play
+# (many phone videos in the HEVC format), are left out.
+videos = false
 # How often the chosen folders are checked for new photos.
 refresh = "6h"
 # Disk space for prepared photos, in MB. The oldest are removed first.

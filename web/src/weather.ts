@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type { Action, WeatherDay, WeatherState } from "./types";
 
 // --- Icons --------------------------------------------------------------------
@@ -67,7 +68,7 @@ const CONDITIONS: Record<number, string> = {
 };
 
 export function conditionText(code: number): string {
-  return CONDITIONS[code] ?? "Unknown";
+  return t(CONDITIONS[code] ?? "Unknown");
 }
 
 // --- Formatting ---------------------------------------------------------------
@@ -198,7 +199,7 @@ export class WeatherView {
       `<div class="w-line">${esc(conditionText(c.code))}` +
       (today ? `<span class="w-hilo">${deg(today.max)} / ${deg(today.min)}</span>` : "") +
       `</div>` +
-      `<div class="w-extra">${esc(s.location)}  ·  Feels like ${deg(c.feelsLike)}  ·  Rain ${rain}%</div>`;
+      `<div class="w-extra">${esc(s.location)}  ·  ${esc(t("Feels like {t}", { t: deg(c.feelsLike) }))}  ·  ${esc(t("Rain {p}%", { p: rain }))}</div>`;
   }
 
   private renderPanel() {
@@ -212,12 +213,12 @@ export class WeatherView {
       `<div class="wp-tile"><div class="wp-label">${label}</div><div class="wp-value">${value}</div><div class="wp-note">${note}</div></div>`;
 
     const tiles =
-      tile("Wind", `${Math.round(c.windSpeed)} <small>${esc(u.wind)}</small>`, `${compass(c.windDirection)} · gusts ${Math.round(c.windGusts)}`) +
+      tile("Wind", `${Math.round(c.windSpeed)} <small>${esc(u.wind)}</small>`, `${t(compass(c.windDirection))} · ${esc(t("gusts {n}", { n: Math.round(c.windGusts) }))}`) +
       tile("Humidity", `${c.humidity}<small>%</small>`) +
       tile(
         "Rain today",
         `${today ? today.precipitationProbability : 0}<small>%</small>`,
-        today ? `${today.precipitationSum.toFixed(today.precipitationSum < 10 ? 1 : 0)} ${esc(u.precipitation)} expected` : "",
+        today ? esc(t("{amount} expected", { amount: `${today.precipitationSum.toFixed(today.precipitationSum < 10 ? 1 : 0)} ${u.precipitation}` })) : "",
       ) +
       tile("UV index", today ? `${Math.round(today.uvIndexMax)}` : "–", today ? uvWord(today.uvIndexMax) : "") +
       tile("Sunrise", today ? this.clock(today.sunrise) : "–") +
@@ -262,14 +263,16 @@ export class WeatherView {
       `<div class="wp-loc">${esc(s.location)}</div>` +
       `<div class="wp-hero"><span class="wp-icon">${weatherIcon(c.code, c.isDay)}</span><span class="wp-temp">${deg(c.temperature)}</span></div>` +
       `<div class="wp-cond">${esc(conditionText(c.code))}</div>` +
-      `<div class="wp-sub">Feels like ${deg(c.feelsLike)}` + (today ? `  ·  High ${deg(today.max)}  ·  Low ${deg(today.min)}` : "") + `</div>` +
+      `<div class="wp-sub">${esc(t("Feels like {t}", { t: deg(c.feelsLike) }))}` +
+      (today ? `  ·  ${esc(t("High {t}", { t: deg(today.max) }))}  ·  ${esc(t("Low {t}", { t: deg(today.min) }))}` : "") +
+      `</div>` +
       `<div class="wp-tiles">${tiles}</div>` +
       `</section>` +
       `<section class="wp-right">` +
       `<h3>Next 24 hours</h3><div class="wp-hours">${hours}</div>` +
-      `<h3>This week <span class="wp-legend">low to high, in ${esc(u.temperature)}</span></h3><div class="wp-days">${days}</div>` +
+      `<h3>This week <span class="wp-legend">${esc(t("low to high, in {unit}", { unit: u.temperature }))}</span></h3><div class="wp-days">${days}</div>` +
       `</section>` +
       `</div>` +
-      `<footer class="wp-foot"><span>${this.stale ? "Could not refresh · last update " : "Updated "}${this.clock(c.time)}  ·  Weather data by Open-Meteo.com</span><span>Back or click to close</span></footer>`;
+      `<footer class="wp-foot"><span>${esc(t(this.stale ? "Could not refresh · last update {time}" : "Updated {time}", { time: this.clock(c.time) }))}  ·  ${esc(t("Weather data by Open-Meteo.com"))}</span><span>Back or click to close</span></footer>`;
   }
 }

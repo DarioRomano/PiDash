@@ -64,7 +64,7 @@ html, body {
   inset: 0;
   opacity: 0.5;
 }
-#backdrop img {
+#backdrop img, #backdrop video {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -74,7 +74,22 @@ html, body {
   transition: opacity 1.6s ease-in-out;
   will-change: opacity, transform; /* photos may pan and zoom slowly */
 }
-#backdrop img.visible { opacity: 1; }
+#backdrop img.visible, #backdrop video.visible { opacity: 1; }
+/* A clip is shown whole, on black. */
+#backdrop video { object-fit: contain; background: #000; }
+
+/* The radio station that is playing, top left. */
+#radio {
+  position: absolute;
+  left: var(--safe);
+  top: var(--safe);
+  font-size: 26px;
+  color: var(--fg-dim);
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.6);
+  transition: opacity 0.4s ease;
+}
+#stage.night #radio, #stage.panel-open #radio { opacity: 0; }
+#stage[data-clock="top-left"] #radio { top: auto; bottom: var(--safe); }
 
 /* The next calendar events, opposite the clock. */
 #agenda {
@@ -96,6 +111,22 @@ html, body {
 #stage.rail-open #agenda { transform: translateY(-330px); }
 #stage.panel-open #agenda { opacity: 0; }
 #stage:has(#overlay[data-density="photo"]) #agenda { opacity: 0; }
+
+/* Where the clock sits, and how large it is. The calendar takes the bottom
+   corner the clock leaves free. */
+#stage[data-clock$="right"] #overlay { align-items: flex-end; text-align: right; }
+#stage[data-clock$="right"] #time { justify-content: flex-end; }
+#stage[data-clock^="top"] #overlay { justify-content: flex-start; }
+#stage[data-clock="bottom-right"] #agenda { right: auto; left: var(--safe); }
+#stage[data-clock="bottom-right"] .agenda-day { text-align: left; }
+#stage[data-clock="bottom-right"] .agenda-event { justify-content: flex-start; flex-direction: row-reverse; }
+#stage[data-clock="bottom-right"] .agenda-time { text-align: left; }
+#stage[data-clock^="top"].rail-open #overlay { transform: none; }
+#stage[data-clock^="top"] #status { top: auto; bottom: var(--safe); }
+#stage[data-clock-size="medium"] #time { font-size: 150px; }
+#stage[data-clock-size="medium"] #date { font-size: 36px; margin-top: 12px; }
+#stage[data-clock-size="small"] #time { font-size: 96px; }
+#stage[data-clock-size="small"] #date { font-size: 28px; margin-top: 8px; }
 
 /* Night mode: a dim clock on black, nothing else. */
 #stage.night #backdrop, #stage.night #scrim, #stage.night #caption, #stage.night #weather,
@@ -264,15 +295,21 @@ html, body {
   color: var(--accent);
 }
 .tile-art img, .tile-art svg { width: 100%; height: 100%; object-fit: contain; }
+/* A long name takes a second line rather than being cut off. */
 .tile-label {
-  max-width: 228px;
-  font-size: 30px;
+  max-width: 232px;
+  font-size: 28px;
   font-weight: 500;
-  white-space: nowrap;
+  line-height: 1.14;
+  text-align: center;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
-.tile-sub { height: 24px; font-size: 19px; color: var(--fg-dim); }
+.tile-sub { min-height: 22px; max-width: 232px; font-size: 19px; color: var(--fg-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile-sub:empty { display: none; }
 .tile.running .tile-sub { color: #6fd08c; }
 .tile-num {
   position: absolute;

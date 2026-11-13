@@ -6,7 +6,7 @@ export interface SSEHandlers {
   onInput(ev: InputEvent): void;
   onApps(status: AppsStatus): void;
   onPhotos(status: PhotosStatus): void;
-  onTV(status: { asleep: boolean }): void;
+  onTV(status: { asleep: boolean; available?: boolean; sleepAt?: string; sleepMinutes?: number }): void;
   onStatus(connected: boolean): void;
 }
 

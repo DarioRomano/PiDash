@@ -2,6 +2,8 @@ import type { PhotoItem, PhotosStatus } from "./types";
 
 const FADE_MS = 1700; // a little longer than the CSS opacity transition
 const PLAYLIST_SIZE = 200;
+const VIDEO_MAX_MS = 45_000; // a video clip is shown for at most this long
+const VIDEO_WAIT_MS = 20_000; // and given this long to start
 const FILL_ZOOM = 1.14; // how far a photo that fills the screen is zoomed at most
 
 /** One end of a photo's movement: its zoom, and its shift as a fraction of its size. */
@@ -18,7 +20,9 @@ interface Pose {
  */
 export class Slideshow {
   private layers: [HTMLImageElement, HTMLImageElement];
-  private front = 0;
+  private videos: [HTMLVideoElement, HTMLVideoElement];
+  /** What is on screen now: one of the layers, or one of the videos. */
+  private current: HTMLElement | null = null;
   private playlist: PhotoItem[] = [];
   private index = -1;
   private version = -1;
@@ -47,6 +51,15 @@ export class Slideshow {
       return img;
     };
     this.layers = [make(), make()];
+    const makeVideo = () => {
+      const v = document.createElement("video");
+      v.muted = true; // the slideshow is silent
+      v.playsInline = true;
+      v.preload = "auto";
+      backdrop.appendChild(v);
+      return v;
+    };
+    this.videos = [makeVideo(), makeVideo()];
   }
 
   get hasPhotos() {
@@ -132,9 +145,18 @@ export class Slideshow {
     }
   }
 
+  /** Shows these photos next, in this order; the usual shuffle follows them. */
+  queue(items: PhotoItem[]) {
+    if (items.length === 0) return;
+    this.loadToken++; // a refresh of the list that is under way must not undo this
+    this.playlist = [...this.playlist.slice(0, Math.max(0, this.index + 1)), ...items];
+  }
+
   private clear() {
     clearTimeout(this.timer);
-    for (const l of this.layers) l.classList.remove("visible");
+    for (const l of [...this.layers, ...this.videos]) l.classList.remove("visible");
+    for (const v of this.videos) this.unload(v);
+    this.current = null;
     this.backdrop.classList.remove("has-photo");
     this.onPhoto(null);
   }
@@ -157,12 +179,23 @@ export class Slideshow {
 
     this.showing = true;
     const item = this.playlist[target];
-    const incoming = this.layers[1 - this.front];
+    // The photo or clip goes into the layer that is not on screen.
+    const incoming: HTMLElement = item.video
+      ? this.videos.find((v) => v !== this.current)!
+      : this.layers.find((l) => l !== this.current)!;
     try {
-      incoming.src = this.url(item);
-      await incoming.decode();
+      if (incoming instanceof HTMLVideoElement) await this.loadVideo(incoming, item);
+      else {
+        (incoming as HTMLImageElement).src = this.url(item);
+        await (incoming as HTMLImageElement).decode();
+      }
     } catch {
-      // Unreadable photo or the NAS is away: skip it, but do not spin.
+      // Unreadable photo, a clip the browser cannot play, or the NAS is
+      // away: skip it, but do not spin.
+      if (incoming instanceof HTMLVideoElement) {
+        this.unload(incoming);
+        if (!this.suspended) void fetch("/api/photos/unplayable", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: item.key }) }).catch(() => {});
+      }
       this.showing = false;
       this.index = target;
       this.failures++;
@@ -173,27 +206,63 @@ export class Slideshow {
     this.failures = 0;
     this.index = target;
 
-    // The new photo fades in on top of the old one, which stays fully opaque
+    // The new picture fades in on top of the old one, which stays fully opaque
     // underneath, so the screen never dips darker mid-fade.
-    const outgoing = this.layers[this.front];
+    const outgoing = this.current;
     incoming.style.zIndex = "2";
-    outgoing.style.zIndex = "1";
-    this.move(incoming);
+    if (outgoing) outgoing.style.zIndex = "1";
+    let showFor = this.intervalMs;
+    if (incoming instanceof HTMLVideoElement) {
+      // A clip plays once, or over and over if it is very short.
+      const length = (isFinite(incoming.duration) ? incoming.duration : 30) * 1000;
+      incoming.loop = length < 6000;
+      showFor = Math.min(VIDEO_MAX_MS, Math.max(length, 6000));
+      void incoming.play().catch(() => {});
+    } else {
+      this.move(incoming as HTMLImageElement);
+    }
     incoming.classList.add("visible");
     this.backdrop.classList.add("has-photo");
-    this.front = 1 - this.front;
+    this.current = incoming;
     this.onPhoto(item);
 
     window.setTimeout(() => {
-      outgoing.classList.remove("visible");
+      if (outgoing && outgoing !== this.current) {
+        outgoing.classList.remove("visible");
+        if (outgoing instanceof HTMLVideoElement) this.unload(outgoing);
+      }
       this.showing = false;
     }, FADE_MS);
 
     // Ask for the next photo now, so the backend has it rendered in time.
     const upcoming = this.playlist[target + 1];
-    if (upcoming) new Image().src = this.url(upcoming);
+    if (upcoming && !upcoming.video) new Image().src = this.url(upcoming);
 
-    this.schedule();
+    this.schedule(showFor);
+  }
+
+  /** Waits until a clip can be played; fails if the browser cannot play it. */
+  private loadVideo(v: HTMLVideoElement, item: PhotoItem): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const done = (ok: boolean) => {
+        clearTimeout(timer);
+        v.oncanplay = v.onerror = null;
+        if (ok) resolve();
+        else reject(new Error("video"));
+      };
+      const timer = window.setTimeout(() => done(false), VIDEO_WAIT_MS);
+      v.oncanplay = () => done(true);
+      v.onerror = () => done(false);
+      v.src = `/videos/${encodeURIComponent(item.key)}?v=${item.v}`;
+      v.load();
+    });
+  }
+
+  /** Stops a clip and lets go of its file. */
+  private unload(v: HTMLVideoElement) {
+    v.pause();
+    v.removeAttribute("src");
+    v.load();
   }
 
   /**
@@ -247,9 +316,9 @@ export class Slideshow {
     });
   }
 
-  private schedule() {
+  private schedule(after = this.intervalMs) {
     clearTimeout(this.timer);
     if (this.paused || this.suspended || this.playlist.length === 0) return;
-    this.timer = window.setTimeout(() => void this.step(1), this.intervalMs);
+    this.timer = window.setTimeout(() => void this.step(1), after);
   }
 }

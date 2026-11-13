@@ -342,6 +342,102 @@ func TestPhotosFromThisDayComeFirst(t *testing.T) {
 	}
 }
 
+func TestMoreFromTheSameAlbum(t *testing.T) {
+	svc := New(Options{Source: Mock{}, Log: quietLog})
+	day := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
+	svc.items = []Item{
+		{Key: "c", Folder: "Trip", Taken: day.Add(3 * time.Hour)}, {Key: "x", Folder: "Other", Taken: day},
+		{Key: "a", Folder: "Trip", Taken: day.Add(1 * time.Hour)}, {Key: "d", Folder: "Trip", Taken: day.Add(4 * time.Hour)},
+		{Key: "b", Folder: "Trip", Taken: day.Add(2 * time.Hour)},
+	}
+	keys := func(folder, after string, limit int) string {
+		_, slides := svc.SlidesFrom(folder, after, limit)
+		var out []string
+		for _, s := range slides {
+			out = append(out, s.Key)
+		}
+		return strings.Join(out, " ")
+	}
+	// In the order taken, carrying on after the photo on screen and round to the start.
+	if got := keys("Trip", "b", 0); got != "c d a" {
+		t.Errorf("after b: %s, want c d a", got)
+	}
+	if got := keys("Trip", "a+b", 2); got != "c d" {
+		t.Errorf("after the pair a+b, two: %s, want c d", got)
+	}
+	if got := keys("Trip", "", 0); got != "a b c d" {
+		t.Errorf("from the start: %s", got)
+	}
+	if got := keys("Nowhere", "a", 0); got != "" {
+		t.Errorf("unknown folder: %s", got)
+	}
+}
+
+func TestVideoClips(t *testing.T) {
+	// Switched off, a video in the folder is not listed at all.
+	_, without := newFakeNAS(t)
+	off, wait := startService(t, Options{Source: without})
+	off.SetSelection(Selection{Folders: []Folder{{ID: "p:3", Name: "Holiday"}}})
+	wait("3 photos", idle(3))
+
+	// Switched on, it is; its file is fetched once and kept.
+	withVideos := NewSynology(SynologyOptions{URL: without.base, Username: "pidash", Password: "secret", Videos: true})
+	cache := t.TempDir()
+	on, wait2 := startService(t, Options{Source: withVideos, Videos: true, CacheDir: cache})
+	on.SetSelection(Selection{Folders: []Folder{{ID: "p:3", Name: "Holiday"}}})
+	wait2("3 photos and 1 video", idle(4))
+	_, slides := on.Slides(0)
+	var video *Item
+	for _, s := range slides {
+		if s.Items[0].Video {
+			video = &s.Items[0]
+		}
+	}
+	if video == nil || video.Name != "clip.mp4" || len(slides) != 4 {
+		t.Fatalf("slides = %+v", slides)
+	}
+	path, name, err := on.Video(context.Background(), video.Key)
+	if err != nil || name != "clip.mp4" || !strings.HasSuffix(path, ".vid") {
+		t.Fatalf("Video: %q %q %v", path, name, err)
+	}
+	if again, _, _ := on.Video(context.Background(), video.Key); again != path {
+		t.Errorf("the clip was fetched to another place the second time")
+	}
+	if _, _, err := on.Video(context.Background(), "p-10"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("a photo was served as a video: %v", err)
+	}
+	if _, err := on.Image(context.Background(), video.Key); err == nil {
+		t.Error("a video was rendered as a photo")
+	}
+
+	// One the TV cannot play is dropped and stays dropped.
+	on.Unplayable(video.Key)
+	if st := on.Status(); st.Count != 3 {
+		t.Errorf("after an unplayable clip: %d items", st.Count)
+	}
+	later, wait3 := startService(t, Options{Source: withVideos, Videos: true, CacheDir: cache})
+	later.SetSelection(Selection{Folders: []Folder{{ID: "p:3", Name: "Holiday"}}})
+	wait3("still 3", idle(3))
+
+	// A clip over the size limit is left out.
+	small, wait4 := startService(t, Options{Source: withVideos, Videos: true, VideoMaxBytes: 100})
+	small.SetSelection(Selection{Folders: []Folder{{ID: "p:3", Name: "Holiday"}}})
+	wait4("3 photos, the clip is too large", idle(3))
+
+	// A folder on the Pi: the file is played from where it is.
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "party.MP4"), []byte("not really a video"), 0o644)
+	os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("x"), 0o644)
+	local := NewLocalDir(dir)
+	local.Videos = true
+	loc, wait5 := startService(t, Options{Source: local, Videos: true})
+	wait5("1 video", idle(1))
+	_, ls := loc.Slides(0)
+	if p, _, err := loc.Video(context.Background(), ls[0].Key); err != nil || p != filepath.Join(dir, "party.MP4") {
+		t.Errorf("local video path = %q, err %v", p, err)
+	}
+}
+
 func TestHidingAPhoto(t *testing.T) {
 	_, syn := newFakeNAS(t)
 	state := filepath.Join(t.TempDir(), "photos-selection.json")

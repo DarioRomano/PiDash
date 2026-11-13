@@ -1,4 +1,5 @@
-import { ask, onTV, startTVNav } from "./tvnav";
+import { LANGUAGES, setLanguage, t } from "./i18n";
+import { ask, enterPIN, onTV, startTVNav } from "./tvnav";
 // The settings page: weather, background photos and apps. Made for a phone,
 // and equally usable on the TV with a mouse and keyboard.
 
@@ -27,6 +28,12 @@ interface CalendarLink {
   host?: string;
 }
 
+interface Station {
+  name: string;
+  url: string;
+  detail?: string;
+}
+
 interface HomeEntity {
   id: string;
   name: string;
@@ -51,13 +58,16 @@ interface Info {
     motion: string;
     pairPortraits: boolean;
     onThisDay: boolean;
+    videos: boolean;
     synology: { url: string; username: string; passwordSet: boolean; insecureTls: boolean; quality: string };
     folderPath: string;
   };
-  screen: { nightStart: string; nightEnd: string };
+  screen: { nightStart: string; nightEnd: string; language: string; clockPosition: string; clockSize: string; view: string };
   calendar: { links: CalendarLink[] };
   home: { url: string; tokenSet: boolean; entities: string[] };
   system: { autoUpdate: boolean };
+  lock: { set: boolean };
+  radio: Station[];
   apps: AppEntry[];
   presets: Preset[];
   /** Programs installed on the Pi, as its application menu lists them. */
@@ -84,6 +94,9 @@ if (onTV) {
 let info: Info;
 let apps: AppEntry[] = [];
 let calendars: CalendarLink[] = [];
+let stations: Station[] = [];
+let stationsFound: Station[] = [];
+let removeLock = false;
 let homeTiles: string[] = [];
 /** Names of Home Assistant's devices, once it has been asked. */
 let homeKnown: HomeEntity[] = [];
@@ -94,10 +107,14 @@ let busy = false;
 
 const PIN_KEY = "pidash-pin";
 let pin = "";
-try {
-  pin = localStorage.getItem(PIN_KEY) ?? "";
-} catch {
-  /* private browsing */
+// A phone or computer remembers the PIN. The TV does not: there the PIN is
+// what keeps the settings from being changed by whoever holds the remote.
+if (!onTV) {
+  try {
+    pin = localStorage.getItem(PIN_KEY) ?? "";
+  } catch {
+    /* private browsing */
+  }
 }
 
 async function send(method: string, url: string, body: unknown): Promise<Response> {
@@ -108,13 +125,16 @@ async function send(method: string, url: string, body: unknown): Promise<Respons
       body: JSON.stringify(body),
     });
     if (res.status !== 401) return res;
-    const entered = window.prompt(pin ? "Wrong PIN. Enter the PiDash PIN:" : "Enter the PiDash PIN:");
+    const question = pin ? "Wrong PIN. Enter the PIN:" : "Enter the PIN:";
+    const entered = onTV ? await enterPIN(question) : window.prompt(question);
     if (!entered) return res;
     pin = entered.trim();
-    try {
-      localStorage.setItem(PIN_KEY, pin);
-    } catch {
-      /* not stored */
+    if (!onTV) {
+      try {
+        localStorage.setItem(PIN_KEY, pin);
+      } catch {
+        /* not stored */
+      }
     }
   }
 }
@@ -143,6 +163,7 @@ function readForm() {
       motion: val("p-motion") || "off",
       pairPortraits: $<HTMLInputElement>("p-pairs").checked,
       onThisDay: $<HTMLInputElement>("p-today").checked,
+      videos: $<HTMLInputElement>("p-videos").checked,
       synology: {
         url: val("s-url").trim(),
         username: val("s-user").trim(),
@@ -152,11 +173,20 @@ function readForm() {
       },
     },
     // Night mode needs both times; "Off" in the first switches it off.
-    screen: val("n-start") ? { nightStart: val("n-start"), nightEnd: val("n-end") || "07:00" } : { nightStart: "", nightEnd: "" },
+    screen: {
+      ...(val("n-start") ? { nightStart: val("n-start"), nightEnd: val("n-end") || "07:00" } : { nightStart: "", nightEnd: "" }),
+      language: val("d-language"),
+      clockPosition: val("d-position"),
+      clockSize: val("d-size"),
+      view: val("d-view"),
+    },
     apps: apps.map(({ detail: _detail, missing: _missing, ...rest }) => rest),
     calendar: { links: calendars.map((l) => (l.url ? { url: l.url } : { key: l.key })) },
     home: { url: val("h-url").trim(), token: val("h-token").trim(), entities: homeTiles },
     system: { autoUpdate: $<HTMLInputElement>("sys-auto").checked },
+    // Empty leaves the PIN as it is.
+    lock: { pin: val("l-pin").trim(), remove: removeLock },
+    radio: stations.map(({ name, url }) => ({ name, url })),
   };
 }
 
@@ -168,6 +198,7 @@ function refresh() {
   $("p-motion-row").hidden = source === "";
   $("p-pairs-row").hidden = source === "";
   $("p-today-row").hidden = source === "";
+  $("p-videos-row").hidden = source === "";
   $<HTMLSelectElement>("n-end").disabled = val("n-start") === "";
   const motion = val("p-motion");
   $("p-motion-hint").hidden = source === "" || motion === "off";
@@ -192,8 +223,8 @@ function fill(i: Info) {
   const source = $<HTMLSelectElement>("p-source");
   source.replaceChildren(new Option("No photos", ""), new Option("Synology Photos on my NAS", "synology"));
   if (i.photos.folderPath) {
-    source.add(new Option(`Folder ${i.photos.folderPath}`, "folder"));
-    $("p-folder").textContent = `The folder is set in config.toml on the Pi: ${i.photos.folderPath}`;
+    source.add(new Option(t("Folder {path}", { path: i.photos.folderPath }), "folder"));
+    $("p-folder").textContent = t("The folder is set in config.toml on the Pi: {path}", { path: i.photos.folderPath });
   }
   source.value = i.photos.source;
   $<HTMLInputElement>("s-url").value = i.photos.synology.url;
@@ -207,6 +238,14 @@ function fill(i: Info) {
   $<HTMLSelectElement>("p-motion").value = i.photos.motion || "off";
   $<HTMLInputElement>("p-pairs").checked = !!i.photos.pairPortraits;
   $<HTMLInputElement>("p-today").checked = !!i.photos.onThisDay;
+  $<HTMLInputElement>("p-videos").checked = !!i.photos.videos;
+  const language = $<HTMLSelectElement>("d-language");
+  language.replaceChildren(...Object.entries(LANGUAGES).map(([code, name]) => new Option(name, code)));
+  language.value = i.screen.language || "en";
+  setLanguage(language.value);
+  $<HTMLSelectElement>("d-position").value = i.screen.clockPosition || "bottom-left";
+  $<HTMLSelectElement>("d-size").value = i.screen.clockSize || "large";
+  $<HTMLSelectElement>("d-view").value = i.screen.view || "clock";
   fillTimes($<HTMLSelectElement>("n-start"), i.screen.nightStart, "Off");
   fillTimes($<HTMLSelectElement>("n-end"), i.screen.nightEnd || "07:00");
   void showHidden();
@@ -223,18 +262,125 @@ function fill(i: Info) {
   homeTiles = [...i.home.entities];
   renderHomeTiles();
   $<HTMLInputElement>("sys-auto").checked = i.system.autoUpdate;
+  stations = i.radio.map((s) => ({ ...s }));
+  renderStations();
+  removeLock = false;
+  const lockPin = $<HTMLInputElement>("l-pin");
+  lockPin.value = "";
+  lockPin.placeholder = i.lock.set ? "A PIN is set. Leave empty to keep it" : "";
+  $("l-remove").hidden = !i.lock.set;
+  $("l-remove").textContent = "Remove the lock";
   void loadUpdate();
 
   const kb = $("kb-problem");
   kb.hidden = !i.keyboardProblem;
   kb.textContent = i.keyboardProblem
-    ? `The TV remote's OK and Back buttons cannot be passed on to apps yet: ${i.keyboardProblem}`
+    ? t("The TV remote's OK and Back buttons cannot be passed on to apps yet: {why}", { why: i.keyboardProblem })
     : "";
   $("version").textContent = i.version ? `PiDash ${i.version}` : "";
 
   savedState = JSON.stringify(readForm());
   refresh();
 }
+
+$("l-remove").addEventListener("click", () => {
+  removeLock = !removeLock;
+  $("l-remove").textContent = removeLock ? "The lock will be removed when you save" : "Remove the lock";
+  refresh();
+});
+
+// --- Radio ----------------------------------------------------------------------------------
+
+function renderStations() {
+  $("r-list").replaceChildren(
+    ...stations.map((s, i) =>
+      row(s.name, "", () => {
+        stations.splice(i, 1);
+        renderStations();
+      }),
+    ),
+  );
+  const free = stationsFound.filter((f) => !stations.some((s) => s.url === f.url));
+  $<HTMLSelectElement>("r-pick").replaceChildren(...free.map((f) => new Option(f.detail ? `${f.name} (${f.detail})` : f.name, f.url)));
+  $("r-add").hidden = free.length === 0;
+}
+
+$("r-search").addEventListener("click", async () => {
+  const out = $("r-result");
+  setResult(out, "Searching…");
+  try {
+    const res = await fetch(`/api/radio/search?q=${encodeURIComponent(val("r-query"))}`);
+    if (!res.ok) return setResult(out, (await res.text()).trim(), "error");
+    stationsFound = (await res.json()).stations;
+    setResult(out, stationsFound.length ? t("{n} stations found.", { n: stationsFound.length }) : "No station with that name was found.", stationsFound.length ? "ok" : "error");
+    renderStations();
+  } catch {
+    setResult(out, "The Pi did not answer.", "error");
+  }
+});
+
+$("r-add-btn").addEventListener("click", () => {
+  const found = stationsFound.find((f) => f.url === val("r-pick"));
+  if (!found) return;
+  if (stations.length >= 12) return setResult($("r-result"), "The app row has room for 12 stations.", "error");
+  stations.push({ name: found.name, url: found.url });
+  renderStations();
+  refresh();
+});
+
+// --- Backup -----------------------------------------------------------------------------------
+
+$("b-buttons").hidden = onTV;
+$("b-tv").hidden = !onTV;
+
+$("b-save").addEventListener("click", async () => {
+  const out = $("b-result");
+  try {
+    const res = await send("POST", "/api/settings/backup", {});
+    if (!res.ok) return setResult(out, res.status === 401 ? "The PIN is needed for a backup." : (await res.text()).trim(), "error");
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(await res.blob());
+    link.download = "pidash-backup.json";
+    link.click();
+    URL.revokeObjectURL(link.href);
+    setResult(out, "Saved as pidash-backup.json.", "ok");
+  } catch {
+    setResult(out, "The Pi did not answer.", "error");
+  }
+});
+
+$("b-load").addEventListener("click", () => $<HTMLInputElement>("b-file").click());
+$("b-file").addEventListener("change", async () => {
+  const out = $("b-result");
+  const file = $<HTMLInputElement>("b-file").files?.[0];
+  $<HTMLInputElement>("b-file").value = "";
+  if (!file) return;
+  let content: unknown;
+  try {
+    content = JSON.parse(await file.text());
+  } catch {
+    return setResult(out, "This is not a PiDash backup file.", "error");
+  }
+  if (!window.confirm(t("Replace all settings on this Pi with those from {file}?", { file: file.name }))) return;
+  try {
+    const before = await startedAt();
+    const res = await send("POST", "/api/settings/restore", content);
+    if (!res.ok) return setResult(out, res.status === 401 ? "The PIN is needed to load a backup." : (await res.text()).trim(), "error");
+    setResult(out, "Loaded. Applying…");
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 400));
+      try {
+        if ((await startedAt()) !== before) break;
+      } catch {
+        /* restarting */
+      }
+    }
+    await load();
+    setResult($("b-result"), "The backup is loaded.", "ok");
+  } catch {
+    setResult(out, "The Pi did not answer.", "error");
+  }
+});
 
 // --- Updates -----------------------------------------------------------------------------
 
@@ -249,11 +395,11 @@ interface UpdateStatus {
 }
 
 function showUpdate(st: UpdateStatus) {
-  let text = `This is PiDash ${st.current}.`;
-  if (!st.possible) text += ` ${st.reason ?? ""}`;
-  else if (st.installing) text += " An update is being installed; PiDash restarts by itself.";
-  else if (st.available) text += ` ${st.latest} is available.`;
-  else if (st.latest) text += " That is the newest version.";
+  let text = t("This is PiDash {version}.", { version: st.current });
+  if (!st.possible) text += " " + t(st.reason ?? "");
+  else if (st.installing) text += " " + t("An update is being installed; PiDash restarts by itself.");
+  else if (st.available) text += " " + t("{version} is available.", { version: st.latest ?? "" });
+  else if (st.latest) text += " " + t("That is the newest version.");
   $("up-status").textContent = text;
   for (const id of ["up-auto-row", "up-auto-hint", "up-buttons"]) $(id).hidden = !st.possible;
   $("up-install").hidden = !st.available || st.installing;
@@ -317,7 +463,7 @@ function row(text: string, small: string, remove: () => void): HTMLLIElement {
   b.type = "button";
   b.textContent = "✕";
   b.title = "Remove";
-  b.setAttribute("aria-label", `Remove ${text}`);
+  b.setAttribute("aria-label", t("Remove {name}", { name: text }));
   b.addEventListener("click", () => {
     remove();
     refresh();
@@ -352,7 +498,7 @@ $("cal-test").addEventListener("click", async () => {
     const res = await send("POST", "/api/settings/test-calendar", { url: val("cal-url") });
     if (!res.ok) return setResult(out, (await res.text()).trim(), "error");
     const r: { events: number; days: number } = await res.json();
-    setResult(out, r.events === 1 ? `Works: 1 event in the next ${r.days} days.` : `Works: ${r.events} events in the next ${r.days} days.`, "ok");
+    setResult(out, t(r.events === 1 ? "Works: 1 event in the next {days} days." : "Works: {n} events in the next {days} days.", { n: r.events, days: r.days }), "ok");
   } catch {
     setResult(out, "The Pi did not answer.", "error");
   }
@@ -392,7 +538,7 @@ $("h-connect").addEventListener("click", async () => {
     const res = await send("POST", "/api/settings/home-entities", { url: val("h-url").trim(), token: val("h-token").trim() });
     if (!res.ok) return setResult(out, (await res.text()).trim(), "error");
     homeKnown = (await res.json()).entities;
-    setResult(out, `Connected. ${homeKnown.length} devices and values can be shown.`, "ok");
+    setResult(out, t("Connected. {n} devices and values can be shown.", { n: homeKnown.length }), "ok");
     renderHomeTiles();
   } catch {
     setResult(out, "The Pi did not answer.", "error");
@@ -426,7 +572,7 @@ async function showHidden() {
     const st: { hidden?: number } = await (await fetch("/api/photos", { cache: "no-store" })).json();
     const n = st.hidden ?? 0;
     $("p-hidden-row").hidden = n === 0;
-    $("p-hidden").textContent = n === 1 ? "1 photo is hidden from the slideshow." : `${n} photos are hidden from the slideshow.`;
+    $("p-hidden").textContent = n === 1 ? "1 photo is hidden from the slideshow." : t("{n} photos are hidden from the slideshow.", { n });
   } catch {
     $("p-hidden-row").hidden = true;
   }
@@ -452,7 +598,7 @@ function appDetail(a: AppEntry): string {
     if (a.missing) return "Not installed on the Pi any more. Its tile is hidden until it is back.";
     return info.installed.find((e) => e.id === a.desktop)?.comment || "Installed on the Pi";
   }
-  return `From config.toml: ${a.detail ?? a.id ?? ""}`;
+  return t("From config.toml: {what}", { what: a.detail ?? a.id ?? "" });
 }
 
 function renderApps() {
@@ -475,7 +621,7 @@ function renderApps() {
         b.type = "button";
         b.textContent = label;
         b.title = title;
-        b.setAttribute("aria-label", `${title}: ${name.textContent}`);
+        b.setAttribute("aria-label", `${t(title)}: ${name.textContent}`);
         b.disabled = disabled;
         b.addEventListener("click", () => {
           act();
@@ -490,7 +636,7 @@ function renderApps() {
         const size = document.createElement("select");
         size.className = "size";
         size.title = "Size";
-        size.setAttribute("aria-label", `Size of ${name.textContent}`);
+        size.setAttribute("aria-label", t("Size of {name}", { name: name.textContent ?? "" }));
         for (const z of [1, 1.25, 1.5, 1.75, 2, 2.5, 3]) size.add(new Option(`${Math.round(z * 100)}%`, String(z)));
         size.value = String(a.zoom && a.zoom !== 1 ? a.zoom : 1);
         size.addEventListener("change", () => {
@@ -602,7 +748,7 @@ $("w-test").addEventListener("click", async () => {
   try {
     const res = await send("POST", "/api/settings/test-weather", { location: val("w-location") });
     if (!res.ok) return setResult(out, (await res.text()).trim(), "error");
-    setResult(out, `Found: ${(await res.json()).place}`, "ok");
+    setResult(out, t("Found: {place}", { place: (await res.json()).place }), "ok");
   } catch {
     setResult(out, "The Pi did not answer.", "error");
   }
@@ -615,7 +761,7 @@ $("s-test").addEventListener("click", async () => {
     const res = await send("POST", "/api/settings/test-synology", readForm().photos.synology);
     if (!res.ok) return setResult(out, (await res.text()).trim(), "error");
     const libs: string[] = (await res.json()).libraries;
-    setResult(out, `Connected. Found: ${libs.join(", ")}`, "ok");
+    setResult(out, t("Connected. Found: {list}", { list: libs.map((l) => t(l)).join(", ") }), "ok");
   } catch {
     setResult(out, "The Pi did not answer.", "error");
   }
@@ -658,7 +804,7 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
-for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "n-start", "n-end", "h-url", "h-token", "sys-auto"]) {
+for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "n-start", "n-end", "h-url", "h-token", "sys-auto", "l-pin", "d-language", "d-position", "d-size", "d-view"]) {
   $(id).addEventListener("input", refresh);
   $(id).addEventListener("change", refresh);
 }

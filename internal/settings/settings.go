@@ -38,6 +38,19 @@ type File struct {
 	Calendar *Calendar `json:"calendar,omitempty"`
 	Home     *Home     `json:"home,omitempty"`
 	System   *System   `json:"system,omitempty"`
+	// Lock holds the PIN that must be typed before settings can be changed.
+	Lock *Lock `json:"lock,omitempty"`
+	// Radio are the stations in the app row.
+	Radio *[]config.RadioStation `json:"radio,omitempty"`
+}
+
+// Lock is the settings lock. The PIN is write-only: the page learns only
+// whether one is set.
+type Lock struct {
+	PIN string `json:"pin,omitempty"`
+	// Set is for the page: a PIN exists. Remove, from the page, deletes it.
+	Set    bool `json:"set,omitempty"`
+	Remove bool `json:"remove,omitempty"`
 }
 
 // Calendar settings: the calendar links.
@@ -85,6 +98,11 @@ type Screen struct {
 	// NightStart and NightEnd ("HH:MM") bound the night mode; both empty is off.
 	NightStart string `json:"nightStart"`
 	NightEnd   string `json:"nightEnd"`
+	// Language, ClockPosition, ClockSize and View: empty leaves config.toml in charge.
+	Language      string `json:"language,omitempty"`
+	ClockPosition string `json:"clockPosition,omitempty"`
+	ClockSize     string `json:"clockSize,omitempty"`
+	View          string `json:"view,omitempty"`
 }
 
 // Port records a port fallback. It applies only while config.toml still asks
@@ -112,8 +130,10 @@ type Photos struct {
 	// config.toml in charge.
 	PairPortraits *bool `json:"pairPortraits,omitempty"`
 	// OnThisDay prefers photos taken on today's date in earlier years.
-	OnThisDay *bool    `json:"onThisDay,omitempty"`
-	Synology  Synology `json:"synology"`
+	OnThisDay *bool `json:"onThisDay,omitempty"`
+	// Videos also shows short video clips.
+	Videos   *bool    `json:"videos,omitempty"`
+	Synology Synology `json:"synology"`
 }
 
 // Synology is the connection to Synology Photos.
@@ -190,6 +210,8 @@ var Presets = []Preset{
 	{ID: "synology-photos", Name: "Synology Photos", Description: "Browse the photo app of your NAS",
 		NeedsURL: true, URLHint: "http://192.168.1.20:5000/?launchApp=SYNO.Foto.AppInstance",
 		App: config.App{Browser: config.BrowserChromium}},
+	{ID: "spotify", Name: "Spotify", Description: "The Spotify web player. Works best with a mouse; the remote's OK and play button work on what is selected",
+		App: config.App{URL: "https://open.spotify.com/", Browser: config.BrowserChromium}},
 	{ID: "plex", Name: "Plex", Description: "The Plex web player",
 		App: config.App{URL: "https://app.plex.tv/desktop", Browser: config.BrowserChromium}},
 	{ID: "moonlight", Name: "Moonlight", Description: "Game streaming from your PC. Needs Moonlight installed", Console: true,
@@ -319,6 +341,9 @@ func apply(base config.Config, f File, installed []desktop.Entry) (config.Config
 		if p.OnThisDay != nil {
 			cfg.Photos.OnThisDay = *p.OnThisDay
 		}
+		if p.Videos != nil {
+			cfg.Photos.Videos = *p.Videos
+		}
 		if p.Source == config.PhotoSourceSynology {
 			cfg.Photos.Synology.URL = p.Synology.URL
 			cfg.Photos.Synology.Username = p.Synology.Username
@@ -344,8 +369,25 @@ func apply(base config.Config, f File, installed []desktop.Entry) (config.Config
 	if sys := f.System; sys != nil {
 		cfg.Update.Auto = sys.AutoUpdate
 	}
+	if l := f.Lock; l != nil {
+		cfg.Remote.PIN = l.PIN
+	}
+	if f.Radio != nil {
+		cfg.Radio = append([]config.RadioStation{}, *f.Radio...)
+	}
 	if sc := f.Screen; sc != nil {
 		cfg.Display.NightStart, cfg.Display.NightEnd = strings.TrimSpace(sc.NightStart), strings.TrimSpace(sc.NightEnd)
+		for _, choice := range []struct {
+			from string
+			to   *string
+		}{
+			{sc.Language, &cfg.Display.Language}, {sc.ClockPosition, &cfg.Display.ClockPosition},
+			{sc.ClockSize, &cfg.Display.ClockSize}, {sc.View, &cfg.Display.View},
+		} {
+			if choice.from != "" {
+				*choice.to = choice.from
+			}
+		}
 	}
 
 	if f.Apps != nil {
@@ -459,14 +501,16 @@ func describe(app config.App) App {
 
 // View is what the settings page shows. It never contains a password.
 type View struct {
-	Weather  WeatherView `json:"weather"`
-	Photos   PhotosView  `json:"photos"`
-	Screen   Screen      `json:"screen"`
-	Calendar Calendar    `json:"calendar"`
-	Home     Home        `json:"home"`
-	System   System      `json:"system"`
-	Apps     []App       `json:"apps"`
-	Presets  []Preset    `json:"presets"`
+	Weather  WeatherView           `json:"weather"`
+	Photos   PhotosView            `json:"photos"`
+	Screen   Screen                `json:"screen"`
+	Calendar Calendar              `json:"calendar"`
+	Home     Home                  `json:"home"`
+	System   System                `json:"system"`
+	Lock     Lock                  `json:"lock"`
+	Radio    []config.RadioStation `json:"radio"`
+	Apps     []App                 `json:"apps"`
+	Presets  []Preset              `json:"presets"`
 	// Installed are the programs on the Pi that can be added to the app row.
 	Installed []desktop.Entry `json:"installed"`
 }
@@ -487,6 +531,7 @@ type PhotosView struct {
 	Motion          string       `json:"motion"`
 	PairPortraits   bool         `json:"pairPortraits"`
 	OnThisDay       bool         `json:"onThisDay"`
+	Videos          bool         `json:"videos"`
 	Synology        SynologyView `json:"synology"`
 	// FolderPath is the folder configured in config.toml, if any.
 	FolderPath string `json:"folderPath"`
@@ -523,15 +568,18 @@ func (s *Store) View() View {
 			Coordinates: cfg.Weather.Latitude != nil},
 		Photos: PhotosView{
 			Source: cfg.Photos.Source, IntervalSeconds: int(cfg.Photos.Interval.Duration / time.Second),
-			Motion: cfg.Photos.Motion, PairPortraits: cfg.Photos.PairPortraits, OnThisDay: cfg.Photos.OnThisDay,
+			Motion: cfg.Photos.Motion, PairPortraits: cfg.Photos.PairPortraits, OnThisDay: cfg.Photos.OnThisDay, Videos: cfg.Photos.Videos,
 			Synology: SynologyView{URL: cfg.Photos.Synology.URL, Username: cfg.Photos.Synology.Username,
 				PasswordSet: cfg.Photos.Synology.Password != "", InsecureTLS: cfg.Photos.Synology.InsecureTLS,
 				Quality: cfg.Photos.Synology.Quality},
 		},
-		Screen:   Screen{NightStart: cfg.Display.NightStart, NightEnd: cfg.Display.NightEnd},
+		Screen: Screen{NightStart: cfg.Display.NightStart, NightEnd: cfg.Display.NightEnd, Language: cfg.Display.Language,
+			ClockPosition: cfg.Display.ClockPosition, ClockSize: cfg.Display.ClockSize, View: cfg.Display.View},
 		Calendar: Calendar{Links: []Link{}},
 		Home:     Home{URL: cfg.Home.URL, TokenSet: cfg.Home.Token != "", Entities: append([]string{}, cfg.Home.Entities...)},
 		System:   System{AutoUpdate: cfg.Update.Auto},
+		Lock:     Lock{Set: cfg.Remote.PIN != ""},
+		Radio:    append([]config.RadioStation{}, cfg.Radio...),
 		Apps:     []App{},
 		Presets:  presetsForPage(),
 	}
@@ -563,13 +611,15 @@ func (s *Store) View() View {
 
 // Update is what the settings page sends. Absent sections stay as they are.
 type Update struct {
-	Weather  *Weather  `json:"weather"`
-	Photos   *Photos   `json:"photos"`
-	Screen   *Screen   `json:"screen"`
-	Apps     *[]App    `json:"apps"`
-	Calendar *Calendar `json:"calendar"`
-	Home     *Home     `json:"home"`
-	System   *System   `json:"system"`
+	Weather  *Weather               `json:"weather"`
+	Photos   *Photos                `json:"photos"`
+	Screen   *Screen                `json:"screen"`
+	Apps     *[]App                 `json:"apps"`
+	Calendar *Calendar              `json:"calendar"`
+	Home     *Home                  `json:"home"`
+	System   *System                `json:"system"`
+	Lock     *Lock                  `json:"lock"`
+	Radio    *[]config.RadioStation `json:"radio"`
 }
 
 // SynologyPassword returns the stored NAS password, for "test connection"
@@ -646,6 +696,23 @@ func (s *Store) Save(u Update) error {
 		sys := *u.System
 		next.System = &sys
 	}
+	if u.Radio != nil {
+		stations := append([]config.RadioStation{}, *u.Radio...)
+		next.Radio = &stations
+	}
+	if l := u.Lock; l != nil {
+		pin := strings.TrimSpace(l.PIN)
+		switch {
+		case l.Remove:
+			next.Lock = &Lock{}
+		case pin != "":
+			if len(pin) < 4 || len(pin) > 12 || strings.Trim(pin, "0123456789") != "" {
+				return errors.New("the PIN must be 4 to 12 digits")
+			}
+			next.Lock = &Lock{PIN: pin}
+		}
+		// Neither: the PIN stays as it is.
+	}
 	if u.Apps != nil {
 		apps := make([]App, 0, len(*u.Apps))
 		for _, a := range *u.Apps {
@@ -661,6 +728,32 @@ func (s *Store) Save(u Update) error {
 		return err
 	}
 	s.file = next
+	return nil
+}
+
+// Export returns everything saved on the settings page, secrets included,
+// for a backup file.
+func (s *Store) Export() File {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f := s.file
+	f.Port = nil // belongs to this Pi, not to the settings
+	return f
+}
+
+// Import replaces the saved settings with those of a backup. Nothing is
+// written unless they make a valid configuration on this Pi.
+func (s *Store) Import(f File) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f.Port = s.file.Port
+	if _, err := apply(s.base, f, s.installed()); err != nil {
+		return err
+	}
+	if err := s.write(f); err != nil {
+		return err
+	}
+	s.file = f
 	return nil
 }
 

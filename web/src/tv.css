@@ -31,6 +31,8 @@ html.tv .field input:focus, html.tv .field select:focus { outline: none; }
 .tv-key.wide { flex-grow: 1.6; font-size: 15px; }
 .tv-key.wider { flex-grow: 3.4; font-size: 15px; }
 .tv-key.done { background: #2b5f8f; }
+.tv-pin { width: min(420px, 100%); }
+.tv-pin .tv-kb-value { text-align: center; letter-spacing: 0.4em; font-size: 26px; }
 .tv-layer .tv-focus { outline: 3px solid var(--accent); outline-offset: 1px; background: #2c3650; }
 .tv-layer .tv-key.done.tv-focus { background: #3878b4; }
 /* The remote's Back button does this; a control for it would only be in the way. */

@@ -29,6 +29,7 @@ import (
 type Synology struct {
 	base       string
 	user, pass string
+	videos     bool
 	hc         *http.Client
 
 	mu       sync.Mutex
@@ -49,6 +50,8 @@ type SynologyOptions struct {
 	Password string
 	// InsecureTLS accepts a self-signed HTTPS certificate.
 	InsecureTLS bool
+	// Videos lists video clips along with the photos.
+	Videos bool
 }
 
 // NewSynology returns a Synology Photos source.
@@ -58,11 +61,12 @@ func NewSynology(o SynologyOptions) *Synology {
 		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // explicit opt-in for a NAS on the home network
 	}
 	return &Synology{
-		base:  strings.TrimRight(o.URL, "/"),
-		user:  o.Username,
-		pass:  o.Password,
-		hc:    &http.Client{Timeout: 90 * time.Second, Transport: tr},
-		roots: map[string]int{},
+		videos: o.Videos,
+		base:   strings.TrimRight(o.URL, "/"),
+		user:   o.Username,
+		pass:   o.Password,
+		hc:     &http.Client{Timeout: 90 * time.Second, Transport: tr},
+		roots:  map[string]int{},
 	}
 }
 
@@ -404,6 +408,7 @@ type rawItem struct {
 	Filename string `json:"filename"`
 	Time     int64  `json:"time"`
 	Type     string `json:"type"`
+	Filesize int64  `json:"filesize"`
 	// OwnerUserID is 0 for photos in the Shared Space.
 	OwnerUserID *int `json:"owner_user_id"`
 	Additional  struct {
@@ -476,8 +481,10 @@ func (s *Synology) listItems(ctx context.Context, api string, where url.Values, 
 			}
 		}
 		for _, it := range data.List {
-			// Photos and "live" photos have a still image; videos are skipped.
-			if it.Type != "photo" && it.Type != "live" {
+			// Photos and "live" photos have a still image. Videos are listed
+			// only when they are wanted.
+			isVideo := it.Type == "video"
+			if it.Type != "photo" && it.Type != "live" && !(isVideo && s.videos) {
 				continue
 			}
 			unit := it.Additional.Thumbnail.UnitID
@@ -495,6 +502,8 @@ func (s *Synology) listItems(ctx context.Context, api string, where url.Values, 
 				Folder:  label,
 				Taken:   time.Unix(it.Time, 0).UTC(),
 				Place:   placeName(it.Additional.Address),
+				Video:   isVideo,
+				Size:    it.Filesize,
 				Version: it.Additional.Thumbnail.CacheKey,
 				ID:      space + ":" + strconv.Itoa(unit) + suffix,
 			})

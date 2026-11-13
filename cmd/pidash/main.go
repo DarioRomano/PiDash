@@ -177,7 +177,12 @@ func main() {
 
 	// TV power schedule over HDMI-CEC.
 	cecControl := cec.New()
-	tvOpts := tv.Options{TV: cecControl, Log: log, AppRunning: func() bool { return appManager.Status().Running != "" }}
+	tvOpts := tv.Options{TV: cecControl, Log: log, AppRunning: func() bool { return appManager.Status().Running != "" },
+		OnSleep: func() {
+			if appManager.Status().Running != "" {
+				_ = appManager.Stop(context.Background())
+			}
+		}}
 	for _, c := range []struct {
 		value string
 		dst   **tv.Clock
@@ -233,7 +238,7 @@ func main() {
 
 	srv := server.New(cfg, log, static, server.Deps{
 		Kiosk: kiosk.New(cfg.Kiosk.Unit, *mock, log), Apps: appManager, Photos: photoService,
-		Input: phoneInput, TV: tvService, Version: version, NewRunner: newRunner, Updater: updater,
+		Input: phoneInput, TV: tvService, Version: version, NewRunner: newRunner, Updater: updater, PhotoStatePath: photoStatePath(),
 		Notices: notices, URLFile: server.URLFile(), Settings: store, BaseListen: baseListen,
 	})
 
@@ -312,6 +317,15 @@ func runApp(cfg config.Config, id string, log *slog.Logger) error {
 	return fmt.Errorf("no app with id %q in the config", id)
 }
 
+// photoStatePath is where the slideshow of a real photo source keeps its state.
+func photoStatePath() string {
+	dir, err := apps.DataDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "photos-selection.json")
+}
+
 // newPhotoService builds the background slideshow from the config. It returns
 // nil when no photo source is configured.
 func newPhotoService(cfg config.Photos, mock bool, log *slog.Logger) (*photos.Service, error) {
@@ -321,10 +335,12 @@ func newPhotoService(cfg config.Photos, mock bool, log *slog.Logger) (*photos.Se
 	case config.PhotoSourceSynology:
 		src = photos.NewSynology(photos.SynologyOptions{
 			URL: cfg.Synology.URL, Username: cfg.Synology.Username, Password: cfg.Synology.Password,
-			InsecureTLS: cfg.Synology.InsecureTLS,
+			InsecureTLS: cfg.Synology.InsecureTLS, Videos: cfg.Videos,
 		})
 	case config.PhotoSourceFolder:
-		src = photos.NewLocalDir(cfg.Folder.Path)
+		local := photos.NewLocalDir(cfg.Folder.Path)
+		local.Videos = cfg.Videos
+		src = local
 	default:
 		if !mock {
 			return nil, nil
@@ -349,6 +365,7 @@ func newPhotoService(cfg config.Photos, mock bool, log *slog.Logger) (*photos.Se
 		Motion:         cfg.Motion,
 		PairPortraits:  cfg.PairPortraits,
 		OnThisDay:      cfg.OnThisDay,
+		Videos:         cfg.Videos,
 		StatePath:      filepath.Join(dataDir, name+"-selection.json"),
 		CacheDir:       filepath.Join(cacheRoot, "pidash", name),
 		CacheBytes:     int64(cfg.CacheMB) << 20,
