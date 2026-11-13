@@ -53,9 +53,9 @@ func uinputProblem() error {
 	case err == nil:
 		return nil
 	case errors.Is(err, syscall.ENOENT):
-		return errors.New("this system has no /dev/uinput, so the phone cannot act as a mouse")
+		return errors.New("this system has no /dev/uinput, so keys cannot be passed on to apps")
 	case errors.Is(err, syscall.EACCES):
-		return errors.New("PiDash is not allowed to create a virtual mouse yet: run the installer once with --phone-input")
+		return errors.New("PiDash is not allowed to create a virtual keyboard yet: run the installer again (bash ~/.local/share/pidash/update.sh)")
 	}
 	return fmt.Errorf("cannot use /dev/uinput: %w", err)
 }

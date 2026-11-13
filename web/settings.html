@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0d12" />
+    <title>PiDash · Settings</title>
+    <link rel="stylesheet" href="/src/settings.css" />
+  </head>
+  <body>
+    <header>
+      <a id="back" href="/remote" class="back" aria-label="Back">‹</a>
+      <div>
+        <h1>Settings</h1>
+        <p id="status">Loading…</p>
+      </div>
+    </header>
+
+    <main id="main" hidden>
+      <section class="card">
+        <h2>Weather</h2>
+        <label class="field">
+          <span>Town</span>
+          <input id="w-location" type="text" placeholder="for example Zurich, or Portland, Maine" autocomplete="off" />
+        </label>
+        <div class="pair">
+          <label class="field">
+            <span>Units</span>
+            <select id="w-units">
+              <option value="metric">°C, km/h</option>
+              <option value="imperial">°F, mph</option>
+            </select>
+          </label>
+          <button id="w-test" type="button" class="secondary">Check town</button>
+        </div>
+        <p id="w-result" class="result"></p>
+        <p id="w-coords" class="hint" hidden>
+          config.toml pins the place by coordinates. Entering a town here replaces them.
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>Background photos</h2>
+        <label class="field">
+          <span>Photos come from</span>
+          <select id="p-source"></select>
+        </label>
+
+        <div id="p-synology" hidden>
+          <label class="field">
+            <span>NAS address</span>
+            <input id="s-url" type="url" placeholder="http://192.168.1.20:5000" autocomplete="off" autocapitalize="off" />
+          </label>
+          <label class="field">
+            <span>User name</span>
+            <input id="s-user" type="text" autocomplete="off" autocapitalize="off" />
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input id="s-pass" type="password" autocomplete="new-password" />
+          </label>
+          <label class="check"><input id="s-tls" type="checkbox" /><span>Accept a self-signed certificate (https only)</span></label>
+          <label class="field">
+            <span>Picture quality</span>
+            <select id="s-quality">
+              <option value="original">Sharpest: prepare from the full files</option>
+              <option value="preview">Faster: use the NAS's previews</option>
+            </select>
+          </label>
+          <button id="s-test" type="button" class="secondary wide">Test connection</button>
+          <p id="s-result" class="result"></p>
+          <p class="hint">
+            Use a NAS account without 2-step verification. A separate account that only sees the photos meant for the
+            TV is safest.
+          </p>
+        </div>
+        <p id="p-folder" class="hint" hidden></p>
+
+        <label class="field" id="p-interval-row">
+          <span>Seconds per photo</span>
+          <input id="p-interval" type="number" min="5" max="3600" step="5" inputmode="numeric" />
+        </label>
+        <a id="p-folders" class="link" href="/photos" hidden>Choose folders<span>›</span></a>
+      </section>
+
+      <section class="card">
+        <h2>Apps</h2>
+        <p class="hint">These appear in the app row on the TV, in this order.</p>
+        <ul id="app-list"></ul>
+
+        <div class="add">
+          <label class="field">
+            <span>Add</span>
+            <select id="add-kind"></select>
+          </label>
+          <p id="add-desc" class="hint"></p>
+          <label class="field" id="add-name-row" hidden>
+            <span>Name</span>
+            <input id="add-name" type="text" autocomplete="off" />
+          </label>
+          <label class="field" id="add-url-row" hidden>
+            <span>Address</span>
+            <input id="add-url" type="url" autocomplete="off" autocapitalize="off" />
+          </label>
+          <label class="check" id="add-adblock-row" hidden><input id="add-adblock" type="checkbox" /><span>Block ads (opens in Firefox with uBlock Origin)</span></label>
+          <button id="add-btn" type="button" class="secondary wide">Add to the list</button>
+          <p id="add-result" class="result"></p>
+        </div>
+        <p class="hint">
+          Other programs can be added in <code>~/.config/pidash/config.toml</code> on the Pi. They then show up here to
+          reorder or remove.
+        </p>
+      </section>
+
+      <p id="kb-problem" class="hint warn" hidden></p>
+      <p id="version" class="hint center"></p>
+    </main>
+
+    <footer id="footer" hidden>
+      <span id="summary"></span>
+      <button id="save" disabled>Save</button>
+    </footer>
+
+    <script type="module" src="/src/settings.ts"></script>
+  </body>
+</html>

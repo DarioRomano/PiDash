@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -67,11 +66,39 @@ func (s *Service) Status() Status {
 	return st
 }
 
-// device creates the virtual mouse on first use.
+// device is for requests from the phone, which need the feature switched on.
 func (s *Service) device() (*virtualDevice, error) {
 	if !s.enabled {
 		return nil, ErrDisabled
 	}
+	return s.open()
+}
+
+// Tap presses and releases one key on the virtual keyboard. It is used to pass
+// the TV remote's buttons on to an app, which works whether or not the phone's
+// mouse and keyboard are switched on: the key comes from the remote in the
+// room, not from the network.
+func (s *Service) Tap(code uint16) error {
+	d, err := s.open()
+	if err != nil {
+		return err
+	}
+	if err := d.key(code, true); err != nil {
+		return err
+	}
+	return d.key(code, false)
+}
+
+// KeyboardProblem says why the virtual keyboard cannot be created, or "".
+func (s *Service) KeyboardProblem() string {
+	if err := uinputProblem(); err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
+// open creates the virtual mouse and keyboard on first use.
+func (s *Service) open() (*virtualDevice, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.dev == nil {
@@ -229,107 +256,6 @@ func (s *Service) Type(ctx context.Context, text string) error {
 		return fmt.Errorf("%s: %w: %s", tool, err, strings.TrimSpace(string(out)))
 	}
 	return nil
-}
-
-// --- Watching the TV remote ---------------------------------------------------------
-
-// Watcher listens to all input devices for a long press of an "exit" key and
-// calls OnExit. It reads the devices directly, so it keeps working while an
-// app, even one running outside the desktop, has the screen.
-type Watcher struct {
-	// Keys are the key codes that count; Hold is how long they must be held
-	// (zero acts on the first press).
-	Keys []uint16
-	Hold time.Duration
-	// Active limits the watcher to when it matters (an app is running).
-	Active func() bool
-	OnExit func()
-	Log    *slog.Logger
-	// Dir is the directory with the event devices; /dev/input by default.
-	Dir string
-}
-
-// Run watches until ctx ends, picking up devices as they appear.
-func (w *Watcher) Run(ctx context.Context) {
-	if len(w.Keys) == 0 {
-		return
-	}
-	dir := w.Dir
-	if dir == "" {
-		dir = "/dev/input"
-	}
-	detector := newHoldDetector(w.Keys, w.Hold, func() {
-		if w.Active == nil || w.Active() {
-			w.OnExit()
-		}
-	})
-
-	var mu sync.Mutex
-	open := map[string]*os.File{}
-	skipped := map[string]bool{}
-	warned := false
-
-	scan := func() {
-		paths, _ := filepath.Glob(filepath.Join(dir, "event*"))
-		for _, p := range paths {
-			mu.Lock()
-			_, have := open[p]
-			skip := skipped[p]
-			mu.Unlock()
-			if have || skip {
-				continue
-			}
-			f, err := openRemote(p, w.Keys)
-			if err != nil {
-				if errors.Is(err, os.ErrPermission) && !warned {
-					warned = true
-					w.Log.Warn("cannot read input devices, so holding Back on the TV remote will not close apps; add your user to the 'input' group", "err", err)
-				}
-				if errors.Is(err, errNotARemote) {
-					mu.Lock()
-					skipped[p] = true
-					mu.Unlock()
-				}
-				continue
-			}
-			mu.Lock()
-			open[p] = f
-			mu.Unlock()
-			w.Log.Debug("watching input device", "path", p)
-			go func(p string, f *os.File) {
-				readEvents(f, func(code uint16, value int32) { detector.event(p, code, value) })
-				f.Close()
-				detector.forget(p)
-				mu.Lock()
-				delete(open, p)
-				mu.Unlock()
-			}(p, f)
-		}
-		// Device numbers are reused after unplugging: forget skips for paths that are gone.
-		mu.Lock()
-		for p := range skipped {
-			if _, err := os.Stat(p); err != nil {
-				delete(skipped, p)
-			}
-		}
-		mu.Unlock()
-	}
-
-	t := time.NewTicker(5 * time.Second)
-	defer t.Stop()
-	for {
-		scan()
-		select {
-		case <-ctx.Done():
-			mu.Lock()
-			for _, f := range open {
-				f.Close() // unblocks the readers
-			}
-			mu.Unlock()
-			return
-		case <-t.C:
-		}
-	}
 }
 
 // readEvents reads key events from a device until it fails or is closed.

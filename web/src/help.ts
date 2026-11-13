@@ -11,6 +11,7 @@ const ACTIONS: [Action | "digits", string][] = [
   ["menu", "App row"],
   ["weather", "Weather details"],
   ["playpause", "Hold or resume the slideshow"],
+  ["settings", "Settings"],
   ["digits", "Choose a tile in the app row by number"],
   ["home", "Back to the standard view"],
   ["help", "This overview"],

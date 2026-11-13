@@ -300,13 +300,55 @@ it is real hardware, so it works on Wayland and X11 and in console-mode apps.
   It is off by default, documented as such, and can be protected with a PIN
   (constant-time compare, lockout after five wrong attempts).
 
-**Long press of Back on the TV remote.** The backend reads `/dev/input/event*`
-directly, picking devices that can send one of the configured exit keys and
-ignoring its own virtual device, and rescans every few seconds for hot-plugged
-devices. A per-device hold detector fires when a key stays down for the
-configured time; it only acts while an app is running, and then stops the app.
-Reading the device directly works whichever virtual terminal is showing. It
-needs membership of the `input` group and no system changes.
+**The TV remote, read below the browser.** Over HDMI-CEC the kernel reports a
+remote's OK as `KEY_OK` and its Back as `KEY_EXIT`. Neither is a keyboard key,
+so browsers and apps ignore them, while the arrows arrive as ordinary arrow
+keys. The first run on real hardware showed exactly that: arrows worked, OK
+and Back did not. The backend therefore reads `/dev/input/event*` itself
+(devices that can send a key it cares about, never its own virtual device,
+rescanned every few seconds):
+
+- **On the dashboard** a key map from Linux key codes to actions (OK, Back,
+  numbers, play/pause, menu, channel keys, extensible in `[input.remote_keys]`)
+  sends actions to the page over the event stream. Keys a browser understands
+  by itself are left out of the map. Where both paths report the same press,
+  the page drops the second of the pair arriving within 300 ms.
+- **Inside an app** the same buttons are pressed on the virtual keyboard as
+  what apps expect: OK as Enter, Exit as Escape, the remote's number keys as
+  digits. This is why the uinput rule is now installed by default; it is
+  independent of the opt-in phone mouse.
+- **Holding** Back/Exit or Esc closes the running app; on the dashboard it
+  means "exit to the desktop". The hold detector treats a release followed by
+  a new press within a short grace period as the same hold, because some TVs
+  report a held button as rapid presses, and it fires once per hold.
+
+It needs membership of the `input` group. Reading the device directly works
+whichever virtual terminal is showing.
+
+## Settings page
+
+`/settings` is a phone-first page for weather, the photo source with its
+Synology connection, and the app row; the TV shows its address from a Settings
+tile and can open it in place for mouse-and-keyboard users.
+
+- **Storage**: `settings.json` next to `config.toml`, laid over it section by
+  section (defaults, then `config.toml`, then `settings.json`). The page never
+  rewrites the hand-edited file. An update is validated against the combined
+  result before anything is written.
+- **Applying**: after saving, the backend restarts in place (`exec` of itself,
+  so systemd sees the same process). The dashboard reloads when it sees a new
+  start time in the config event.
+- **Apps**: entries are a ready-made preset, a website by address, or a
+  reference to a program defined in `config.toml`. The page cannot define a
+  command. It is reachable from the LAN, so it must not become remote code
+  execution; saving also requires the PIN when one is set.
+- **Secrets**: the NAS password is write-only for the page, and the file is
+  mode 0600.
+- **Checks**: "Test connection" signs in to the NAS with the values on the
+  page; "Check town" resolves the place name through the weather service.
+- **Port memory**: when the configured port is taken, the fallback port is
+  stored here too, tied to the port `config.toml` asked for, so the fallback
+  and its notice happen once.
 
 ## TV power
 
@@ -408,7 +450,10 @@ one command to publish.
 5. **Remote control of apps and TV power.** *(done)* Phone as touchpad and
    keyboard, long press of Back on the TV remote to leave any app, daily TV
    off/on schedule and manual TV power over HDMI-CEC.
-6. **Polish.** System panel, more panels (calendar, headlines).
+6. **Settings page and a remote that works everywhere.** *(done)* Settings for
+   weather, photos and apps; TV remote keys read below the browser, passed on
+   to apps, with hold-to-exit.
+7. **Polish.** System panel, more panels (calendar, headlines).
 
 ## Later ideas (not in scope now)
 

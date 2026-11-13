@@ -23,9 +23,9 @@ rm -f "$HOME/.config/systemd/user/pidash.service" \
       "$HOME/.config/autostart/pidash.desktop"
 systemctl --user daemon-reload >/dev/null 2>&1
 
-# The udev rule added by `install.sh --phone-input`.
+# The udev rule the installer adds for the virtual keyboard.
 if [ -e /etc/udev/rules.d/70-pidash-uinput.rules ]; then
-  echo "Removing the phone mouse/keyboard permission (needs sudo)"
+  echo "Removing the virtual keyboard permission (needs sudo)"
   sudo rm -f /etc/udev/rules.d/70-pidash-uinput.rules
   sudo udevadm control --reload-rules
 fi

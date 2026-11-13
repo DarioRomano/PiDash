@@ -59,6 +59,20 @@ type place struct {
 	Name      string  `json:"name"`
 	Latitude  float64 `json:"latitude"`
 	Longitude float64 `json:"longitude"`
+	// Label names the place with its region and country, to tell apart places
+	// that share a name.
+	Label string `json:"label,omitempty"`
+}
+
+// Lookup resolves a place name and returns how the weather service knows it,
+// for example "Portland, Maine, United States". The settings page uses it to
+// confirm a place before saving.
+func Lookup(ctx context.Context, location string) (string, error) {
+	pl, err := New(Options{}).geocode(ctx, location)
+	if err != nil {
+		return "", err
+	}
+	return pl.Label, nil
 }
 
 // New returns a weather provider.
@@ -266,7 +280,13 @@ func (p *Provider) geocode(ctx context.Context, query string) (place, error) {
 			}
 		}
 	}
-	return place{Query: query, Name: best.Name, Latitude: best.Latitude, Longitude: best.Longitude}, nil
+	label := best.Name
+	for _, part := range []string{best.Admin1, best.Country} {
+		if part != "" && !strings.Contains(label, part) {
+			label += ", " + part
+		}
+	}
+	return place{Query: query, Name: best.Name, Latitude: best.Latitude, Longitude: best.Longitude, Label: label}, nil
 }
 
 // apiForecast mirrors the Open-Meteo forecast response. Values can be null

@@ -155,6 +155,53 @@ function openHelp() {
   help.open(input.keyMap, url);
 }
 
+// --- Settings -------------------------------------------------------------------
+// Settings need typing, so the TV points to the phone, and offers to open the
+// page right here for those with a mouse and keyboard on the Pi.
+
+const SETTINGS_ID = "__settings";
+const GEAR_GLYPH =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
+  '<circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.8 1.8M16.7 16.7l1.8 1.8M18.5 5.5l-1.8 1.8M7.3 16.7l-1.8 1.8"/></svg>';
+const settingsPanel = $("#settings-panel");
+let settingsOpen = false;
+
+function openSettingsPanel() {
+  rail.close();
+  const address = lanAddress ? `http://${lanAddress}:${location.port || "80"}/settings` : "the PiDash address followed by /settings";
+  const h = document.createElement("h2");
+  h.textContent = "Settings";
+  const p1 = document.createElement("p");
+  p1.textContent = "Weather, background photos and apps are set up on your phone or computer. Open:";
+  const url = document.createElement("p");
+  url.className = "sheet-url";
+  url.textContent = address;
+  const p2 = document.createElement("p");
+  p2.textContent = "With a mouse and keyboard connected to the Pi, press OK or click to open the settings right here.";
+  const foot = document.createElement("footer");
+  foot.className = "help-foot";
+  foot.textContent = "OK or click: open here  ·  Back: close";
+  settingsPanel.replaceChildren(h, p1, url, p2, foot);
+  settingsOpen = true;
+  settingsPanel.classList.add("open");
+  stage.classList.add("panel-open");
+}
+
+function closeSettingsPanel() {
+  if (!settingsOpen) return;
+  settingsOpen = false;
+  settingsPanel.classList.remove("open");
+  stage.classList.toggle("panel-open", weather.isOpen || help.isOpen);
+}
+
+/** While the panel is open, OK opens the page here; anything else closes it. */
+function handleSettingsPanel(action: Action): boolean {
+  if (!settingsOpen) return false;
+  if (action === "select") location.href = "/settings?from=tv";
+  else closeSettingsPanel();
+  return true;
+}
+
 // --- Panel rail and apps ------------------------------------------------------
 
 const EXIT_ID = "__desktop";
@@ -186,6 +233,7 @@ function railItems(): RailItem[] {
       sub: running ? "Running · OK to stop" : "",
     });
   }
+  items.push({ id: SETTINGS_ID, label: "Settings", glyph: GEAR_GLYPH });
   items.push({ id: EXIT_ID, label: "Desktop", glyph: EXIT_GLYPH });
   return items;
 }
@@ -221,6 +269,10 @@ async function activateRailItem(item: RailItem) {
     weather.open();
     return;
   }
+  if (item.id === SETTINGS_ID) {
+    openSettingsPanel();
+    return;
+  }
   const stopping = appsStatus.running === item.id;
   toast(stopping ? `Closing ${item.label}…` : `Starting ${item.label}…`);
   try {
@@ -246,14 +298,16 @@ let shownNotice = "";
 function applyConfig(cfg: ClientConfig) {
   // After an update the backend restarts with a new version: load the new
   // dashboard too, so the TV never runs an old page against a new backend.
-  if (runningVersion && cfg.version && cfg.version !== runningVersion) {
+  // The same goes for saved settings, which the backend applies by restarting.
+  const run = `${cfg.version}/${cfg.started}`;
+  if (runningVersion && run !== runningVersion) {
     location.reload();
     return;
   }
-  runningVersion = cfg.version;
+  runningVersion = run;
   // Start-up problems, such as a settings mistake or a port that was taken.
   const notice = (cfg.notices ?? []).join("  ·  ");
-  if (notice && notice !== shownNotice) toast(notice, 45000);
+  if (notice && notice !== shownNotice) toast(notice, 15000);
   shownNotice = notice;
   const d = cfg.display;
   document.documentElement.style.setProperty("--safe", `${(d.safe_area * 100).toFixed(2)}%`);
@@ -331,6 +385,11 @@ input.on((action) => {
     return;
   }
   if (help.handle(action)) return;
+  if (handleSettingsPanel(action)) return;
+  if (action === "settings") {
+    openSettingsPanel();
+    return;
+  }
   if (action === "help") {
     openHelp();
     return;
@@ -389,6 +448,7 @@ const ICONS: Record<string, string> = {
   play: '<path d="M7 5l12 7-12 7z"/>',
   menu: '<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>',
   weather: '<path d="M7 18h10a4 4 0 0 0 .5-7.97 6 6 0 0 0-11.6 1.2A3.5 3.5 0 0 0 7 18z"/>',
+  settings: '<circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.8 1.8M16.7 16.7l1.8 1.8M18.5 5.5l-1.8 1.8M7.3 16.7l-1.8 1.8"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 1 1 3.6 2.3c-.8.5-1.2 1-1.2 1.9M12 16.8v.2"/>',
   exit: '<rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/>',
 };
@@ -417,6 +477,7 @@ hudButton("right", "right", "", "Next photo");
 hud.appendChild(Object.assign(document.createElement("span"), { className: "hud-sep" }));
 hudButton("menu", "menu", "Apps", "App row");
 hudButton("weather", "weather", "Weather", "Weather details");
+hudButton("settings", "settings", "", "Settings");
 hudButton("help", "help", "Help", "All controls");
 hudButton("exit", "exit", "Desktop", "Return to the desktop");
 
@@ -460,6 +521,10 @@ window.addEventListener("pointerdown", pointerActive);
 // whatever is open.
 stage.addEventListener("click", (e) => {
   if (help.isOpen) return help.close();
+  if (settingsOpen) {
+    location.href = "/settings?from=tv";
+    return;
+  }
   if (weather.isOpen) return weather.close();
   if ((e.target as Element).closest("#hud")) return;
   if (rail.isOpen) rail.close();
@@ -478,7 +543,7 @@ window.addEventListener(
   "wheel",
   (e) => {
     e.preventDefault();
-    if (help.isOpen || weather.isOpen) return;
+    if (help.isOpen || weather.isOpen || settingsOpen) return;
     const now = performance.now();
     if (now - lastWheel < (rail.isOpen ? 110 : 450)) return;
     const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;

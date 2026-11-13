@@ -58,6 +58,9 @@ type Input struct {
 	AppExitKeys []string `toml:"app_exit_keys"`
 	// AppExitHold is how long the key must be held; "0s" acts on the first press.
 	AppExitHold Duration `toml:"app_exit_hold"`
+	// RemoteKeys maps extra Linux key names from the TV remote (KEY_RED, …) to
+	// dashboard actions, on top of the built-in ones for OK, Back and so on.
+	RemoteKeys map[string]string `toml:"remote_keys"`
 }
 
 // Remote configures the phone remote.
@@ -235,7 +238,7 @@ func Default() Config {
 	return Config{
 		Server:  Server{Listen: ":8080"},
 		Display: Display{SafeArea: 0.03, DebugKeys: true, PixelShift: 4, Clock24h: true},
-		Input: Input{AppExitKeys: []string{"KEY_EXIT", "KEY_BACK"}, AppExitHold: Duration{2 * time.Second}, Keys: map[string]string{
+		Input: Input{AppExitKeys: []string{}, AppExitHold: Duration{2 * time.Second}, Keys: map[string]string{
 			"ArrowUp":        "up",
 			"ArrowDown":      "down",
 			"ArrowLeft":      "left",
@@ -255,6 +258,7 @@ func Default() Config {
 			// Keyboard shortcuts.
 			"KeyA":     "menu",
 			"KeyW":     "weather",
+			"KeyS":     "settings",
 			"KeyP":     "playpause",
 			"KeyH":     "help",
 			"F1":       "help",
@@ -280,7 +284,7 @@ func Default() Config {
 func Load(path string) (Config, error) {
 	cfg := Default()
 	if path == "" {
-		return cfg, cfg.finish()
+		return cfg, cfg.Finish()
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -316,11 +320,11 @@ func Load(path string) (Config, error) {
 	if undecoded := md.Undecoded(); len(undecoded) > 0 {
 		return cfg, fmt.Errorf("%s: unknown key(s): %v", path, undecoded)
 	}
-	return cfg, cfg.finish()
+	return cfg, cfg.Finish()
 }
 
-// finish fills in per-entry defaults and validates the configuration.
-func (c *Config) finish() error {
+// Finish fills in per-entry defaults and validates the configuration.
+func (c *Config) Finish() error {
 	seen := map[string]bool{}
 	for i := range c.Apps {
 		a := &c.Apps[i]
@@ -452,6 +456,9 @@ type Client struct {
 	// Notices are problems the person at the TV should know about, such as a
 	// mistake in the settings file or a port that was already taken.
 	Notices []string `json:"notices"`
+	// Started identifies this run of the backend. The dashboard reloads when
+	// it changes, which is how saved settings reach the TV.
+	Started int64 `json:"started"`
 }
 
 // ForClient returns the browser-facing view of the configuration.

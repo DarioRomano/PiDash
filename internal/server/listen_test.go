@@ -113,7 +113,7 @@ func TestServerStartsOnAnotherPortAndSaysSo(t *testing.T) {
 	var client config.Client
 	json.NewDecoder(res.Body).Decode(&client)
 	res.Body.Close()
-	if len(client.Notices) != 2 || !strings.Contains(client.Notices[0], "settings file") || !strings.Contains(client.Notices[1], "Port "+strconv.Itoa(busy)+" is already used") {
+	if len(client.Notices) != 2 || !strings.Contains(client.Notices[0], "settings file") || !strings.Contains(client.Notices[1], "Port "+strconv.Itoa(busy)+" is used by another program") {
 		t.Errorf("notices for the TV = %q", client.Notices)
 	}
 

@@ -1,3 +1,4 @@
+export {};
 // Phone remote: posts actions to the backend, which forwards them to the TV.
 
 const statusDot = document.getElementById("status")!;

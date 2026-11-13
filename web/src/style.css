@@ -417,6 +417,27 @@ kbd {
 .help-text { font-size: 26px; color: var(--fg-dim); line-height: 1.35; }
 .help-foot { margin-top: 18px; font-size: 21px; color: var(--fg-dim); text-align: right; }
 
+/* --- Sheets: full-screen panels with a few lines of text ------------------------ */
+
+.sheet {
+  position: absolute;
+  inset: 0;
+  padding: 150px 160px 44px;
+  background: rgba(12, 14, 20, 0.95);
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.25s ease, transform 0.3s ease;
+  pointer-events: none;
+}
+.sheet.open { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.sheet h2 { font-size: 60px; font-weight: 600; letter-spacing: -0.01em; }
+.sheet p { font-size: 34px; line-height: 1.35; color: var(--fg-dim); max-width: 1400px; }
+.sheet .sheet-url { font-size: 64px; font-weight: 600; color: var(--fg); letter-spacing: -0.01em; margin: 6px 0 14px; }
+.sheet .help-foot { margin-top: auto; }
+
 #toast {
   position: absolute;
   left: 50%;

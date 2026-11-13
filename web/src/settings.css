@@ -1,0 +1,53 @@
+@import "./photos.css";
+
+.card { background: var(--panel); border-radius: 16px; padding: 16px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 12px; }
+.card h2 { margin: 0 0 2px; font-size: 17px; font-weight: 600; color: var(--fg); text-transform: none; letter-spacing: 0; }
+.field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--dim); min-width: 0; }
+.field input, .field select {
+  width: 100%; border: 1px solid var(--line); border-radius: 12px; background: #0f121b; color: var(--fg);
+  font: inherit; font-size: 16px; padding: 13px 12px; appearance: none;
+}
+.field select { background-image: linear-gradient(45deg, transparent 50%, var(--dim) 50%), linear-gradient(135deg, var(--dim) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 55%, calc(100% - 12px) 55%; background-size: 6px 6px; background-repeat: no-repeat; padding-right: 34px; }
+.field input:focus, .field select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.pair { display: flex; gap: 10px; align-items: flex-end; }
+.pair .field { flex: 1; }
+.check { display: flex; align-items: center; gap: 12px; font-size: 15px; cursor: pointer; }
+button.secondary {
+  border: 0; border-radius: 12px; background: #1f2536; color: var(--fg); font: inherit; font-size: 15px;
+  padding: 14px 16px; cursor: pointer; white-space: nowrap;
+}
+button.secondary:active { background: #283047; }
+button.secondary:disabled { color: var(--dim); cursor: default; }
+button.wide { width: 100%; }
+.hint { font-size: 13px; color: var(--dim); line-height: 1.45; }
+.hint.warn { color: var(--bad); }
+.hint.center { text-align: center; opacity: 0.7; }
+.result { font-size: 14px; line-height: 1.4; min-height: 0; }
+.result:empty { display: none; }
+.result.ok { color: var(--ok); }
+.result.error { color: var(--bad); }
+.link {
+  display: flex; justify-content: space-between; align-items: center; padding: 14px 14px; border-radius: 12px;
+  background: #1f2536; color: var(--fg); font-size: 16px; text-decoration: none;
+}
+.link span { color: var(--dim); font-size: 20px; line-height: 1; }
+
+#app-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+#app-list:empty::after { content: "No apps yet."; color: var(--dim); font-size: 14px; }
+#app-list li { display: flex; align-items: center; gap: 8px; padding: 10px 8px 10px 14px; border-radius: 12px; background: #0f121b; }
+#app-list .what { flex: 1; min-width: 0; }
+#app-list .name { font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#app-list .detail { font-size: 12px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#app-list button {
+  flex: 0 0 38px; height: 38px; border: 0; border-radius: 10px; background: #1f2536; color: var(--fg);
+  font-size: 17px; cursor: pointer;
+}
+#app-list button:disabled { opacity: 0.3; cursor: default; }
+.add { border-top: 1px solid var(--line); padding-top: 14px; display: flex; flex-direction: column; gap: 12px; }
+#save { max-width: 304px; }
+
+/* Room for the fixed Save bar, also when the last hint wraps over several lines. */
+body { padding-bottom: calc(132px + env(safe-area-inset-bottom)); }
+#p-synology { display: flex; flex-direction: column; gap: 12px; }
+#kb-problem { margin-bottom: 10px; }

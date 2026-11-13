@@ -87,11 +87,16 @@ main() {
   local dir="$tmp/pidash_linux_$arch"
   echo "==> Installing PiDash $(cat "$dir/VERSION" 2>/dev/null || echo '?')"
 
-  # An update without options keeps the ones chosen at install time.
-  local flags=("$@") saved="$HOME/.local/share/pidash/install-flags"
-  if [ ${#flags[@]} -eq 0 ] && [ -s "$saved" ]; then
-    mapfile -t flags < "$saved"
-    echo "    reusing options: ${flags[*]}"
+  # Options chosen at install time are kept; new ones are added to them.
+  local flags=("$@") saved="$HOME/.local/share/pidash/install-flags" earlier f have
+  if [ -s "$saved" ]; then
+    mapfile -t earlier < "$saved"
+    for f in "${earlier[@]}"; do
+      have=0
+      for g in "${flags[@]}"; do [ "$g" = "$f" ] && have=1; done
+      [ "$have" -eq 1 ] || flags+=("$f")
+    done
+    [ ${#earlier[@]} -eq 0 ] || echo "    keeping options: ${earlier[*]}"
   fi
 
   bash "$dir/deploy/install.sh" "${flags[@]}"

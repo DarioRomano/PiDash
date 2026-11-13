@@ -13,6 +13,7 @@ export interface ClientConfig {
   keys: Record<string, string>;
   version: string;
   notices: string[];
+  started: number;
 }
 
 export interface StateEntry<T = unknown> {
@@ -26,7 +27,8 @@ export interface StateEntry<T = unknown> {
 export interface InputEvent {
   action: string;
   text?: string;
-  source: "key" | "remote" | "pointer";
+  /** key: the browser saw it; evdev: the backend read it from the TV remote. */
+  source: "key" | "remote" | "pointer" | "evdev";
 }
 
 export interface SystemState {
@@ -120,11 +122,11 @@ export interface WeatherState {
 /** The complete remote-control vocabulary. Everything else is ignored. */
 export type Action =
   | "up" | "down" | "left" | "right"
-  | "select" | "back" | "menu" | "home" | "playpause" | "exit" | "weather" | "help"
+  | "select" | "back" | "menu" | "home" | "playpause" | "exit" | "weather" | "help" | "settings"
   | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
 
 export const ACTIONS: ReadonlySet<string> = new Set<Action>([
-  "up", "down", "left", "right", "select", "back", "menu", "home", "playpause", "exit", "weather", "help",
+  "up", "down", "left", "right", "select", "back", "menu", "home", "playpause", "exit", "weather", "help", "settings",
   "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
 ]);
 

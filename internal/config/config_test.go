@@ -207,7 +207,8 @@ func TestRemoteTVAndExitKeySettings(t *testing.T) {
 	if cfg.Remote.MouseKeyboard || cfg.Remote.PIN != "" || cfg.TV.Off != "" {
 		t.Errorf("the phone mouse and the TV schedule must be off by default: %+v %+v", cfg.Remote, cfg.TV)
 	}
-	if len(cfg.Input.AppExitKeys) != 2 || cfg.Input.AppExitHold.Duration.Seconds() != 2 {
+	// The built-in exit keys live in the input package; the settings only add to them.
+	if len(cfg.Input.AppExitKeys) != 0 || cfg.Input.AppExitHold.Duration.Seconds() != 2 {
 		t.Errorf("exit key defaults = %+v", cfg.Input)
 	}
 	cfg, err := load(t, `
@@ -222,12 +223,18 @@ on = "6:45"
 [input]
 app_exit_keys = ["KEY_RED"]
 app_exit_hold = "0s"
+
+[input.remote_keys]
+KEY_GREEN = "weather"
 `)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !cfg.Remote.MouseKeyboard || cfg.TV.On != "6:45" || len(cfg.Input.AppExitKeys) != 1 || cfg.Input.AppExitHold.Duration != 0 {
 		t.Errorf("cfg = %+v %+v %+v", cfg.Remote, cfg.TV, cfg.Input.AppExitKeys)
+	}
+	if cfg.Input.RemoteKeys["KEY_GREEN"] != "weather" {
+		t.Errorf("remote keys = %v", cfg.Input.RemoteKeys)
 	}
 	// Setting exit keys must not wipe the default key map.
 	if cfg.Input.Keys["Enter"] != "select" {

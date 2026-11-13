@@ -7,6 +7,7 @@
 #   - a "PiDash" entry in the desktop menu
 #   - apt packages only if missing: chromium, v4l-utils (CEC), curl, fonts-inter,
 #     firefox (YouTube app), libwidevinecdm0 (DRM module for the Netflix app)
+#   - one rule under /etc/udev/rules.d, so the TV remote's buttons reach apps
 # Remove everything again with deploy/uninstall.sh.
 #
 # Usage (as your normal user, NOT with sudo):
@@ -16,10 +17,9 @@
 #                     on their own virtual terminal. This is the one part that is
 #                     system-wide: it adds a systemd unit, a small helper script
 #                     and a polkit rule under /etc and /usr/local (needs sudo).
-#     --phone-input   allow the phone remote to act as a mouse and keyboard. Adds
-#                     one udev rule under /etc (needs sudo) and the small tool
-#                     used for typing. You also need to set
-#                     mouse_keyboard = true under [remote] in the settings.
+#     --phone-input   install the small tool the phone remote uses for typing
+#                     text. To let the phone act as mouse and keyboard you also
+#                     need mouse_keyboard = true under [remote] in the settings.
 #     --binary        path to the pidash binary (default: looks next to deploy/)
 set -euo pipefail
 
@@ -167,20 +167,27 @@ if [ "$CONSOLE_APPS" -eq 1 ]; then
   echo "    console apps will use virtual terminal $CONSOLE_VT (Ctrl+Alt+F$CONSOLE_VT)"
 fi
 
-if [ "$PHONE_INPUT" -eq 1 ]; then
-  echo "==> Allowing the phone remote to act as mouse and keyboard (system-wide, needs sudo)"
-  sudo install -m 0644 -o root -g root "$HERE/70-pidash-uinput.rules" /etc/udev/rules.d/70-pidash-uinput.rules
+# The TV remote's OK and Back buttons are not keyboard keys, so apps such as
+# YouTube and Netflix ignore them. PiDash passes them on as Enter and Escape
+# through a virtual keyboard, which needs this one rule. It lets members of the
+# "input" group create virtual input devices.
+RULE=/etc/udev/rules.d/70-pidash-uinput.rules
+if ! cmp -s "$HERE/70-pidash-uinput.rules" "$RULE" 2>/dev/null; then
+  echo "==> Letting PiDash pass the TV remote's buttons on to apps (one system file, needs sudo)"
+  sudo install -m 0644 -o root -g root "$HERE/70-pidash-uinput.rules" "$RULE"
   sudo modprobe uinput 2>/dev/null || true
   sudo udevadm control --reload-rules
   sudo udevadm trigger --name-match=uinput 2>/dev/null || sudo udevadm trigger
-  if ! grep -Eq '^\s*mouse_keyboard\s*=\s*true' "$CONF_DIR/config.toml"; then
-    echo "    now switch it on: set  mouse_keyboard = true  under [remote] in $CONF_DIR/config.toml"
-  fi
+fi
+
+if [ "$PHONE_INPUT" -eq 1 ] && ! grep -Eq '^\s*mouse_keyboard\s*=\s*true' "$CONF_DIR/config.toml"; then
+  echo "    phone as mouse and keyboard: now switch it on by setting"
+  echo "    mouse_keyboard = true  under [remote] in $CONF_DIR/config.toml"
 fi
 
 if ! id -nG | tr ' ' '\n' | grep -qx input; then
-  echo "NOTE: you are not in the 'input' group. Holding Back on the TV remote will not"
-  echo "      close apps, and the phone cannot act as a mouse, until you are:"
+  echo "NOTE: you are not in the 'input' group. The TV remote's OK and Back buttons"
+  echo "      will not work until you are:"
   echo "      sudo usermod -aG input $USER   (then log out and in again)"
 fi
 
@@ -199,10 +206,9 @@ PiDash $("$APP_DIR/pidash" -version 2>/dev/null | awk '{print $2}') is installed
   Back to desktop  : hold Back on the TV remote for 2 seconds, press Alt+F4,
                      or use the phone remote
   Phone remote     : http://${IP:-<pi-ip>}:$PORT/remote
-  Apps             : press OK on the dashboard; add them under [[apps]] in the settings
-  Background photos: set [photos] in the settings, then pick folders at
-                     http://${IP:-<pi-ip>}:$PORT/photos
-  Settings         : $CONF_DIR/config.toml  (then: systemctl --user restart pidash)
+  Settings         : http://${IP:-<pi-ip>}:$PORT/settings
+                     (weather, background photos, apps)
+  Advanced settings: $CONF_DIR/config.toml  (then: systemctl --user restart pidash)
   If it does not start: bash $APP_DIR/doctor.sh
   Update           : bash $APP_DIR/update.sh
   Uninstall        : bash $APP_DIR/uninstall.sh

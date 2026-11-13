@@ -70,5 +70,23 @@ systemctl --user status pidash.service pidash-kiosk.service -l --no-pager -n 25 
 section "Recent log"
 journalctl --user-unit pidash.service --user-unit pidash-kiosk.service -n 40 --no-pager -o short 2>&1 | tail -n 45
 
+section "TV remote and keyboards"
+if [ -r /proc/bus/input/devices ]; then
+  echo "input devices: $(sed -n 's/^N: Name="\(.*\)"$/\1/p' /proc/bus/input/devices | paste -sd';' | sed 's/;/; /g')"
+fi
+readable=0; total=0
+for d in /dev/input/event*; do
+  [ -e "$d" ] || continue
+  total=$((total + 1)); [ -r "$d" ] && readable=$((readable + 1))
+done
+echo "PiDash can read $readable of $total input devices (it needs to, for the remote's OK and Back buttons)"
+if [ -w /dev/uinput ]; then
+  echo "virtual keyboard: allowed (buttons can be passed on to apps)"
+elif [ -e /dev/uinput ]; then
+  echo "virtual keyboard: NOT allowed. Run the update again: bash $APP_DIR/update.sh"
+else
+  echo "virtual keyboard: /dev/uinput does not exist (sudo modprobe uinput)"
+fi
+
 section "TV over HDMI-CEC"
 if have cec-ctl; then "$APP_DIR/pidash" -cec status 2>&1; else echo "cec-ctl is not installed (sudo apt install v4l-utils)"; fi

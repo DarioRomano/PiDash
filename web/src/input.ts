@@ -6,6 +6,8 @@ type Listener = (action: Action, ev: InputEvent) => void;
 const HOLD_HINT_MS = 600;
 /** …and this long exits to the desktop. */
 const HOLD_EXIT_MS = 2000;
+/** A release shorter than this, followed by a new press, is still one hold. */
+const RELEASE_GRACE_MS = 600;
 
 /**
  * Normalises every input source (keyboard / CEC key presses in the browser,
@@ -18,6 +20,7 @@ export class Input {
   private debugTimer = 0;
   private holdCode = "";
   private holdTimers: number[] = [];
+  private releaseTimer = 0;
   private holdListener: (holding: boolean) => void = () => {};
 
   setKeyMap(keys: Record<string, string>) {
@@ -54,7 +57,11 @@ export class Input {
       }
     });
     target.addEventListener("keyup", (e) => {
-      if ((e.code || e.key) === this.holdCode) this.cancelHold();
+      // Some TVs report a held button as rapid presses: only believe the
+      // release if no new press follows shortly.
+      if ((e.code || e.key) !== this.holdCode) return;
+      clearTimeout(this.releaseTimer);
+      this.releaseTimer = window.setTimeout(() => this.cancelHold(), RELEASE_GRACE_MS);
     });
     target.addEventListener("blur", () => this.cancelHold());
   }
@@ -62,6 +69,8 @@ export class Input {
   // Holding Back for two seconds is the TV-remote way out of the dashboard,
   // since a TV remote has no Alt+F4.
   private startHold(code: string) {
+    clearTimeout(this.releaseTimer);
+    if (this.holdCode === code && this.holdTimers.length > 0) return; // same hold continues
     this.cancelHold();
     this.holdCode = code;
     this.holdTimers = [
@@ -74,6 +83,7 @@ export class Input {
   }
 
   private cancelHold() {
+    clearTimeout(this.releaseTimer);
     for (const t of this.holdTimers) clearTimeout(t);
     this.holdTimers = [];
     this.holdCode = "";
@@ -91,14 +101,35 @@ export class Input {
     return this.keys;
   }
 
-  /** Called for input events received from the backend (phone remote). */
+  /** Called for input events received from the backend: the phone remote, or
+   *  a TV remote button the backend read itself. */
   fromRemote(ev: InputEvent) {
-    this.showDebug(`remote → ${ev.action}`);
+    this.showDebug(`${ev.source === "evdev" ? "tv remote" : "phone"} → ${ev.action}`);
     if (isAction(ev.action)) this.dispatch(ev.action, ev);
   }
 
   private dispatch(action: Action, ev: InputEvent) {
+    if (this.isDuplicate(action, ev.source)) return;
     for (const l of this.listeners) l(action, ev);
+  }
+
+  // One press of a remote button can arrive twice: once as a key event in the
+  // browser and once from the backend, which reads the remote directly. The
+  // second of such a pair, arriving within a moment of the first, is dropped.
+  private recent: { action: Action; source: string; at: number }[] = [];
+
+  private isDuplicate(action: Action, source: string): boolean {
+    if (source !== "key" && source !== "evdev") return false;
+    const now = performance.now();
+    this.recent = this.recent.filter((r) => now - r.at < 300);
+    const other = source === "key" ? "evdev" : "key";
+    const twin = this.recent.findIndex((r) => r.action === action && r.source === other);
+    if (twin >= 0) {
+      this.recent.splice(twin, 1);
+      return true;
+    }
+    this.recent.push({ action, source, at: now });
+    return false;
   }
 
   private showDebug(text: string) {

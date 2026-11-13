@@ -1,5 +1,11 @@
 # PiDash configuration. Lives at ~/.config/pidash/config.toml on the Pi.
 # After editing: systemctl --user restart pidash
+#
+# Weather, background photos and apps are easier to set on the settings page:
+# open http://<pi-address>:8080/settings on your phone, or choose Settings on
+# the TV. What you save there is kept in settings.json next to this file and
+# takes precedence over the same sections here. Delete settings.json to return
+# to exactly what this file says.
 # Every key is optional; omitted keys use the built-in defaults shown here.
 
 [server]
@@ -183,19 +189,29 @@ url = "https://www.netflix.com/browse"
 # name = "Steam Link"
 # command = "steamlink"
 
-# --- Leaving an app with the TV remote ------------------------------------------
-# While an app is open, hold one of these keys on the TV remote to close it and
-# return to the dashboard. The keys are read straight from the remote, so this
-# works in every app. Names are Linux key names; most TV remotes send KEY_EXIT
-# for their Back / Exit / Return button. Others you may want: KEY_HOMEPAGE,
-# KEY_STOP, KEY_ESC (a keyboard's Esc), or the colour keys KEY_RED, KEY_GREEN,
-# KEY_YELLOW, KEY_BLUE. To see what your remote sends:
+# --- The TV remote ---------------------------------------------------------------
+# PiDash reads the TV remote itself, below the browser, because a remote's OK
+# and Back buttons are not keyboard keys and would otherwise do nothing:
+#   - on the dashboard, OK chooses and Back goes back
+#   - inside an app, OK is passed on as Enter and Back as Escape
+#   - holding Back (or Esc on a keyboard) for two seconds leaves the app;
+#     on the dashboard it returns to the desktop
+# Nothing needs to be set for that. The options below only add to it.
+#
+# Names are Linux key names. To see what a button on your remote is called:
 #   sudo apt install evtest && sudo evtest
 [input]
-app_exit_keys = ["KEY_EXIT", "KEY_BACK"]
-# How long the key must be held. If your TV does not report held buttons, pick a
-# key you do not otherwise need (a colour key) and set this to "0s".
+# Extra keys that leave an app when held, besides Back/Exit and Esc.
+app_exit_keys = []
+# How long to hold. If your TV does not report held buttons, add a key you do
+# not otherwise need above (a colour key, say) and set this to "0s".
 app_exit_hold = "2s"
+
+# Extra remote buttons for the dashboard, for example the colour keys.
+# Actions are the same as under [input.keys] below; "none" switches one off.
+[input.remote_keys]
+# KEY_RED = "weather"
+# KEY_BLUE = "settings"
 
 # --- Keys on the dashboard ----------------------------------------------------
 # Which key does what while the dashboard is showing: TV remote buttons and a
@@ -203,7 +219,7 @@ app_exit_hold = "2s"
 # ADDED to them; you only need lines for keys you want to add or change. Set a
 # key to "none" to switch a built-in one off.
 #
-# Actions: up down left right select back menu home playpause weather help exit 0-9
+# Actions: up down left right select back menu home playpause weather settings help exit 0-9
 #   select     open the app row / choose           back    close, go back
 #   left/right previous / next photo               up/down more / less on screen
 #   menu       app row                             weather weather details
@@ -217,7 +233,7 @@ app_exit_hold = "2s"
 # Built in:
 #   arrows = up/down/left/right      Enter, Space = select     Esc, Backspace = back
 #   Tab / Shift+Tab = right / left   PageUp / PageDown = left / right
-#   A = menu    W = weather    P = playpause    H, F1, / = help    Home = home
+#   A = menu    W = weather    S = settings    P = playpause    H, F1, / = help
 #   F10 = exit  0-9 = tile in the app row       media play/pause = playpause
 [input.keys]
 # Examples:

@@ -26,6 +26,8 @@ import (
 	"github.com/DarioRomano/PiDash/internal/kiosk"
 	"github.com/DarioRomano/PiDash/internal/photos"
 	"github.com/DarioRomano/PiDash/internal/providers"
+	"github.com/DarioRomano/PiDash/internal/providers/weather"
+	"github.com/DarioRomano/PiDash/internal/settings"
 	"github.com/DarioRomano/PiDash/internal/tv"
 )
 
@@ -47,7 +49,15 @@ type Server struct {
 
 	noticeMu sync.Mutex
 	notices  []string
-	mux      *http.ServeMux
+
+	settings   *settings.Store
+	baseListen string
+	// weatherLookup replaces the weather service in tests.
+	weatherLookup func(ctx context.Context, location string) (string, error)
+	started       int64
+	restart       chan struct{}
+	restartOne    sync.Once
+	mux           *http.ServeMux
 }
 
 // Deps are the services the HTTP server exposes.
@@ -64,6 +74,11 @@ type Deps struct {
 	// URLFile is where the address actually in use is recorded for the
 	// launcher; empty to skip.
 	URLFile string
+	// Settings is what the settings page reads and writes.
+	Settings *settings.Store
+	// BaseListen is the address config.toml asks for, before any remembered
+	// port fallback.
+	BaseListen string
 	// NewRunner builds the provider runner around the server's publish function.
 	NewRunner func(publish func(providers.Entry)) *providers.Runner
 }
@@ -73,6 +88,7 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	k, am, ps, newRunner := d.Kiosk, d.Apps, d.Photos, d.NewRunner
 	s := &Server{cfg: cfg, log: log, hub: newHub(), kiosk: k, apps: am, photos: ps, input: d.Input, tv: d.TV,
 		pin: pinGuard{pin: cfg.Remote.PIN}, version: d.Version, urlFile: d.URLFile, notices: d.Notices,
+		settings: d.Settings, baseListen: d.BaseListen, started: time.Now().UnixMilli(), restart: make(chan struct{}),
 		static: static, mux: http.NewServeMux()}
 	s.runner = newRunner(func(e providers.Entry) { s.hub.broadcast("state", e) })
 
@@ -102,10 +118,24 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("POST /api/pointer", s.handlePointer)
 	s.mux.HandleFunc("POST /api/type", s.handleType)
 	s.mux.HandleFunc("POST /api/tv", s.handleTVPower)
+	s.mux.HandleFunc("GET /api/settings", s.handleSettings)
+	s.mux.HandleFunc("PUT /api/settings", s.handleSettingsSave)
+	s.mux.HandleFunc("POST /api/settings/test-synology", s.handleTestSynology)
+	s.mux.HandleFunc("POST /api/settings/test-weather", s.handleTestWeather)
+	s.mux.HandleFunc("GET /settings", s.servePage("settings.html"))
 	s.mux.HandleFunc("GET /remote", s.servePage("remote.html"))
 	s.mux.HandleFunc("GET /remote/", s.servePage("remote.html"))
 	s.mux.Handle("GET /", http.FileServerFS(static))
 	return s
+}
+
+// ErrRestart is returned by Run when the backend should start again to apply
+// saved settings.
+var ErrRestart = errors.New("restart requested")
+
+// requestRestart makes Run return ErrRestart.
+func (s *Server) requestRestart() {
+	s.restartOne.Do(func() { close(s.restart) })
 }
 
 // Run starts the provider runner and serves HTTP until ctx is cancelled.
@@ -132,7 +162,15 @@ func (s *Server) Run(ctx context.Context) error {
 	s.log.Info("listening", "addr", ln.Addr().String())
 	if port != wanted {
 		s.log.Warn("the configured port is used by another program; using the next free one", "configured", wanted, "using", port)
-		s.addNotice(fmt.Sprintf("Port %d is already used by another program on this Pi, so PiDash is using port %d. The phone remote is now at port %d. To keep it there, set listen = \":%d\" under [server] in the settings.", wanted, port, port, port))
+		// Remember the port, so PiDash goes straight to it from now on and
+		// this is said once, not on every start.
+		host, _, _ := net.SplitHostPort(s.cfg.Server.Listen)
+		remembered := s.settings != nil && s.settings.RememberPort(s.baseListen, net.JoinHostPort(host, strconv.Itoa(port))) == nil
+		msg := fmt.Sprintf("Port %d is used by another program on this Pi, so PiDash now uses port %d. The phone remote is at port %d.", wanted, port, port)
+		if !remembered {
+			msg += fmt.Sprintf(" To keep it there, set listen = \":%d\" under [server] in config.toml.", port)
+		}
+		s.addNotice(msg)
 	}
 	// Tell the launcher where the dashboard really is.
 	if err := writeURLFile(s.urlFile, port); err != nil {
@@ -145,6 +183,12 @@ func (s *Server) Run(ctx context.Context) error {
 	go func() { errc <- srv.Serve(ln) }()
 
 	select {
+	case <-s.restart:
+		// Saved settings are applied by starting afresh.
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+		return ErrRestart
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
@@ -171,6 +215,7 @@ func (s *Server) addNotice(text string) {
 func (s *Server) clientConfig() config.Client {
 	c := s.cfg.ForClient()
 	c.Version = s.version
+	c.Started = s.started
 	s.noticeMu.Lock()
 	c.Notices = append([]string{}, s.notices...)
 	s.noticeMu.Unlock()
@@ -197,6 +242,13 @@ type inputEvent struct {
 	Action string `json:"action"`
 	Text   string `json:"text,omitempty"`
 	Source string `json:"source"`
+}
+
+// RemoteAction delivers a button press read directly from the TV remote to
+// the dashboard. The dashboard drops it if the browser reported the same
+// press itself.
+func (s *Server) RemoteAction(action string) {
+	s.hub.broadcast("input", inputEvent{Action: action, Source: "evdev"})
 }
 
 func (s *Server) handleInput(w http.ResponseWriter, r *http.Request) {
@@ -326,6 +378,110 @@ func (s *Server) handleAppIcon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.ServeFile(w, r, icon.Path)
+}
+
+// settingsInfo is what the settings page loads.
+type settingsInfo struct {
+	settings.View
+	// ConsoleReady says whether programs that run outside the desktop can start.
+	ConsoleReady bool `json:"consoleReady"`
+	// PINRequired asks the page to send the PIN when saving.
+	PINRequired bool   `json:"pinRequired"`
+	Version     string `json:"version"`
+	// KeyboardProblem explains why TV remote buttons cannot be passed to apps, if so.
+	KeyboardProblem string `json:"keyboardProblem,omitempty"`
+}
+
+func (s *Server) handleSettings(w http.ResponseWriter, _ *http.Request) {
+	if s.settings == nil {
+		http.Error(w, "settings are not available", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, settingsInfo{
+		View: s.settings.View(), ConsoleReady: s.apps.Status().ConsoleReady,
+		PINRequired: s.pin.pin != "", Version: s.version, KeyboardProblem: s.input.KeyboardProblem(),
+	})
+}
+
+// handleSettingsSave stores what the settings page sends and restarts the
+// backend so it takes effect.
+func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
+	if s.settings == nil {
+		http.Error(w, "settings are not available", http.StatusNotFound)
+		return
+	}
+	if !s.pin.allow(w, r) {
+		return
+	}
+	var u settings.Update
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&u); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if err := s.settings.Save(u); err != nil {
+		// The message says which value is wrong, in words meant for the page.
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+	s.log.Info("settings saved; restarting to apply them")
+	writeJSON(w, map[string]bool{"restarting": true})
+	// Let the answer reach the page before the server goes away.
+	time.AfterFunc(400*time.Millisecond, s.requestRestart)
+}
+
+// handleTestSynology tries to sign in to the NAS with the values on the page.
+func (s *Server) handleTestSynology(w http.ResponseWriter, r *http.Request) {
+	if !s.pin.allow(w, r) {
+		return
+	}
+	var req settings.Synology
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if req.Password == "" && s.settings != nil {
+		req.Password = s.settings.SynologyPassword() // "unchanged"
+	}
+	if strings.TrimSpace(req.URL) == "" || req.Username == "" || req.Password == "" {
+		http.Error(w, "Enter the address, user name and password first.", http.StatusUnprocessableEntity)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	nas := photos.NewSynology(photos.SynologyOptions{URL: strings.TrimSpace(req.URL), Username: req.Username, Password: req.Password, InsecureTLS: req.InsecureTLS})
+	libs, err := nas.Folders(ctx, "")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	names := make([]string, 0, len(libs))
+	for _, l := range libs {
+		names = append(names, l.Name)
+	}
+	writeJSON(w, map[string]any{"ok": true, "libraries": names})
+}
+
+// handleTestWeather looks a place name up, to confirm it before saving.
+func (s *Server) handleTestWeather(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Location string `json:"location"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil || strings.TrimSpace(req.Location) == "" {
+		http.Error(w, "Enter a place first.", http.StatusUnprocessableEntity)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	lookup := s.weatherLookup
+	if lookup == nil {
+		lookup = weather.Lookup
+	}
+	label, err := lookup(ctx, strings.TrimSpace(req.Location))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "place": label})
 }
 
 // remoteInfo tells the phone remote which extra controls to show.

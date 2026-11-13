@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -24,6 +26,7 @@ import (
 	"github.com/DarioRomano/PiDash/internal/providers/system"
 	"github.com/DarioRomano/PiDash/internal/providers/weather"
 	"github.com/DarioRomano/PiDash/internal/server"
+	"github.com/DarioRomano/PiDash/internal/settings"
 	"github.com/DarioRomano/PiDash/internal/tv"
 	"github.com/DarioRomano/PiDash/web"
 )
@@ -81,6 +84,20 @@ func main() {
 		notices = append(notices, "There is a mistake in the settings file, so PiDash is running with its default settings until it is fixed: "+err.Error())
 		cfg = config.Default()
 	}
+
+	// What was saved on the settings page is laid over config.toml.
+	baseListen := cfg.Server.Listen
+	store, err := settings.Open(settings.Path(*cfgPath), cfg)
+	if err != nil {
+		log.Error("settings", "err", err)
+		notices = append(notices, "The saved settings could not be read: "+err.Error())
+	}
+	if effective, err := store.Effective(); err != nil {
+		log.Error("saved settings do not fit config.toml; ignoring them", "err", err)
+		notices = append(notices, "The settings saved on the settings page no longer fit config.toml and were ignored: "+err.Error())
+	} else {
+		cfg = effective
+	}
 	if *execApp != "" {
 		// Does not return on success.
 		if err := runApp(cfg, *execApp, log); err != nil {
@@ -89,7 +106,7 @@ func main() {
 		}
 	}
 	if *listen != "" {
-		cfg.Server.Listen = *listen
+		cfg.Server.Listen, baseListen = *listen, *listen
 	}
 
 	var static fs.FS
@@ -170,7 +187,9 @@ func main() {
 	// The phone as mouse and keyboard, and the TV remote's long-press exit.
 	phoneInput := input.NewService(cfg.Remote.MouseKeyboard, log)
 	defer phoneInput.Close()
-	var exitKeys []uint16
+	// Keys that leave an app when held: the built-in ones (the remote's
+	// Back/Exit, a keyboard's Esc) plus any added in the settings.
+	exitKeys := input.DefaultExitKeys()
 	for _, name := range cfg.Input.AppExitKeys {
 		code, err := input.ParseKey(name)
 		if err != nil {
@@ -180,32 +199,63 @@ func main() {
 		}
 		exitKeys = append(exitKeys, code)
 	}
+	// What the TV remote's buttons do on the dashboard.
+	remoteActions := input.DefaultRemoteActions()
+	for name, action := range cfg.Input.RemoteKeys {
+		code, err := input.ParseKey(name)
+		if err != nil {
+			log.Error("config: input.remote_keys", "err", err)
+			notices = append(notices, "Settings: input.remote_keys: "+err.Error())
+			continue
+		}
+		if action = strings.ToLower(strings.TrimSpace(action)); action == "" || action == "none" {
+			delete(remoteActions, code)
+		} else {
+			remoteActions[code] = action
+		}
+	}
 
 	srv := server.New(cfg, log, static, server.Deps{
 		Kiosk: kiosk.New(cfg.Kiosk.Unit, *mock, log), Apps: appManager, Photos: photoService,
 		Input: phoneInput, TV: tvService, Version: version, NewRunner: newRunner,
-		Notices: notices, URLFile: server.URLFile(),
+		Notices: notices, URLFile: server.URLFile(), Settings: store, BaseListen: baseListen,
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if len(exitKeys) > 0 && len(cfg.Apps) > 0 {
-		watcher := &input.Watcher{
-			Keys: exitKeys, Hold: cfg.Input.AppExitHold.Duration, Log: log,
-			Active: func() bool { return appManager.Status().Running != "" },
-			OnExit: func() {
-				log.Info("exit key held on the remote: closing the app")
+	if !*mock {
+		remote := &input.Remote{
+			Actions: remoteActions, ExitKeys: exitKeys, Hold: cfg.Input.AppExitHold.Duration, Log: log,
+			AppRunning: func() bool { return appManager.Status().Running != "" },
+			OnAction:   srv.RemoteAction,
+			OnAppExit: func() {
+				log.Info("Back held on the remote: closing the app")
 				if err := appManager.Stop(context.Background()); err != nil {
 					log.Warn("closing the app", "err", err)
 				}
 			},
+			Tap: phoneInput.Tap,
 		}
-		go watcher.Run(ctx)
+		go remote.Run(ctx)
 	}
 
 	log.Info("pidash starting", "version", version, "config", *cfgPath)
-	if err := srv.Run(ctx); err != nil {
+	err = srv.Run(ctx)
+	if errors.Is(err, server.ErrRestart) {
+		// Start again in place to apply saved settings. Under systemd the
+		// service simply keeps running, with the same process id.
+		phoneInput.Close()
+		stop()
+		exe, exeErr := os.Executable()
+		if exeErr == nil {
+			log.Info("restarting to apply the saved settings")
+			exeErr = syscall.Exec(exe, os.Args, os.Environ())
+		}
+		log.Error("could not restart in place", "err", exeErr)
+		os.Exit(1) // systemd starts it again
+	}
+	if err != nil {
 		log.Error("server", "err", err)
 		os.Exit(1)
 	}

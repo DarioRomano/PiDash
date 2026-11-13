@@ -1,7 +1,8 @@
 # udev rule: /etc/udev/rules.d/70-pidash-uinput.rules
-# Installed only by `install.sh --phone-input`.
+# Installed by PiDash's install.sh; removed by its uninstall.sh.
 #
-# Lets members of the "input" group create virtual input devices, which is how
-# the PiDash phone remote acts as a mouse and keyboard. On Raspberry Pi OS the
-# first user is in that group already.
+# Lets members of the "input" group create virtual input devices. PiDash uses
+# one to pass the TV remote's OK and Back buttons on to apps as Enter and
+# Escape, and, if switched on, to let the phone act as mouse and keyboard.
+# On Raspberry Pi OS the first user is in the "input" group already.
 KERNEL=="uinput", SUBSYSTEM=="misc", GROUP="input", MODE="0660", OPTIONS+="static_node=uinput"

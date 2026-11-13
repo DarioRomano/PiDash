@@ -24,7 +24,8 @@ a phone remote.
 PiDash runs **on top of your existing Raspberry Pi OS desktop**. Nothing is
 flashed and the boot setup is not changed. It is a fullscreen browser window
 with its own profile: close it and you are back on your desktop, exactly as you
-left it. Everything installs into your home directory and can be removed again.
+left it. It installs into your home directory, plus one small system rule for
+the TV remote, and can be removed again.
 
 Requirements: a Raspberry Pi 5 running Raspberry Pi OS with desktop (Bookworm or
 newer), connected to the TV and to the internet.
@@ -86,7 +87,9 @@ What the installer does:
 | Browser profiles of website apps (created on first launch) | `~/.local/share/pidash/profiles/` |
 | Chosen photo folders, and prepared photos | `~/.local/share/pidash/photos-selection.json`, `~/.cache/pidash/photos/` |
 | Only with `--console-apps` | three system files, see [Apps](#apps) |
-| Only with `--phone-input` | one udev rule, and `wtype`/`xdotool` for typing, see [Phone as mouse and keyboard](#phone-as-mouse-and-keyboard) |
+| One system rule, so the TV remote's buttons reach apps | `/etc/udev/rules.d/70-pidash-uinput.rules` |
+| What you save on the settings page | `~/.config/pidash/settings.json` |
+| Only with `--phone-input` | `wtype`/`xdotool` for typing, see [Phone as mouse and keyboard](#phone-as-mouse-and-keyboard) |
 
 ## Using it
 
@@ -97,8 +100,9 @@ What the installer does:
 | See the full forecast | Press **OK**, then **OK** again on the **Weather** tile. **Back** closes it |
 | Choose the background photos | Open `http://<pi-ip>:8080/photos`, or tap **Background photos** on the phone remote |
 | Flip through photos | ◀ ▶ on the dashboard. Play/pause holds the current photo. ▲ shows its folder and date |
+| Change settings | Choose **Settings** in the app row, press **S**, or open `http://<pi-ip>:8080/settings` on your phone. See [Settings](#settings) |
 | Launch an app | Press **OK** on the dashboard to open the app row, choose with ◀ ▶ and press OK. Or tap the app on the phone remote |
-| Get back from an app | **Hold Back for 2 seconds** on the TV remote, quit the app, or tap **Back to dashboard** on the phone remote |
+| Get back from an app | **Hold Back for 2 seconds** on the TV remote, hold **Esc** on a keyboard, or tap **Back to dashboard** on the phone remote |
 | Use the phone as mouse and keyboard | Switch it on once (see [Phone as mouse and keyboard](#phone-as-mouse-and-keyboard)), then use the touchpad on the phone remote |
 | Switch the TV on or off | **TV on** / **TV off** on the phone remote, or a daily schedule (see [TV power schedule](#tv-power-schedule)) |
 | Go back to the desktop | **Hold Back for 2 seconds** on the TV remote, press **Alt+F4** or **F10** on a keyboard, or tap **Exit to desktop** on the phone remote |
@@ -151,6 +155,50 @@ Desktop. Both fade away again after a few seconds.
 
 With the [phone as mouse](#phone-as-mouse-and-keyboard), the same works from the
 sofa.
+
+### Settings
+
+Weather, background photos and apps are set up on the settings page. It needs
+typing, so it is made for your phone or computer:
+
+- **On your phone or computer:** open `http://<pi-ip>:8080/settings`. It is
+  also linked at the bottom of the phone remote.
+- **On the TV:** choose **Settings** in the app row, or press **S**. The TV
+  shows the address to open. With a mouse and keyboard on the Pi, pressing OK
+  opens the page right there.
+
+What it covers:
+
+- **Weather:** your town and the units. **Check town** shows which place the
+  weather service found before you save.
+- **Background photos:** where photos come from, the connection to Synology
+  Photos with a **Test connection** button, the picture quality, and how long
+  each photo stays. After saving, **Choose folders** takes you to the folder
+  picker.
+- **Apps:** the app row. Add from a list of ready-made apps (YouTube, Netflix,
+  Synology Photos, Plex, Moonlight, Kodi, Steam Link) or any website by
+  address, reorder them, and remove them.
+
+Press **Save**. PiDash restarts itself to apply the changes, which takes a few
+seconds, and the TV reloads.
+
+How it fits with `config.toml`:
+
+- What you save is stored in `~/.config/pidash/settings.json`, next to
+  `config.toml`, and takes precedence over the same sections there. The page
+  never rewrites `config.toml`. Delete `settings.json` to return to exactly
+  what `config.toml` says.
+- The page can add programs only from its ready-made list. A program with your
+  own command still has to be written into `config.toml`; it then appears on
+  the page to reorder or remove. This is deliberate: the page is reachable from
+  your home network and must not be a way to run commands on the Pi.
+- The NAS password is never sent back to the page, and `settings.json` is
+  readable by your user only.
+- If a PIN is set under `[remote]`, saving and the connection test ask for it.
+- Everything else, such as the TV schedule, keys and the phone's mouse mode,
+  stays in `config.toml`.
+
+The sections below describe the same settings as they appear in `config.toml`.
 
 ### Weather
 
@@ -384,28 +432,34 @@ uninstaller removes all three.
 To leave a console app, hold Back on the TV remote for two seconds, use the
 app's own quit shortcut, or tap **Back to dashboard** on the phone remote.
 
-#### Leaving an app with the TV remote
+#### The TV remote inside apps
 
-While an app is open, **holding Back for two seconds** closes it and returns to
-the dashboard. PiDash reads the remote directly for this, so it works in every
-app, including ones that run outside the desktop.
+A TV remote's **OK** and **Back** buttons are not keyboard keys, so apps such
+as YouTube and Netflix would ignore them. PiDash reads the remote itself and
+fills the gap:
 
-- It needs your user to be in the `input` group, which is the case for the
-  first user on Raspberry Pi OS. The installer tells you if it is not.
-- Which button counts is set by `app_exit_keys` under `[input]` in the
-  settings. Most TV remotes send `KEY_EXIT` for Back, Exit or Return, which is
-  the default together with `KEY_BACK`.
-- Some TVs do not report that a button is being held. If holding does nothing,
-  choose a button you do not otherwise need, such as a colour key, and make it
-  act at once:
+- **OK** is passed on to the app as Enter, and **Back** as Escape. The number
+  buttons are passed on as numbers. Arrows already work by themselves.
+- **Holding Back for two seconds** closes the app and returns to the dashboard.
+  Holding **Esc** on a keyboard does the same.
 
-  ```toml
-  [input]
-  app_exit_keys = ["KEY_RED"]
-  app_exit_hold = "0s"
-  ```
+This works in every app, including ones that run outside the desktop. It needs
+your user to be in the `input` group, which is the case for the first user on
+Raspberry Pi OS, and the one system rule the installer adds. The installer and
+`doctor.sh` tell you if either is missing.
 
-  `sudo apt install evtest && sudo evtest` shows the name of any button you press.
+Some TVs do not report that a button is being held, or report it as a quick
+series of presses. PiDash copes with the second kind. If holding Back still
+does nothing, pick a button you do not otherwise need, such as a colour key,
+and make it act at once:
+
+```toml
+[input]
+app_exit_keys = ["KEY_RED"]
+app_exit_hold = "0s"
+```
+
+`sudo apt install evtest && sudo evtest` shows the name of any button you press.
 
 #### Icons
 
@@ -439,22 +493,20 @@ can move the mouse and type on the Pi's desktop, which amounts to full control
 of that desktop. It is off by default. Leave it off on a network you share with
 people you do not trust, or set a PIN.
 
-To switch it on:
-
-```sh
-bash deploy/install.sh --phone-input      # once; from another computer: make install INSTALL_FLAGS=--phone-input
-```
+To switch it on, set this in `~/.config/pidash/config.toml` and run
+`systemctl --user restart pidash`:
 
 ```toml
-# ~/.config/pidash/config.toml
 [remote]
 mouse_keyboard = true
 pin = "4321"        # optional; the phone asks once and remembers it
 ```
 
-Then `systemctl --user restart pidash`. The setup step adds one system file, a
-rule that lets your user create a virtual mouse, and installs the small tool
-used for typing. The uninstaller removes the rule.
+For typing text from the phone, install the small typing tool once:
+
+```sh
+bash ~/.local/share/pidash/update.sh --phone-input
+```
 
 On the phone remote you then get:
 
@@ -502,17 +554,29 @@ To try what your TV supports, on the Pi:
 ~/.local/share/pidash/pidash -cec on
 ```
 
-### Mapping your TV remote
+### The TV remote on the dashboard
 
 Enable CEC on the TV (Samsung "Anynet+", LG "Simplink", Sony "Bravia Sync",
 Philips "EasyLink", etc.). When the dashboard starts it registers the Pi with
 the TV and asks it to switch to the Pi's input; from then on the TV forwards
 remote key presses to the Pi.
 
-With `display.debug_keys = true` (the default) the dashboard shows the raw key
-code of every press in the top-right corner. Put the codes you see into
-`[input.keys]` in the config, mapped to the actions
-`up down left right select back menu home playpause exit 0-9`.
+The arrows, OK, Back, the number buttons, play/pause, menu and channel up/down
+work without any setup. OK and Back are not keyboard keys, so PiDash reads them
+from the remote directly rather than through the browser.
+
+To give other buttons a job, for example the colour keys, add them by their
+Linux key name:
+
+```toml
+[input.remote_keys]
+KEY_RED = "weather"
+KEY_BLUE = "settings"
+```
+
+`sudo apt install evtest && sudo evtest` shows the name of any button you
+press. With `display.debug_keys = true` (the default) the dashboard also shows
+in the top-right corner what each press was understood as.
 
 Check CEC from a terminal on the Pi:
 
@@ -549,9 +613,10 @@ programs occupy the nearby ports, the state and recent log of both services,
 and whether the TV answers over HDMI-CEC. Paste its output when asking for help.
 
 **The phone remote is not at port 8080.** If another program on the Pi already
-uses port 8080, PiDash takes the next free port instead of failing, and says so
-on the TV and at the end of the installer. To pick the port yourself and keep it
-fixed, set it in the settings and restart:
+uses port 8080, PiDash takes the next free port instead of failing. It says so
+once, on the TV and at the end of the installer, and then remembers that port
+and uses it from then on. To pick the port yourself, set it in `config.toml`
+and restart:
 
 ```toml
 [server]
@@ -565,6 +630,12 @@ settings and shows what is wrong. To check the file without restarting:
 ```sh
 ~/.local/share/pidash/pidash -config ~/.config/pidash/config.toml -check-config
 ```
+
+**The TV remote's OK or Back does nothing.** Run `doctor.sh` and look at the
+"TV remote and keyboards" part. It shows whether PiDash can read the input
+devices, which needs your user in the `input` group, and whether the virtual
+keyboard is allowed, which the installer sets up. Running the update again
+repairs both where it can.
 
 **Looking at the services directly:**
 
@@ -641,7 +712,8 @@ web/                 Vite + TypeScript frontend (dashboard + phone remote)
 internal/kiosk/      start/stop the fullscreen browser (systemd user unit)
 internal/apps/       app launcher (desktop and console modes)
 internal/photos/     background slideshow: Synology Photos and folder sources, rendering, cache
-internal/input/      phone as virtual mouse and keyboard; TV remote long-press watcher
+internal/input/      TV remote handling (key map, passing buttons on to apps, hold to exit); phone as mouse and keyboard
+internal/settings/   what the settings page saves, laid over config.toml
 internal/cec/        HDMI-CEC through cec-ctl: register with the TV, power on/off
 internal/tv/         daily TV power schedule
 deploy/              the installer run on the Pi, uninstaller, systemd units, kiosk launcher
