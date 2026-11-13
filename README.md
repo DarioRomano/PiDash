@@ -68,6 +68,14 @@ settings, chosen photo folders, app logins and the options you installed with
 are kept. The dashboard on the TV reloads by itself when the new version
 starts. The phone remote shows the installed version at the bottom.
 
+**Automatic updates.** On the settings page under **Updates** you can see
+which version runs and whether a newer one exists, install it with one
+button, or switch on **Install new versions automatically**. PiDash then
+looks for a release a few times a day and installs it between three and five
+at night, never while an app is open. It runs the same updater as above.
+Steps that need administrator rights only run where `sudo` works without a
+password, as it does by default on Raspberry Pi OS.
+
 ### Uninstalling
 
 ```sh
@@ -177,6 +185,10 @@ What it covers:
   each photo stays, whether photos move, and whether two upright photos
   share the screen (see below). After saving, **Choose folders and albums**
   takes you to the picker.
+- **Calendar:** links of the calendars whose next events the TV shows, with
+  a **Check link** button.
+- **Smart home:** the connection to Home Assistant and which of its devices
+  appear as tiles in the app row.
 - **Night:** hours in which the TV shows only a dim clock on black. Any button
   brings the dashboard back for a minute.
 - **Apps:** the app row. Websites have a **size** next to them: 150% or 200%
@@ -205,6 +217,9 @@ The settings page can be opened by anyone on your home network, so it only
 lets them pick a program by name. The command always comes from the menu entry
 on the Pi itself. A program that needs its own command or options still goes
 into `config.toml`.
+
+- **Updates:** which version runs, whether a newer one exists, a button to
+  install it, and a switch to have that done automatically at night.
 
 Press **Save**. PiDash restarts itself to apply the changes, which takes a few
 seconds, and the TV reloads.
@@ -270,6 +285,53 @@ Weather data comes from [Open-Meteo](https://open-meteo.com), which is free for
 personal use and needs no account. If the internet is down, the last forecast
 stays on screen, and the detail view says when it was last updated. Times such
 as sunrise are shown in the local time of the place you configured.
+
+### Calendar
+
+PiDash shows your next events at the bottom right, grouped under Today,
+Tomorrow and the days after. It reads calendars through their link, which
+every common calendar offers:
+
+| Calendar | Where the link is |
+|---|---|
+| Google Calendar | Settings of the calendar, "Secret address in iCal format" |
+| iCloud | Share the calendar as a public calendar and copy its link |
+| Outlook.com | Settings, Calendar, Shared calendars, publish, the ICS link |
+| Synology Calendar | Publish the calendar and copy its link |
+
+Add the link on the settings page under **Calendar**; **Check link** tells you
+how many events it finds. Several calendars can be combined. Repeating
+events, single moved or cancelled dates and all-day events are understood.
+The list is read again every 15 minutes.
+
+Whoever has such a link can read the calendar. PiDash stores it on the Pi in a
+file only your user can read, and the settings page never shows it again,
+only the name of the server it leads to.
+
+### Smart home
+
+With Home Assistant, lights, plugs, covers, scenes, scripts and sensor values
+can sit in the app row as tiles. **OK** switches a light or plug, opens or
+closes a cover, or runs a scene or script; a tile for a sensor shows its
+value.
+
+1. In Home Assistant, open your profile, then **Security**, and create a
+   **long-lived access token**.
+2. On the settings page under **Smart home**, enter Home Assistant's address
+   and the token, and press **Connect and list devices**.
+3. Pick the devices you want from the list, add them, and save.
+
+Locks and alarm panels are never offered: a remote lying on the sofa should
+not open the door. Only the tiles you put on the app row can be switched
+from PiDash. The token stays on the Pi and is never shown again.
+
+### Night mode
+
+Between two times of day, set on the settings page under **Night**, the TV
+shows only a dim clock on black: no photos, no weather, no calendar. Any
+button brings the dashboard back for a minute; the press that wakes it does
+nothing else. This is separate from the [TV power schedule](#tv-power-schedule),
+which switches the TV itself off.
 
 ### Background without photos
 

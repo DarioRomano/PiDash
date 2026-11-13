@@ -198,8 +198,14 @@
 
       <section class="card">
         <h2>Updates</h2>
-        <label class="check"><input id="sys-auto" type="checkbox" /><span>Install new versions automatically</span></label>
-        <p class="hint">Checked once a day and installed at night, never while an app is open.</p>
+        <p id="up-status" class="hint"></p>
+        <label class="check" id="up-auto-row"><input id="sys-auto" type="checkbox" /><span>Install new versions automatically</span></label>
+        <p class="hint" id="up-auto-hint">Installed at night, between three and five, and never while an app is open.</p>
+        <div class="pair" id="up-buttons">
+          <button id="up-check" type="button" class="secondary wide">Look for a new version</button>
+          <button id="up-install" type="button" class="secondary wide" hidden>Install it now</button>
+        </div>
+        <p id="up-result" class="result"></p>
       </section>
 
       <p id="kb-problem" class="hint warn" hidden></p>

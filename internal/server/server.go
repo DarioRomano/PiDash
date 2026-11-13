@@ -32,6 +32,7 @@ import (
 	"github.com/DarioRomano/PiDash/internal/providers/weather"
 	"github.com/DarioRomano/PiDash/internal/settings"
 	"github.com/DarioRomano/PiDash/internal/tv"
+	"github.com/DarioRomano/PiDash/internal/update"
 )
 
 // Server is the PiDash HTTP server.
@@ -45,6 +46,7 @@ type Server struct {
 	photos  *photos.Service // nil when no photo source is configured
 	input   *input.Service
 	tv      *tv.Service
+	updater *update.Service
 	pin     pinGuard
 	version string
 	urlFile string
@@ -70,6 +72,8 @@ type Deps struct {
 	Photos *photos.Service // nil when no photo source is configured
 	Input  *input.Service
 	TV     *tv.Service
+	// Updater looks for and installs new releases; may be nil.
+	Updater *update.Service
 	// Version is the PiDash version, shown on the phone remote.
 	Version string
 	// Notices are start-up problems to show on the TV.
@@ -130,6 +134,10 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("POST /api/settings/test-calendar", s.handleTestCalendar)
 	s.mux.HandleFunc("POST /api/settings/home-entities", s.handleHomeEntities)
 	s.mux.HandleFunc("POST /api/home/activate", s.handleHomeActivate)
+	s.updater = d.Updater
+	s.mux.HandleFunc("GET /api/update", s.handleUpdate)
+	s.mux.HandleFunc("POST /api/update/check", s.handleUpdate)
+	s.mux.HandleFunc("POST /api/update/install", s.handleUpdateInstall)
 	s.mux.HandleFunc("GET /settings", s.servePage("settings.html"))
 	s.mux.HandleFunc("GET /remote", s.servePage("remote.html"))
 	s.mux.HandleFunc("GET /remote/", s.servePage("remote.html"))
@@ -467,6 +475,43 @@ func (s *Server) handleTestSynology(w http.ResponseWriter, r *http.Request) {
 		names = append(names, l.Name)
 	}
 	writeJSON(w, map[string]any{"ok": true, "libraries": names})
+}
+
+// handleUpdate reports the installed and the newest version; as a POST it
+// looks for a new one first.
+func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
+	if s.updater == nil {
+		http.Error(w, "updates are not available", http.StatusNotFound)
+		return
+	}
+	if r.Method == http.MethodPost {
+		ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+		defer cancel()
+		st, _ := s.updater.Check(ctx) // a failure is part of the status
+		writeJSON(w, st)
+		return
+	}
+	writeJSON(w, s.updater.Status())
+}
+
+// handleUpdateInstall installs the newest release now.
+func (s *Server) handleUpdateInstall(w http.ResponseWriter, r *http.Request) {
+	if s.updater == nil {
+		http.Error(w, "updates are not available", http.StatusNotFound)
+		return
+	}
+	if !s.pin.allow(w, r) {
+		return
+	}
+	if s.apps.Status().Running != "" {
+		http.Error(w, "Close the open app first; the update restarts PiDash.", http.StatusConflict)
+		return
+	}
+	if err := s.updater.Install(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, s.updater.Status())
 }
 
 // handleHomeEntities connects to Home Assistant and lists what can be shown

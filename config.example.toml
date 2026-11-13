@@ -258,3 +258,28 @@ app_exit_hold = "2s"
 # Examples:
 # ColorF0Red = "exit"
 # KeyW = "none"
+
+# --- Calendar ---------------------------------------------------------------
+# The next events, shown opposite the clock. Each entry is a calendar's link
+# in iCalendar form: Google Calendar's "Secret address in iCal format",
+# iCloud's public calendar link, Synology Calendar's published link.
+# Such a link lets anyone read the calendar: keep this file private.
+[calendar]
+urls = []
+# How many days ahead to look.
+days = 14
+
+# --- Smart home -------------------------------------------------------------
+# Lights, plugs, covers, scenes, scripts and sensor values from Home Assistant
+# as tiles in the app row. The token is a "long-lived access token" from your
+# Home Assistant profile page. Locks and alarm panels are never switched.
+[homeassistant]
+url = ""          # e.g. "http://homeassistant.local:8123"
+token = ""
+entities = []     # e.g. ["light.sofa", "scene.movie_night", "sensor.living_room_temperature"]
+
+# --- Updates ----------------------------------------------------------------
+[update]
+# Install new releases automatically, between three and five at night, never
+# while an app is open.
+auto = false

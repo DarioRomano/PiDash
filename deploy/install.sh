@@ -25,6 +25,18 @@ set -euo pipefail
 # Not every way of starting a script sets USER.
 USER="${USER:-$(id -un)}"
 
+# An automatic update runs with nobody there to type a password. Steps that
+# need administrator rights then run only where sudo works without asking, as
+# it does by default on Raspberry Pi OS; elsewhere they are skipped and said so.
+# The files such steps installed earlier stay as they are.
+if [ "${PIDASH_UNATTENDED:-0}" = 1 ]; then
+  if command sudo -n true 2>/dev/null; then
+    sudo() { command sudo -n "$@"; }
+  else
+    sudo() { echo "    skipped, it needs a password: sudo $*" >&2; }
+  fi
+fi
+
 if [ "$(id -u)" -eq 0 ]; then
   echo "Run this as your normal desktop user, without sudo." >&2
   exit 1

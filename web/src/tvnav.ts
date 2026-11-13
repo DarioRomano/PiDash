@@ -4,8 +4,8 @@
 // Opened on the TV (address ending in ?from=tv) they are enlarged, and this
 // module makes them usable with nothing but arrows, OK and Back:
 //
-//   arrows  move a highlight to the nearest control in that direction;
-//           left and right also change a list's value
+//   arrows  move a highlight to the nearest control in that direction; on a
+//           list with nothing beside it, left and right change its value
 //   OK      presses a button, ticks a box, opens a list to choose from, or
 //           opens an on-screen keyboard for a text field
 //   Back    closes the keyboard or list, otherwise leaves the page
@@ -77,10 +77,12 @@ function keyPress(e: KeyboardEvent): Press | null {
       return "up";
     case "ArrowDown":
       return "down";
+    // In a text field the arrows move the cursor, and leave the field only
+    // from its end.
     case "ArrowLeft":
-      return typing ? null : "left"; // in a text field the arrows move the cursor
+      return typing && !cursorAt(e.target as HTMLInputElement, "start") ? null : "left";
     case "ArrowRight":
-      return typing ? null : "right";
+      return typing && !cursorAt(e.target as HTMLInputElement, "end") ? null : "right";
     case "Enter":
       return "select";
     case "Escape":
@@ -90,6 +92,15 @@ function keyPress(e: KeyboardEvent): Press | null {
       return isText(e.target) ? null : "back";
   }
   return null;
+}
+
+function cursorAt(input: HTMLInputElement, where: "start" | "end"): boolean {
+  try {
+    const at = where === "start" ? input.selectionStart : input.selectionEnd;
+    return at === null || at === (where === "start" ? 0 : input.value.length);
+  } catch {
+    return true; // number fields have no cursor to ask about
+  }
 }
 
 // One press of a remote button can arrive twice: as a key in the browser and
@@ -136,6 +147,14 @@ function focus(el: HTMLElement | null) {
   if (!el) return;
   el.classList.add("tv-focus");
   el.focus({ preventScroll: true });
+  if (isText(el)) {
+    // The cursor at the end: Right then goes on to what is beside the field.
+    try {
+      el.setSelectionRange(el.value.length, el.value.length);
+    } catch {
+      /* number fields */
+    }
+  }
   el.scrollIntoView({ block: "center", behavior: "smooth" });
 }
 
@@ -181,8 +200,6 @@ function page(press: Press) {
 
   if (press === "select") return activate(el);
 
-  if ((press === "left" || press === "right") && el instanceof HTMLSelectElement) return step(el, press === "right" ? 1 : -1);
-
   // The bar at the bottom of the screen (Save) is where the page ends: it is
   // reached by going down from the last control, not from wherever it happens
   // to be nearest.
@@ -196,6 +213,8 @@ function page(press: Press) {
     if (!next && press === "down") next = all.find(inBar) ?? null;
   }
   if (next) focus(next);
+  // A list with nothing beside it takes Left and Right as "previous" and "next".
+  else if ((press === "left" || press === "right") && el instanceof HTMLSelectElement) step(el, press === "right" ? 1 : -1);
 }
 
 function step(sel: HTMLSelectElement, by: number) {

@@ -30,6 +30,7 @@ import (
 	"github.com/DarioRomano/PiDash/internal/server"
 	"github.com/DarioRomano/PiDash/internal/settings"
 	"github.com/DarioRomano/PiDash/internal/tv"
+	"github.com/DarioRomano/PiDash/internal/update"
 	"github.com/DarioRomano/PiDash/web"
 )
 
@@ -224,9 +225,15 @@ func main() {
 		}
 	}
 
+	// New releases: reported on the settings page, installed at night if wanted.
+	updater := update.New(update.Options{
+		Current: version, Auto: cfg.Update.Auto, Log: log,
+		Busy: func() bool { return appManager.Status().Running != "" },
+	})
+
 	srv := server.New(cfg, log, static, server.Deps{
 		Kiosk: kiosk.New(cfg.Kiosk.Unit, *mock, log), Apps: appManager, Photos: photoService,
-		Input: phoneInput, TV: tvService, Version: version, NewRunner: newRunner,
+		Input: phoneInput, TV: tvService, Version: version, NewRunner: newRunner, Updater: updater,
 		Notices: notices, URLFile: server.URLFile(), Settings: store, BaseListen: baseListen,
 	})
 
@@ -250,6 +257,7 @@ func main() {
 		// Answer the TV's questions, so it keeps sending the remote's keys
 		// here after it was switched to another input and back.
 		go cecControl.Follow(ctx, log)
+		go updater.Run(ctx)
 	}
 
 	log.Info("pidash starting", "version", version, "config", *cfgPath)

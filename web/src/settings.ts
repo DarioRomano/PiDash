@@ -223,6 +223,7 @@ function fill(i: Info) {
   homeTiles = [...i.home.entities];
   renderHomeTiles();
   $<HTMLInputElement>("sys-auto").checked = i.system.autoUpdate;
+  void loadUpdate();
 
   const kb = $("kb-problem");
   kb.hidden = !i.keyboardProblem;
@@ -234,6 +235,70 @@ function fill(i: Info) {
   savedState = JSON.stringify(readForm());
   refresh();
 }
+
+// --- Updates -----------------------------------------------------------------------------
+
+interface UpdateStatus {
+  current: string;
+  latest?: string;
+  available: boolean;
+  possible: boolean;
+  reason?: string;
+  installing: boolean;
+  error?: string;
+}
+
+function showUpdate(st: UpdateStatus) {
+  let text = `This is PiDash ${st.current}.`;
+  if (!st.possible) text += ` ${st.reason ?? ""}`;
+  else if (st.installing) text += " An update is being installed; PiDash restarts by itself.";
+  else if (st.available) text += ` ${st.latest} is available.`;
+  else if (st.latest) text += " That is the newest version.";
+  $("up-status").textContent = text;
+  for (const id of ["up-auto-row", "up-auto-hint", "up-buttons"]) $(id).hidden = !st.possible;
+  $("up-install").hidden = !st.available || st.installing;
+  setResult($("up-result"), st.error ?? "", st.error ? "error" : "");
+}
+
+async function loadUpdate() {
+  try {
+    const res = await fetch("/api/update", { cache: "no-store" });
+    if (res.ok) showUpdate(await res.json());
+  } catch {
+    /* the card keeps its last text */
+  }
+}
+
+$("up-check").addEventListener("click", async () => {
+  setResult($("up-result"), "Looking…");
+  try {
+    const res = await send("POST", "/api/update/check", {});
+    if (res.ok) showUpdate(await res.json());
+  } catch {
+    setResult($("up-result"), "The Pi did not answer.", "error");
+  }
+});
+
+$("up-install").addEventListener("click", async () => {
+  setResult($("up-result"), "Starting the update…");
+  try {
+    const res = await send("POST", "/api/update/install", {});
+    if (!res.ok) return setResult($("up-result"), (await res.text()).trim(), "error");
+    showUpdate(await res.json());
+    // The page comes back by itself once the new version runs.
+    const before = await startedAt();
+    for (let i = 0; i < 150; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      try {
+        if ((await startedAt()) !== before) return location.reload();
+      } catch {
+        /* restarting */
+      }
+    }
+  } catch {
+    setResult($("up-result"), "The Pi did not answer.", "error");
+  }
+});
 
 // --- Calendar and smart home ----------------------------------------------------------
 
