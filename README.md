@@ -104,7 +104,7 @@ What the installer does:
 | Go back to the desktop | **Hold Back for 2 seconds** on the TV remote, press **Alt+F4** or **F10** on a keyboard, or tap **Exit to desktop** on the phone remote |
 | Use the phone remote | Open `http://<pi-ip>:8080/remote` on any device on your network |
 | Change settings | Edit `~/.config/pidash/config.toml`, then `systemctl --user restart pidash` |
-| See logs | `journalctl --user -u pidash -u pidash-kiosk -f` |
+| Find out why something does not work | `bash ~/.local/share/pidash/doctor.sh`, see [Troubleshooting](#troubleshooting) |
 | Uninstall | `bash ~/.local/share/pidash/uninstall.sh` (add `--purge` to delete settings too) |
 
 The screen stays awake while the dashboard is showing; your normal screen
@@ -424,8 +424,8 @@ You do not need to configure icons. PiDash picks one for each app in this order:
 If an app does not start, the TV shows a message. Details are in the logs:
 
 ```sh
-journalctl --user -u 'pidash-app-*' -e        # websites and desktop-mode programs
-journalctl -u 'pidash-console@*' -e           # console-mode programs
+systemctl --user status 'pidash-app-*' -l --no-pager   # websites and desktop-mode programs
+journalctl -u 'pidash-console@*' -e                    # console-mode programs
 ```
 
 ### Phone as mouse and keyboard
@@ -532,6 +532,45 @@ ssh -L 9222:localhost:9222 pi@raspberrypi.local
 
 Then open `chrome://inspect` in Chrome on the laptop and pick the PiDash page to
 profile paint and layout on the real device.
+
+## Troubleshooting
+
+**Nothing happens when I start PiDash.** The menu entry shows an error window
+if the dashboard cannot start. For the full picture, run:
+
+```sh
+bash ~/.local/share/pidash/doctor.sh
+```
+
+It only reads, changes nothing, and does not print passwords. It reports the
+PiDash version, your desktop session, the browsers it found, whether the
+settings file is valid, whether the backend answers and on which port, which
+programs occupy the nearby ports, the state and recent log of both services,
+and whether the TV answers over HDMI-CEC. Paste its output when asking for help.
+
+**The phone remote is not at port 8080.** If another program on the Pi already
+uses port 8080, PiDash takes the next free port instead of failing, and says so
+on the TV and at the end of the installer. To pick the port yourself and keep it
+fixed, set it in the settings and restart:
+
+```toml
+[server]
+listen = ":8686"
+```
+
+**A message about the settings file appears on the TV.** A mistake in
+`~/.config/pidash/config.toml` no longer stops PiDash: it runs with its built-in
+settings and shows what is wrong. To check the file without restarting:
+
+```sh
+~/.local/share/pidash/pidash -config ~/.config/pidash/config.toml -check-config
+```
+
+**Looking at the services directly:**
+
+```sh
+systemctl --user status pidash pidash-kiosk -l --no-pager
+```
 
 ## Development
 

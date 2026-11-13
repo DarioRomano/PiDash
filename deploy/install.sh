@@ -99,7 +99,7 @@ mkdir -p "$APP_DIR" "$CONF_DIR" "$UNIT_DIR" "$MENU_DIR"
 # Install to a temp name and rename, so a running backend is replaced atomically.
 install -m 0755 "$BINARY" "$APP_DIR/pidash.new"
 mv -f "$APP_DIR/pidash.new" "$APP_DIR/pidash"
-install -m 0755 "$HERE/kiosk.sh" "$APP_DIR/"
+install -m 0755 "$HERE/kiosk.sh" "$HERE/launch.sh" "$HERE/doctor.sh" "$APP_DIR/"
 rm -f "$APP_DIR/cec-setup.sh"   # replaced by "pidash -cec setup"
 if [ -f "$HERE/uninstall.sh" ]; then install -m 0755 "$HERE/uninstall.sh" "$APP_DIR/"; fi
 # The updater: fetches the latest release and runs its installer with the same options.
@@ -116,14 +116,38 @@ chmod 600 "$CONF_DIR/config.toml"
 
 echo "==> Installing user services and menu entry"
 install -m 0644 "$HERE/pidash.service" "$HERE/pidash-kiosk.service" "$UNIT_DIR/"
-install -m 0644 "$HERE/pidash.desktop" "$MENU_DIR/pidash.desktop"
+# The menu entry needs the full path of the launcher.
+sed "s|@APP_DIR@|$APP_DIR|g" "$HERE/pidash.desktop" > "$MENU_DIR/pidash.desktop"
 systemctl --user daemon-reload
 systemctl --user enable pidash.service >/dev/null
 systemctl --user restart pidash.service
 
+# Make sure the backend really came up, and learn which port it is on: it
+# moves to the next free one when 8080 is taken by another program.
+URL_FILE="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/pidash/url"
+PORT=""
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+  if [ -s "$URL_FILE" ]; then
+    url="$(head -n 1 "$URL_FILE")"
+    if curl -fs -o /dev/null "${url%/}/healthz" 2>/dev/null; then
+      PORT="$(printf '%s' "$url" | sed -n 's|.*:\([0-9][0-9]*\)/*$|\1|p')"
+      break
+    fi
+  fi
+  sleep 1
+done
+if [ -z "$PORT" ]; then
+  echo
+  echo "WARNING: PiDash is installed, but its backend did not start."
+  echo "         Run this to see why:  bash $APP_DIR/doctor.sh"
+  PORT=8080
+elif [ "$PORT" != "8080" ]; then
+  echo "    port 8080 is used by another program on this Pi; PiDash is using port $PORT"
+fi
+
 if [ "$AUTOSTART" -eq 1 ]; then
   mkdir -p "$AUTOSTART_DIR"
-  install -m 0644 "$HERE/pidash.desktop" "$AUTOSTART_DIR/pidash.desktop"
+  sed "s|@APP_DIR@|$APP_DIR|g" "$HERE/pidash.desktop" > "$AUTOSTART_DIR/pidash.desktop"
   echo "    autostart enabled (remove $AUTOSTART_DIR/pidash.desktop to disable)"
 fi
 
@@ -174,12 +198,12 @@ PiDash $("$APP_DIR/pidash" -version 2>/dev/null | awk '{print $2}') is installed
                      systemctl --user start pidash-kiosk
   Back to desktop  : hold Back on the TV remote for 2 seconds, press Alt+F4,
                      or use the phone remote
-  Phone remote     : http://${IP:-<pi-ip>}:8080/remote
+  Phone remote     : http://${IP:-<pi-ip>}:$PORT/remote
   Apps             : press OK on the dashboard; add them under [[apps]] in the settings
   Background photos: set [photos] in the settings, then pick folders at
-                     http://${IP:-<pi-ip>}:8080/photos
+                     http://${IP:-<pi-ip>}:$PORT/photos
   Settings         : $CONF_DIR/config.toml  (then: systemctl --user restart pidash)
-  Logs             : journalctl --user -u pidash -u pidash-kiosk -f
+  If it does not start: bash $APP_DIR/doctor.sh
   Update           : bash $APP_DIR/update.sh
   Uninstall        : bash $APP_DIR/uninstall.sh
 MSG

@@ -14,8 +14,10 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DarioRomano/PiDash/internal/apps"
@@ -40,8 +42,12 @@ type Server struct {
 	tv      *tv.Service
 	pin     pinGuard
 	version string
+	urlFile string
 	static  fs.FS
-	mux     *http.ServeMux
+
+	noticeMu sync.Mutex
+	notices  []string
+	mux      *http.ServeMux
 }
 
 // Deps are the services the HTTP server exposes.
@@ -53,6 +59,11 @@ type Deps struct {
 	TV     *tv.Service
 	// Version is the PiDash version, shown on the phone remote.
 	Version string
+	// Notices are start-up problems to show on the TV.
+	Notices []string
+	// URLFile is where the address actually in use is recorded for the
+	// launcher; empty to skip.
+	URLFile string
 	// NewRunner builds the provider runner around the server's publish function.
 	NewRunner func(publish func(providers.Entry)) *providers.Runner
 }
@@ -61,7 +72,8 @@ type Deps struct {
 func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	k, am, ps, newRunner := d.Kiosk, d.Apps, d.Photos, d.NewRunner
 	s := &Server{cfg: cfg, log: log, hub: newHub(), kiosk: k, apps: am, photos: ps, input: d.Input, tv: d.TV,
-		pin: pinGuard{pin: cfg.Remote.PIN}, version: d.Version, static: static, mux: http.NewServeMux()}
+		pin: pinGuard{pin: cfg.Remote.PIN}, version: d.Version, urlFile: d.URLFile, notices: d.Notices,
+		static: static, mux: http.NewServeMux()}
 	s.runner = newRunner(func(e providers.Entry) { s.hub.broadcast("state", e) })
 
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
@@ -113,11 +125,21 @@ func (s *Server) Run(ctx context.Context) error {
 		// dashboard's open event stream would hold up every restart.
 		BaseContext: func(net.Listener) context.Context { return ctx },
 	}
-	ln, err := net.Listen("tcp", s.cfg.Server.Listen)
+	ln, wanted, port, err := listen(s.cfg.Server.Listen)
 	if err != nil {
 		return err
 	}
 	s.log.Info("listening", "addr", ln.Addr().String())
+	if port != wanted {
+		s.log.Warn("the configured port is used by another program; using the next free one", "configured", wanted, "using", port)
+		s.addNotice(fmt.Sprintf("Port %d is already used by another program on this Pi, so PiDash is using port %d. The phone remote is now at port %d. To keep it there, set listen = \":%d\" under [server] in the settings.", wanted, port, port, port))
+	}
+	// Tell the launcher where the dashboard really is.
+	if err := writeURLFile(s.urlFile, port); err != nil {
+		s.log.Warn("could not record the dashboard address", "file", s.urlFile, "err", err)
+	} else if s.urlFile != "" {
+		defer os.Remove(s.urlFile)
+	}
 
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
@@ -139,10 +161,19 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "clients": s.hub.count(), "version": s.version})
 }
 
+func (s *Server) addNotice(text string) {
+	s.noticeMu.Lock()
+	s.notices = append(s.notices, text)
+	s.noticeMu.Unlock()
+}
+
 // clientConfig is what the dashboard needs to know about the settings.
 func (s *Server) clientConfig() config.Client {
 	c := s.cfg.ForClient()
 	c.Version = s.version
+	s.noticeMu.Lock()
+	c.Notices = append([]string{}, s.notices...)
+	s.noticeMu.Unlock()
 	return c
 }
 

@@ -372,6 +372,14 @@ one command to publish.
   new version in its first event and reloads, so the TV never runs an old page
   against a new backend. Shutdown closes open event streams, so restarts are
   immediate.
+- **Failing visibly.** The first install on real hardware found the backend
+  crash-looping on a port that was already taken, with nothing on screen. Since
+  then: the backend moves to the next free port and records its address in
+  `$XDG_RUNTIME_DIR/pidash/url`, which the launcher reads instead of assuming
+  a port; a broken settings file makes it run on defaults and say so on the TV;
+  the menu entry shows an error window when the dashboard does not come up;
+  the installer verifies the backend started and prints the real port; and
+  `doctor.sh` gathers a read-only diagnostic report.
 - **CI** runs lint (Go, TypeScript, shellcheck), tests with the race detector
   and a package build on every push and pull request.
 

@@ -40,6 +40,7 @@ func main() {
 		showVer   = flag.Bool("version", false, "print version and exit")
 		execApp   = flag.String("exec-app", "", "internal: replace this process with the configured app of this id")
 		cecCmd    = flag.String("cec", "", "talk to the TV over HDMI-CEC and exit: setup, on, off or status")
+		checkCfg  = flag.Bool("check-config", false, "check the settings file given with -config and exit")
 	)
 	flag.Parse()
 
@@ -59,9 +60,26 @@ func main() {
 	}
 
 	cfg, err := config.Load(*cfgPath)
+	if *checkCfg {
+		if err != nil {
+			fmt.Println("Problem in the settings:", err)
+			os.Exit(2)
+		}
+		fmt.Println("The settings file is fine.")
+		return
+	}
+	// Things the person at the TV should be told about.
+	var notices []string
 	if err != nil {
-		log.Error("config", "err", err)
-		os.Exit(2)
+		if *execApp != "" {
+			log.Error("config", "err", err)
+			os.Exit(2)
+		}
+		// A typo in the settings must not leave the TV dark with no hint why:
+		// run with the built-in settings and say what is wrong on screen.
+		log.Error("config: running with default settings until this is fixed", "err", err)
+		notices = append(notices, "There is a mistake in the settings file, so PiDash is running with its default settings until it is fixed: "+err.Error())
+		cfg = config.Default()
 	}
 	if *execApp != "" {
 		// Does not return on success.
@@ -157,7 +175,8 @@ func main() {
 		code, err := input.ParseKey(name)
 		if err != nil {
 			log.Error("config: input.app_exit_keys", "err", err)
-			os.Exit(2)
+			notices = append(notices, "Settings: input.app_exit_keys: "+err.Error())
+			continue
 		}
 		exitKeys = append(exitKeys, code)
 	}
@@ -165,6 +184,7 @@ func main() {
 	srv := server.New(cfg, log, static, server.Deps{
 		Kiosk: kiosk.New(cfg.Kiosk.Unit, *mock, log), Apps: appManager, Photos: photoService,
 		Input: phoneInput, TV: tvService, Version: version, NewRunner: newRunner,
+		Notices: notices, URLFile: server.URLFile(),
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

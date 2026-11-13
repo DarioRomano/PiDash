@@ -12,6 +12,7 @@ export interface ClientConfig {
   display: DisplayConfig;
   keys: Record<string, string>;
   version: string;
+  notices: string[];
 }
 
 export interface StateEntry<T = unknown> {

@@ -45,6 +45,8 @@ rm -f "$HOME/.local/share/pidash/pidash" \
       "$HOME/.local/share/pidash/kiosk.sh" \
       "$HOME/.local/share/pidash/cec-setup.sh" \
       "$HOME/.local/share/pidash/update.sh" \
+      "$HOME/.local/share/pidash/launch.sh" \
+      "$HOME/.local/share/pidash/doctor.sh" \
       "$HOME/.local/share/pidash/install-flags" \
       "$HOME/.local/share/pidash/cec-setup.sh" \
       "$HOME/.local/share/pidash/uninstall.sh"

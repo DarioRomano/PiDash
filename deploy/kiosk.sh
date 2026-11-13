@@ -5,7 +5,6 @@
 # Installed to ~/.local/share/pidash/kiosk.sh and run by pidash-kiosk.service.
 set -eu
 
-URL="${PIDASH_URL:-http://127.0.0.1:8080/}"
 PROFILE="${XDG_CACHE_HOME:-$HOME/.cache}/pidash-chromium"
 mkdir -p "$PROFILE"
 
@@ -44,12 +43,28 @@ if [ -f "$PREFS" ]; then
   sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/; s/"exited_cleanly":false/"exited_cleanly":true/' "$PREFS" || true
 fi
 
+# Where is the dashboard? The backend records its real address when it starts:
+# normally port 8080, another one if that was taken. PIDASH_URL overrides it.
+URL_FILE="$XDG_RUNTIME_DIR/pidash/url"
+dashboard_url() {
+  if [ -n "${PIDASH_URL:-}" ]; then
+    echo "$PIDASH_URL"
+  elif [ -s "$URL_FILE" ]; then
+    head -n 1 "$URL_FILE"
+  else
+    echo "http://127.0.0.1:8080/"
+  fi
+}
+
 # Wait for the backend so the browser never opens on an error page.
 i=0
-until curl -fs -o /dev/null "${URL%/}/healthz"; do
+while :; do
+  URL="$(dashboard_url)"
+  if curl -fs -o /dev/null "${URL%/}/healthz"; then break; fi
   i=$((i + 1))
   if [ "$i" -ge 30 ]; then
-    echo "PiDash backend not reachable at $URL (check: systemctl --user status pidash)" >&2
+    echo "The PiDash backend is not answering at $URL." >&2
+    echo "Run this to see why:  bash ~/.local/share/pidash/doctor.sh" >&2
     exit 1
   fi
   sleep 1

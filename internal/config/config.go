@@ -449,6 +449,9 @@ type Client struct {
 	// Version is the running PiDash version. The dashboard reloads itself
 	// when it changes, so an update reaches the TV without a restart.
 	Version string `json:"version"`
+	// Notices are problems the person at the TV should know about, such as a
+	// mistake in the settings file or a port that was already taken.
+	Notices []string `json:"notices"`
 }
 
 // ForClient returns the browser-facing view of the configuration.

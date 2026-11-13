@@ -241,6 +241,7 @@ async function activateRailItem(item: RailItem) {
 let pixelShiftTimer = 0;
 
 let runningVersion = "";
+let shownNotice = "";
 
 function applyConfig(cfg: ClientConfig) {
   // After an update the backend restarts with a new version: load the new
@@ -250,6 +251,10 @@ function applyConfig(cfg: ClientConfig) {
     return;
   }
   runningVersion = cfg.version;
+  // Start-up problems, such as a settings mistake or a port that was taken.
+  const notice = (cfg.notices ?? []).join("  ·  ");
+  if (notice && notice !== shownNotice) toast(notice, 45000);
+  shownNotice = notice;
   const d = cfg.display;
   document.documentElement.style.setProperty("--safe", `${(d.safe_area * 100).toFixed(2)}%`);
   clock.configure(d.clock_24h, d.locale);
