@@ -1,23 +1,60 @@
 name: Release
 
-# Publishes a GitHub release when a version tag is pushed:
-#   make release VERSION=v0.2.0
-# The packages attached here are what install.sh and every Pi's update.sh download.
+# Publishes a GitHub release. The packages attached here are what install.sh
+# and every Pi's update.sh download.
+#
+# Two ways to start it:
+#   - On GitHub: Actions -> Release -> "Run workflow", and enter the version.
+#     The workflow creates the tag on the default branch itself.
+#   - From a checkout: make release VERSION=v0.2.0, which pushes the tag.
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, like v0.2.0"
+        required: true
+        type: string
 
 permissions:
   contents: write
 
+# Never build the same version twice at once.
+concurrency:
+  group: release-${{ inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      # The typed-in version when started by hand, otherwise the pushed tag.
+      TAG: ${{ inputs.version || github.ref_name }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # full history, for the generated release notes
+          fetch-depth: 0 # full history and tags, for the checks and the release notes
+
+      - name: Check the version
+        run: |
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+            echo "::error::'$TAG' is not a version like v0.2.0 or v0.3.0-rc.1"
+            exit 1
+          fi
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$GITHUB_REF_NAME" != "$DEFAULT_BRANCH" ]; then
+              echo "::error::Releases are made from $DEFAULT_BRANCH; this run was started on $GITHUB_REF_NAME"
+              exit 1
+            fi
+            if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+              echo "::error::$TAG already exists. Choose the next version number."
+              exit 1
+            fi
+          fi
 
       - uses: actions/setup-go@v5
         with:
@@ -36,17 +73,21 @@ jobs:
         run: go test ./...
 
       - name: Build the release packages
-        env:
-          TAG: ${{ github.ref_name }}
         run: scripts/dist.sh "$TAG"
 
       - name: Publish the release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
         run: |
-          # A tag like v0.3.0-rc.1 becomes a pre-release, which "latest" skips.
-          extra=()
-          case "$TAG" in *-*) extra+=(--prerelease) ;; esac
-          gh release create "$TAG" dist/pidash_linux_*.tar.gz dist/SHA256SUMS \
-            --title "PiDash $TAG" --generate-notes "${extra[@]}"
+          assets=(dist/pidash_linux_*.tar.gz dist/SHA256SUMS)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # The release was already drafted on GitHub: attach the packages to it.
+            gh release upload "$TAG" "${assets[@]}" --clobber
+          else
+            # A version like v0.3.0-rc.1 becomes a pre-release, which "latest" skips.
+            extra=()
+            case "$TAG" in *-*) extra+=(--prerelease) ;; esac
+            # --target creates the tag at this commit when started by hand; for a
+            # pushed tag it already exists and is used as it is.
+            gh release create "$TAG" "${assets[@]}" --target "$GITHUB_SHA" \
+              --title "PiDash $TAG" --generate-notes "${extra[@]}"
+          fi
+          echo "Published: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"

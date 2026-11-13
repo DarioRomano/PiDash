@@ -357,9 +357,12 @@ one command to publish.
   and its files, and the example settings. Asset names carry no version, so
   `releases/latest/download/…` is a stable address. A `SHA256SUMS` file sits
   next to them.
-- **Publishing** (`make release VERSION=vX.Y.Z`): checks, tags and pushes. The
-  Release workflow builds the packages and creates the GitHub release with
-  generated notes. Tags with a suffix become pre-releases.
+- **Publishing**: the Release workflow builds the packages and creates the
+  GitHub release with generated notes. It starts either from a pushed tag
+  (`make release VERSION=vX.Y.Z`, which checks, tags and pushes) or from the
+  "Run workflow" button on GitHub with a version number, in which case it
+  creates the tag on the default branch itself and refuses an existing
+  version. Versions with a suffix become pre-releases.
 - **Installing and updating** (`install.sh` at the repository root, installed
   on the Pi as `update.sh`): detects the platform, downloads the package and
   checksums, verifies, unpacks and runs the packaged installer. The options

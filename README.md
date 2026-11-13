@@ -562,17 +562,25 @@ there.
 
 ## Releasing
 
-A release is one command, run on the main branch with everything committed:
+There are two ways to publish a version. Both end in the same Release workflow.
+
+**On GitHub, with a button.** Open the repository's **Actions** tab, choose
+**Release**, click **Run workflow**, enter the version, for example `v0.2.0`,
+and run it on the main branch. The workflow creates the tag itself. It refuses
+a version that already exists.
+
+**From a checkout**, on the main branch with everything committed:
 
 ```sh
 make release VERSION=v0.2.0
 ```
 
-It runs the checks, creates the tag and pushes it. GitHub Actions then builds
-the packages for 64-bit and 32-bit Raspberry Pi OS and for ordinary PCs, and
-publishes them as a GitHub release with generated notes and checksums. From
-that moment the one-line installer installs the new version, and
-`update.sh` on every Pi picks it up.
+This runs the checks, creates the tag and pushes it, which starts the workflow.
+
+Either way, GitHub Actions builds the packages for 64-bit and 32-bit Raspberry
+Pi OS and for ordinary PCs, and publishes them as a GitHub release with
+generated notes and checksums. From that moment the one-line installer installs
+the new version, and `update.sh` on every Pi picks it up.
 
 - Versions follow `vMAJOR.MINOR.PATCH`. A suffix such as `v0.3.0-rc.1` makes a
   pre-release, which the installer skips unless asked for by name.

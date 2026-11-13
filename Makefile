@@ -17,6 +17,7 @@
 #   make release VERSION=v0.2.0  tag and push; GitHub Actions builds and publishes
 #                                the release, which the one-line installer and
 #                                every Pi's update.sh then pick up
+#   (or, without a checkout: GitHub -> Actions -> Release -> Run workflow)
 
 PI_HOST  ?= pi@pidash.local
 VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
