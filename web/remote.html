@@ -18,6 +18,11 @@
       <button id="kiosk-stop">Exit to desktop</button>
     </section>
 
+    <section class="row" id="tv-row" hidden>
+      <button id="tv-on">TV on</button>
+      <button id="tv-off">TV off</button>
+    </section>
+
     <section id="apps" hidden>
       <div id="running" class="row" hidden>
         <span id="running-name"></span>
@@ -26,6 +31,28 @@
       <div id="app-list"></div>
       <p id="app-msg" hidden></p>
     </section>
+
+    <section id="pad-box" hidden>
+      <div id="pad" role="application" aria-label="Touchpad">
+        <span>Drag to move · tap to click<br />two fingers to scroll · two-finger tap for right click</span>
+      </div>
+      <div class="row small">
+        <button id="click-left">Click</button>
+        <button id="click-right">Right click</button>
+        <button id="drag" aria-pressed="false">Hold</button>
+      </div>
+      <div class="row small">
+        <button data-key="escape">Esc</button>
+        <button data-key="tab">Tab</button>
+        <button data-key="backspace" aria-label="Backspace">⌫</button>
+        <button data-key="enter">Enter</button>
+      </div>
+      <form id="textform" class="row" hidden>
+        <input id="text" type="text" placeholder="Type on the TV…" autocomplete="off" autocapitalize="off" />
+        <button type="submit">Type</button>
+      </form>
+    </section>
+    <p id="pad-note" class="note" hidden></p>
 
     <section class="dpad">
       <button data-action="up" aria-label="Up">▲</button>
@@ -49,11 +76,6 @@
     </section>
 
     <a id="photos-link" class="link" href="/photos" hidden>Background photos<span>›</span></a>
-
-    <form id="textform" class="row">
-      <input id="text" type="text" placeholder="Send text…" autocomplete="off" />
-      <button type="submit">Send</button>
-    </form>
 
     <script type="module" src="/src/remote.ts"></script>
   </body>

@@ -62,3 +62,17 @@ input:focus { outline: 2px solid var(--accent); }
   font-size: 17px; text-decoration: none;
 }
 .link span { color: var(--dim); font-size: 22px; line-height: 1; }
+
+/* --- Touchpad ------------------------------------------------------------------ */
+#pad-box { display: flex; flex-direction: column; gap: 10px; }
+#pad {
+  height: 230px; border-radius: 18px; background: var(--panel); border: 1px solid #232a3b;
+  display: grid; place-items: center; text-align: center; color: var(--dim); font-size: 13px; line-height: 1.5;
+  touch-action: none; user-select: none; -webkit-user-select: none;
+}
+#pad.active { border-color: var(--accent); }
+#pad span { pointer-events: none; padding: 0 20px; }
+.row.small button { font-size: 16px; padding: 13px 6px; }
+#drag[aria-pressed="true"] { outline: 2px solid var(--accent); color: var(--accent); }
+.note { font-size: 14px; color: var(--dim); line-height: 1.4; }
+#textform button { flex: 0 0 92px; font-size: 17px; padding: 14px 6px; }

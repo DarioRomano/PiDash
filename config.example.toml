@@ -28,6 +28,28 @@ interval = "10s"
 # Set to "" to disable those controls.
 unit = "pidash-kiosk.service"
 
+# --- TV power schedule --------------------------------------------------------
+# Switch the TV off at night and on in the morning, over HDMI-CEC. Leave a time
+# empty to skip it: for example set only `off` so the TV is never switched on by
+# itself. The TV is not switched off while an app is open; that happens once you
+# are back on the dashboard. The phone remote also gets "TV on" / "TV off".
+[tv]
+off = ""    # e.g. "23:30"
+on = ""     # e.g. "06:30"
+
+# --- Phone remote --------------------------------------------------------------
+[remote]
+# Let the phone act as a mouse and keyboard for whatever is on the TV: a
+# touchpad, typing, and the direction pad working inside apps like Netflix.
+# Needs a one-time setup:  bash deploy/install.sh --phone-input
+#
+# Read this before switching it on: it lets every device on your home network
+# control the Pi's desktop, including typing into a terminal. Leave it off on a
+# network you share with people you do not trust, or set a PIN below.
+mouse_keyboard = false
+# Optional. The phone asks for it once and remembers it. 4 to 32 characters.
+pin = ""
+
 # --- Weather ----------------------------------------------------------------
 # Current conditions in the corner of the screen, and a detail view with the
 # hourly and 7-day forecast: press OK, then OK again on the Weather tile.
@@ -160,6 +182,20 @@ url = "https://www.netflix.com/browse"
 # id = "steamlink"
 # name = "Steam Link"
 # command = "steamlink"
+
+# --- Leaving an app with the TV remote ------------------------------------------
+# While an app is open, hold one of these keys on the TV remote to close it and
+# return to the dashboard. The keys are read straight from the remote, so this
+# works in every app. Names are Linux key names; most TV remotes send KEY_EXIT
+# for their Back / Exit / Return button. Others you may want: KEY_HOMEPAGE,
+# KEY_STOP, KEY_ESC (a keyboard's Esc), or the colour keys KEY_RED, KEY_GREEN,
+# KEY_YELLOW, KEY_BLUE. To see what your remote sends:
+#   sudo apt install evtest && sudo evtest
+[input]
+app_exit_keys = ["KEY_EXIT", "KEY_BACK"]
+# How long the key must be held. If your TV does not report held buttons, pick a
+# key you do not otherwise need (a colour key) and set this to "0s".
+app_exit_hold = "2s"
 
 # Map browser KeyboardEvent.code values to actions.
 # Actions: up down left right select back menu home playpause exit 0-9

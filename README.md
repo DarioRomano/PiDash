@@ -60,6 +60,7 @@ What the installer does:
 | Browser profiles of website apps (created on first launch) | `~/.local/share/pidash/profiles/` |
 | Chosen photo folders, and prepared photos | `~/.local/share/pidash/photos-selection.json`, `~/.cache/pidash/photos/` |
 | Only with `--console-apps` | three system files, see [Apps](#apps) |
+| Only with `--phone-input` | one udev rule, and `wtype`/`xdotool` for typing, see [Phone as mouse and keyboard](#phone-as-mouse-and-keyboard) |
 
 ## Using it
 
@@ -70,7 +71,9 @@ What the installer does:
 | Choose the background photos | Open `http://<pi-ip>:8080/photos`, or tap **Background photos** on the phone remote |
 | Flip through photos | ◀ ▶ on the dashboard. Play/pause holds the current photo. ▲ shows its folder and date |
 | Launch an app | Press **OK** on the dashboard to open the app row, choose with ◀ ▶ and press OK. Or tap the app on the phone remote |
-| Get back from an app | Quit the app, or tap **Back to dashboard** on the phone remote |
+| Get back from an app | **Hold Back for 2 seconds** on the TV remote, quit the app, or tap **Back to dashboard** on the phone remote |
+| Use the phone as mouse and keyboard | Switch it on once (see [Phone as mouse and keyboard](#phone-as-mouse-and-keyboard)), then use the touchpad on the phone remote |
+| Switch the TV on or off | **TV on** / **TV off** on the phone remote, or a daily schedule (see [TV power schedule](#tv-power-schedule)) |
 | Go back to the desktop | **Hold Back for 2 seconds** on the TV remote, press **Alt+F4** or **F10** on a keyboard, or tap **Exit to desktop** on the phone remote |
 | Use the phone remote | Open `http://<pi-ip>:8080/remote` on any device on your network |
 | Change settings | Edit `~/.config/pidash/config.toml`, then `systemctl --user restart pidash` |
@@ -255,14 +258,14 @@ real certificate.
 
 #### Things to know about website apps
 
-- **Signing in needs a keyboard once.** Plug one in for the first login to
-  Netflix or your NAS. After that the login is remembered.
+- **Signing in needs typing once.** Use the phone as keyboard (see
+  [Phone as mouse and keyboard](#phone-as-mouse-and-keyboard)) or plug in a
+  keyboard for the first login to Netflix or your NAS. The login is remembered.
 - **Netflix and Synology Photos expect a mouse.** Their websites are not built
-  for arrow-key navigation, so browsing them from the sofa works best with a
-  wireless keyboard with touchpad. Playback keys such as Space work. YouTube's
-  TV interface does not have this problem.
-- **Getting back.** Tap **Back to dashboard** on the phone remote, or press
-  Alt+F4 on a keyboard.
+  for arrow-key navigation. The phone's touchpad covers this. YouTube's TV
+  interface works with the TV remote alone.
+- **Getting back.** Hold Back on the TV remote for two seconds, tap **Back to
+  dashboard** on the phone remote, or press Alt+F4 on a keyboard.
 - **If uBlock Origin is not active** in the YouTube app, Firefox on your system
   did not accept the automatic install. The reliable alternative applies to
   every Firefox profile on the Pi. Create `/etc/firefox/policies/policies.json`:
@@ -311,9 +314,31 @@ unit, a small script that switches screens, and a rule that lets your user start
 and stop that unit without a password. Apps still run as you, not as root. The
 uninstaller removes all three.
 
-While a console app is on screen, the dashboard cannot see the TV remote. Use the
-app's own quit shortcut, or **Back to dashboard** on the phone remote, which
-always works.
+To leave a console app, hold Back on the TV remote for two seconds, use the
+app's own quit shortcut, or tap **Back to dashboard** on the phone remote.
+
+#### Leaving an app with the TV remote
+
+While an app is open, **holding Back for two seconds** closes it and returns to
+the dashboard. PiDash reads the remote directly for this, so it works in every
+app, including ones that run outside the desktop.
+
+- It needs your user to be in the `input` group, which is the case for the
+  first user on Raspberry Pi OS. The installer tells you if it is not.
+- Which button counts is set by `app_exit_keys` under `[input]` in the
+  settings. Most TV remotes send `KEY_EXIT` for Back, Exit or Return, which is
+  the default together with `KEY_BACK`.
+- Some TVs do not report that a button is being held. If holding does nothing,
+  choose a button you do not otherwise need, such as a colour key, and make it
+  act at once:
+
+  ```toml
+  [input]
+  app_exit_keys = ["KEY_RED"]
+  app_exit_hold = "0s"
+  ```
+
+  `sudo apt install evtest && sudo evtest` shows the name of any button you press.
 
 #### Icons
 
@@ -336,6 +361,80 @@ journalctl --user -u 'pidash-app-*' -e        # websites and desktop-mode progra
 journalctl -u 'pidash-console@*' -e           # console-mode programs
 ```
 
+### Phone as mouse and keyboard
+
+The phone remote can act as a touchpad and keyboard for whatever is on the TV.
+This is what makes Netflix and Synology Photos usable from the sofa, and lets
+you sign in without plugging in a keyboard.
+
+**Read this first.** With this switched on, every device on your home network
+can move the mouse and type on the Pi's desktop, which amounts to full control
+of that desktop. It is off by default. Leave it off on a network you share with
+people you do not trust, or set a PIN.
+
+To switch it on:
+
+```sh
+bash deploy/install.sh --phone-input      # once; from another computer: make install INSTALL_FLAGS=--phone-input
+```
+
+```toml
+# ~/.config/pidash/config.toml
+[remote]
+mouse_keyboard = true
+pin = "4321"        # optional; the phone asks once and remembers it
+```
+
+Then `systemctl --user restart pidash`. The setup step adds one system file, a
+rule that lets your user create a virtual mouse, and installs the small tool
+used for typing. The uninstaller removes the rule.
+
+On the phone remote you then get:
+
+- **A touchpad.** Drag to move, tap to click, tap with two fingers for a right
+  click, drag with two fingers to scroll. **Hold** keeps the button pressed for
+  dragging sliders.
+- **Keys:** Esc, Tab, Backspace and Enter.
+- **Typing.** Write in the text field and tap **Type**; the text is entered
+  into whatever has the focus on the TV, in the right characters whatever
+  keyboard layout the Pi uses.
+- **The direction pad works inside apps.** While an app is open, the arrows, OK
+  and Back on the phone press real keys in that app instead of steering the
+  dashboard.
+
+After five wrong PINs the phone's mouse and keyboard are locked for a minute.
+The PIN protects only the mouse and keyboard; the rest of the phone remote
+stays open to your network as before.
+
+### TV power schedule
+
+PiDash can switch the TV off at night and on in the morning over HDMI-CEC:
+
+```toml
+[tv]
+off = "23:30"
+on = "06:30"
+```
+
+Either time can be left out. With only `off`, the TV is never switched on by
+itself.
+
+- The TV is **not switched off while an app is open**, so a film is never cut
+  short. It goes off once you are back on the dashboard.
+- If you switch the TV on by hand during the night, PiDash notices and carries
+  on normally. It does not switch the TV off a second time.
+- While the TV is off, the dashboard stops loading photos from your NAS.
+- The phone remote has **TV on** and **TV off** buttons for doing the same by
+  hand. **TV on** also switches the TV to the Pi's input.
+
+To try what your TV supports, on the Pi:
+
+```sh
+~/.local/share/pidash/pidash -cec status    # asks the TV whether it is on
+~/.local/share/pidash/pidash -cec off
+~/.local/share/pidash/pidash -cec on
+```
+
 ### Mapping your TV remote
 
 Enable CEC on the TV (Samsung "Anynet+", LG "Simplink", Sony "Bravia Sync",
@@ -351,8 +450,8 @@ code of every press in the top-right corner. Put the codes you see into
 Check CEC from a terminal on the Pi:
 
 ```sh
-~/.local/share/pidash/cec-setup.sh   # should print "using /dev/cec0 ..."
-cec-ctl -d /dev/cec0 -S              # show the TV in the topology
+~/.local/share/pidash/pidash -cec status   # should print "TV power: on"
+cec-ctl -d /dev/cec0 -S                    # show the TV in the topology
 ```
 
 ### Debugging the browser on the TV
@@ -389,6 +488,9 @@ web/                 Vite + TypeScript frontend (dashboard + phone remote)
 internal/kiosk/      start/stop the fullscreen browser (systemd user unit)
 internal/apps/       app launcher (desktop and console modes)
 internal/photos/     background slideshow: Synology Photos and folder sources, rendering, cache
+internal/input/      phone as virtual mouse and keyboard; TV remote long-press watcher
+internal/cec/        HDMI-CEC through cec-ctl: register with the TV, power on/off
+internal/tv/         daily TV power schedule
 deploy/              install.sh, uninstall.sh, systemd user units, kiosk and CEC scripts
 ```
 

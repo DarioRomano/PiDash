@@ -78,6 +78,11 @@ func TestInvalidConfigsAreRejected(t *testing.T) {
 		"latitude range":     "[weather]\nlatitude = 147.3\nlongitude = 8.5\n",
 		"weather units":      "[weather]\nlocation = \"Zurich\"\nunits = \"kelvin\"\n",
 		"weather interval":   "[weather]\nlocation = \"Zurich\"\ninterval = \"10s\"\n",
+		"tv off format":      "[tv]\noff = \"11pm\"\n",
+		"tv on range":        "[tv]\non = \"24:00\"\n",
+		"tv same times":      "[tv]\noff = \"23:00\"\non = \"23:00\"\n",
+		"short pin":          "[remote]\npin = \"12\"\n",
+		"hold too long":      "[input]\napp_exit_hold = \"1m\"\n",
 		"duplicate id":       "[[apps]]\nid = \"a\"\ncommand = \"x\"\n[[apps]]\nid = \"a\"\ncommand = \"y\"\n",
 	}
 	for name, body := range cases {
@@ -181,5 +186,42 @@ func TestWeatherSettings(t *testing.T) {
 	cfg, err = load(t, "[weather]\nlatitude = 0.0\nlongitude = 0.0\nunits = \"imperial\"\nname = \"Null Island\"\n")
 	if err != nil || !cfg.Weather.Enabled() || *cfg.Weather.Latitude != 0 {
 		t.Errorf("by coordinates (0,0 is a valid place): %+v, err %v", cfg.Weather, err)
+	}
+}
+
+func TestRemoteTVAndExitKeySettings(t *testing.T) {
+	cfg, _ := Load("")
+	if cfg.Remote.MouseKeyboard || cfg.Remote.PIN != "" || cfg.TV.Off != "" {
+		t.Errorf("the phone mouse and the TV schedule must be off by default: %+v %+v", cfg.Remote, cfg.TV)
+	}
+	if len(cfg.Input.AppExitKeys) != 2 || cfg.Input.AppExitHold.Duration.Seconds() != 2 {
+		t.Errorf("exit key defaults = %+v", cfg.Input)
+	}
+	cfg, err := load(t, `
+[remote]
+mouse_keyboard = true
+pin = "4321"
+
+[tv]
+off = "23:30"
+on = "6:45"
+
+[input]
+app_exit_keys = ["KEY_RED"]
+app_exit_hold = "0s"
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Remote.MouseKeyboard || cfg.TV.On != "6:45" || len(cfg.Input.AppExitKeys) != 1 || cfg.Input.AppExitHold.Duration != 0 {
+		t.Errorf("cfg = %+v %+v %+v", cfg.Remote, cfg.TV, cfg.Input.AppExitKeys)
+	}
+	// Setting exit keys must not wipe the default key map.
+	if cfg.Input.Keys["Enter"] != "select" {
+		t.Error("the dashboard key map was lost")
+	}
+	// The PIN is never sent to the browser.
+	if b, _ := json.Marshal(cfg.ForClient()); strings.Contains(string(b), "4321") {
+		t.Error("client config leaks the PIN")
 	}
 }

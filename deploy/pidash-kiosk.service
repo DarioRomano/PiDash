@@ -14,7 +14,7 @@ Environment=PIDASH_URL=http://127.0.0.1:8080/
 ExecStart=%h/.local/share/pidash/kiosk.sh
 # Ask the TV to forward remote-control keys to the Pi. Failure is not fatal
 # (TV off, CEC disabled): the dashboard still works with keyboard/phone.
-ExecStartPost=-/usr/bin/timeout 20 %h/.local/share/pidash/cec-setup.sh
+ExecStartPost=-%h/.local/share/pidash/pidash -cec setup
 # Restart after a crash, but a clean exit (Alt+F4, "Exit to desktop") stays stopped.
 Restart=on-failure
 RestartSec=3

@@ -258,6 +258,57 @@ How it works:
   so the **phone remote shows "Back to dashboard"**. The app's own quit shortcut
   works too.
 
+## Controlling apps: phone input and the TV remote
+
+While an app has the screen, the dashboard page receives no keys, so two
+mechanisms work below the browser.
+
+**Virtual mouse and keyboard** (`internal/input`, opt-in via
+`remote.mouse_keyboard`). The backend creates a device through `/dev/uinput`
+with relative axes, wheel, mouse buttons and a small set of keys. To the system
+it is real hardware, so it works on Wayland and X11 and in console-mode apps.
+
+- The phone's touchpad page collects movement and posts it one request at a
+  time, so a slow network adds a little lag instead of a growing queue.
+  Acceleration and gestures (tap, two-finger tap, two-finger scroll) are
+  computed on the phone.
+- `POST /api/input` presses real keys instead of sending a dashboard action
+  whenever an app is running, so the phone's direction pad works in apps.
+- **Text** is typed with `wtype` (Wayland) or `xdotool` (X11) rather than as key
+  codes, because key codes would come out wrong on non-US keyboard layouts.
+- Access to `/dev/uinput` comes from one udev rule installed by
+  `install.sh --phone-input`.
+- **Security**: this is remote control of the desktop for anyone on the LAN.
+  It is off by default, documented as such, and can be protected with a PIN
+  (constant-time compare, lockout after five wrong attempts).
+
+**Long press of Back on the TV remote.** The backend reads `/dev/input/event*`
+directly, picking devices that can send one of the configured exit keys and
+ignoring its own virtual device, and rescans every few seconds for hot-plugged
+devices. A per-device hold detector fires when a key stays down for the
+configured time; it only acts while an app is running, and then stops the app.
+Reading the device directly works whichever virtual terminal is showing. It
+needs membership of the `input` group and no system changes.
+
+## TV power
+
+`internal/cec` wraps `cec-ctl`: it finds the adapter that has a TV attached,
+registers the Pi as a playback device, and sends image-view-on, active-source,
+standby and give-device-power-status. `pidash -cec setup` replaces the earlier
+shell script and runs when the kiosk starts.
+
+`internal/tv` runs the daily schedule by checking the clock twice a minute,
+which stays correct across daylight saving, clock corrections and suspend.
+
+- A switch-off is deferred while an app is running and dropped when the
+  switch-on time arrives first.
+- Nothing is sent when the backend starts inside the off period.
+- After sending standby it polls the TV's power state. "Asleep" is true only
+  while the TV confirms standby, so the dashboard resumes when someone switches
+  the TV on by hand, and a TV that does not report its state never leaves the
+  dashboard suspended.
+- The dashboard stops loading photos while asleep.
+
 ## Install & operations
 
 PiDash is a guest on the existing desktop. It never changes how the Pi boots.
@@ -300,21 +351,14 @@ PiDash is a guest on the existing desktop. It never changes how the Pi boots.
    crossfading slideshow with previous/next/pause and captions.
 4. **Weather.** *(done)* Open-Meteo provider with place-name lookup, summary on
    the ambient screen, and a detail panel opened from the app row.
-5. **Resilience & schedule.** Reconnect handling, TV standby/wake via CEC.
+5. **Remote control of apps and TV power.** *(done)* Phone as touchpad and
+   keyboard, long press of Back on the TV remote to leave any app, daily TV
+   off/on schedule and manual TV power over HDMI-CEC.
 6. **Polish.** System panel, more panels (calendar, headlines).
-
-Known gaps in the launcher, candidates for a follow-up:
-
-- **No way back with the TV remote alone.** While an app has the screen the
-  dashboard does not receive keys. Fix: have the backend read the remote's
-  input device directly and treat a long press of Back as "stop the app".
-- **Pointer-driven websites.** Netflix and Synology Photos want a mouse. Fix: a
-  touchpad on the phone remote that drives a virtual pointer.
-- **Typing into apps.** The phone remote's text field only reaches the dashboard.
-- **Choosing by album, person or date** in Synology Photos, in addition to folders.
 
 ## Later ideas (not in scope now)
 
-Calendar (ICS), RSS headlines, Home Assistant entities, accent colour extracted
+Choosing photos by album, person or date in Synology Photos in addition to
+folders. Calendar (ICS), RSS headlines, Home Assistant entities, accent colour extracted
 from the current photo, a dedicated appliance mode (Pi OS Lite + `cage`) for a
 Pi that does nothing else.

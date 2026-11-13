@@ -6,6 +6,7 @@ export interface SSEHandlers {
   onInput(ev: InputEvent): void;
   onApps(status: AppsStatus): void;
   onPhotos(status: PhotosStatus): void;
+  onTV(status: { asleep: boolean }): void;
   onStatus(connected: boolean): void;
 }
 
@@ -24,6 +25,7 @@ export function connect(url: string, h: SSEHandlers): EventSource {
   es.addEventListener("input", (e) => h.onInput(JSON.parse((e as MessageEvent).data)));
   es.addEventListener("apps", (e) => h.onApps(JSON.parse((e as MessageEvent).data)));
   es.addEventListener("photos", (e) => h.onPhotos(JSON.parse((e as MessageEvent).data)));
+  es.addEventListener("tv", (e) => h.onTV(JSON.parse((e as MessageEvent).data)));
 
   return es;
 }

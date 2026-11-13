@@ -20,9 +20,11 @@ import (
 
 	"github.com/DarioRomano/PiDash/internal/apps"
 	"github.com/DarioRomano/PiDash/internal/config"
+	"github.com/DarioRomano/PiDash/internal/input"
 	"github.com/DarioRomano/PiDash/internal/kiosk"
 	"github.com/DarioRomano/PiDash/internal/photos"
 	"github.com/DarioRomano/PiDash/internal/providers"
+	"github.com/DarioRomano/PiDash/internal/tv"
 )
 
 // Server is the PiDash HTTP server.
@@ -34,13 +36,29 @@ type Server struct {
 	kiosk  *kiosk.Controller
 	apps   *apps.Manager
 	photos *photos.Service // nil when no photo source is configured
+	input  *input.Service
+	tv     *tv.Service
+	pin    pinGuard
 	static fs.FS
 	mux    *http.ServeMux
 }
 
+// Deps are the services the HTTP server exposes.
+type Deps struct {
+	Kiosk  *kiosk.Controller
+	Apps   *apps.Manager
+	Photos *photos.Service // nil when no photo source is configured
+	Input  *input.Service
+	TV     *tv.Service
+	// NewRunner builds the provider runner around the server's publish function.
+	NewRunner func(publish func(providers.Entry)) *providers.Runner
+}
+
 // New wires the HTTP handlers. static is the built frontend (web/dist).
-func New(cfg config.Config, log *slog.Logger, static fs.FS, k *kiosk.Controller, am *apps.Manager, ps *photos.Service, newRunner func(publish func(providers.Entry)) *providers.Runner) *Server {
-	s := &Server{cfg: cfg, log: log, hub: newHub(), kiosk: k, apps: am, photos: ps, static: static, mux: http.NewServeMux()}
+func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
+	k, am, ps, newRunner := d.Kiosk, d.Apps, d.Photos, d.NewRunner
+	s := &Server{cfg: cfg, log: log, hub: newHub(), kiosk: k, apps: am, photos: ps, input: d.Input, tv: d.TV,
+		pin: pinGuard{pin: cfg.Remote.PIN}, static: static, mux: http.NewServeMux()}
 	s.runner = newRunner(func(e providers.Entry) { s.hub.broadcast("state", e) })
 
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
@@ -64,6 +82,11 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, k *kiosk.Controller,
 	s.mux.HandleFunc("GET /api/photos/playlist", s.handlePhotoPlaylist)
 	s.mux.HandleFunc("GET /photos/{key}", s.handlePhotoImage)
 	s.mux.HandleFunc("GET /photos", s.servePage("photos.html"))
+	d.TV.OnChange(func(st tv.Status) { s.hub.broadcast("tv", st) })
+	s.mux.HandleFunc("GET /api/remote", s.handleRemoteInfo)
+	s.mux.HandleFunc("POST /api/pointer", s.handlePointer)
+	s.mux.HandleFunc("POST /api/type", s.handleType)
+	s.mux.HandleFunc("POST /api/tv", s.handleTVPower)
 	s.mux.HandleFunc("GET /remote", s.servePage("remote.html"))
 	s.mux.HandleFunc("GET /remote/", s.servePage("remote.html"))
 	s.mux.Handle("GET /", http.FileServerFS(static))
@@ -74,6 +97,7 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, k *kiosk.Controller,
 func (s *Server) Run(ctx context.Context) error {
 	go s.runner.Run(ctx)
 	go s.apps.Run(ctx)
+	go s.tv.Run(ctx)
 	if s.photos != nil {
 		go s.photos.Run(ctx)
 	}
@@ -145,6 +169,17 @@ func (s *Server) handleInput(w http.ResponseWriter, r *http.Request) {
 	if len(req.Text) > 512 {
 		http.Error(w, "text too long", http.StatusBadRequest)
 		return
+	}
+	// While an app has the screen the dashboard cannot act on the phone's
+	// buttons, so they are pressed as real keys instead and reach the app.
+	if s.apps.Status().Running != "" && s.input.Status().Available {
+		if !s.pin.allow(w, r) {
+			return
+		}
+		if s.input.Action(req.Action) {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 	}
 	s.hub.broadcast("input", inputEvent{Action: req.Action, Text: req.Text, Source: "remote"})
 	w.WriteHeader(http.StatusNoContent)
@@ -247,6 +282,101 @@ func (s *Server) handleAppIcon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.ServeFile(w, r, icon.Path)
+}
+
+// remoteInfo tells the phone remote which extra controls to show.
+type remoteInfo struct {
+	Input input.Status `json:"input"`
+	TV    tv.Status    `json:"tv"`
+}
+
+func (s *Server) handleRemoteInfo(w http.ResponseWriter, _ *http.Request) {
+	in := s.input.Status()
+	in.PINRequired = in.Enabled && s.pin.pin != ""
+	writeJSON(w, remoteInfo{Input: in, TV: s.tv.Status()})
+}
+
+// inputError maps problems of the phone's mouse and keyboard to HTTP.
+func (s *Server) inputError(w http.ResponseWriter, err error) {
+	switch {
+	case err == nil:
+		w.WriteHeader(http.StatusNoContent)
+	case errors.Is(err, input.ErrDisabled):
+		http.Error(w, err.Error(), http.StatusForbidden)
+	default:
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	}
+}
+
+// handlePointer moves the pointer, scrolls and clicks. The phone sends the
+// movement it collected since its previous request.
+func (s *Server) handlePointer(w http.ResponseWriter, r *http.Request) {
+	if !s.pin.allow(w, r) {
+		return
+	}
+	var req struct {
+		DX, DY           int
+		ScrollX, ScrollY int
+		Click            string
+		// Button and Down press or release a button, for dragging.
+		Button string
+		Down   *bool
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	var err error
+	if req.DX != 0 || req.DY != 0 {
+		err = s.input.Move(req.DX, req.DY)
+	}
+	if err == nil && (req.ScrollX != 0 || req.ScrollY != 0) {
+		err = s.input.Scroll(req.ScrollX, req.ScrollY)
+	}
+	if err == nil && req.Button != "" && req.Down != nil {
+		err = s.input.Button(req.Button, *req.Down)
+	}
+	if err == nil && req.Click != "" {
+		err = s.input.Click(req.Click)
+	}
+	s.inputError(w, err)
+}
+
+// handleType types text, or presses one named key, in the focused app.
+func (s *Server) handleType(w http.ResponseWriter, r *http.Request) {
+	if !s.pin.allow(w, r) {
+		return
+	}
+	var req struct {
+		Text string `json:"text"`
+		Key  string `json:"key"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if req.Key != "" {
+		s.inputError(w, s.input.Key(req.Key))
+		return
+	}
+	s.inputError(w, s.input.Type(r.Context(), req.Text))
+}
+
+// handleTVPower switches the TV on or off: POST /api/tv {"power":"off"}.
+func (s *Server) handleTVPower(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Power string `json:"power"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil || (req.Power != "on" && req.Power != "off") {
+		http.Error(w, `power must be "on" or "off"`, http.StatusBadRequest)
+		return
+	}
+	if err := s.tv.SetPower(r.Context(), req.Power == "on"); err != nil {
+		s.log.Warn("tv power", "power", req.Power, "err", err)
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, s.tv.Status())
 }
 
 func (s *Server) photoStatus() photos.Status {
@@ -388,6 +518,9 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := send("photos", s.photoStatus()); err != nil {
+		return
+	}
+	if err := send("tv", s.tv.Status()); err != nil {
 		return
 	}
 

@@ -124,9 +124,12 @@ function onPhotos(st: PhotosStatus) {
   }
 }
 
+let tvAsleep = false;
+
 function updateSuspended() {
-  // Do not load photos while an app covers the dashboard or the screen is hidden.
-  slideshow.setSuspended(appsStatus.running !== "" || document.visibilityState !== "visible");
+  // Do not load photos while an app covers the dashboard, the page is hidden,
+  // or the TV has been switched off for the night.
+  slideshow.setSuspended(appsStatus.running !== "" || document.visibilityState !== "visible" || tvAsleep);
 }
 
 // --- Weather ------------------------------------------------------------------
@@ -340,5 +343,9 @@ connect("/events", {
     appsLoaded = true;
   },
   onPhotos,
+  onTV: (st) => {
+    tvAsleep = st.asleep;
+    updateSuspended();
+  },
   onStatus: (ok) => conn.classList.toggle("ok", ok),
 });

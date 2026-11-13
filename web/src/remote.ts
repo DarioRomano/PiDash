@@ -2,17 +2,9 @@
 
 const statusDot = document.getElementById("status")!;
 
-async function send(action: string, text?: string) {
-  try {
-    const res = await fetch("/api/input", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(text === undefined ? { action } : { action, text }),
-    });
-    statusDot.classList.toggle("ok", res.ok);
-  } catch {
-    statusDot.classList.remove("ok");
-  }
+async function send(action: string) {
+  // While an app is open these buttons press real keys, which may need the PIN.
+  statusDot.classList.toggle("ok", await inputRequest("/api/input", { action }));
 }
 
 document.querySelectorAll<HTMLButtonElement>("button[data-action]").forEach((btn) => {
@@ -22,15 +14,7 @@ document.querySelectorAll<HTMLButtonElement>("button[data-action]").forEach((btn
   });
 });
 
-const form = document.getElementById("textform") as HTMLFormElement;
 const text = document.getElementById("text") as HTMLInputElement;
-form.addEventListener("submit", (e) => {
-  e.preventDefault();
-  const value = text.value.trim();
-  if (!value) return;
-  send("text", value);
-  text.value = "";
-});
 
 // --- Show on TV / Exit to desktop -------------------------------------------
 
@@ -141,6 +125,182 @@ events.addEventListener("photos", (e) => {
 });
 events.addEventListener("open", () => statusDot.classList.add("ok"));
 events.addEventListener("error", () => statusDot.classList.remove("ok"));
+
+// --- TV power ------------------------------------------------------------------
+
+async function tvPower(power: "on" | "off") {
+  try {
+    const res = await fetch("/api/tv", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ power }),
+    });
+    statusDot.classList.toggle("ok", res.ok);
+  } catch {
+    statusDot.classList.remove("ok");
+  }
+}
+document.getElementById("tv-on")!.addEventListener("click", () => tvPower("on"));
+document.getElementById("tv-off")!.addEventListener("click", () => tvPower("off"));
+
+// --- Touchpad, keys and typing: the phone as mouse and keyboard ---------------------
+
+const padBox = document.getElementById("pad-box")!;
+const pad = document.getElementById("pad")!;
+const padNote = document.getElementById("pad-note")!;
+const textForm = document.getElementById("textform") as HTMLFormElement;
+const dragBtn = document.getElementById("drag")!;
+
+const PIN_KEY = "pidash-pin";
+let pin = "";
+try {
+  pin = localStorage.getItem(PIN_KEY) ?? "";
+} catch {
+  /* private browsing: ask every time */
+}
+let askingPin = false;
+
+/** Sends a mouse/keyboard request, asking for the PIN when the Pi wants one. */
+async function inputRequest(url: string, body: unknown): Promise<boolean> {
+  if (askingPin) return false;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(pin ? { "X-PiDash-PIN": pin } : {}) },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      statusDot.classList.remove("ok");
+      return false;
+    }
+    if (res.status === 401) {
+      askingPin = true;
+      const entered = window.prompt(pin ? "Wrong PIN. Enter the PiDash PIN:" : "Enter the PiDash PIN:");
+      askingPin = false;
+      if (!entered) return false;
+      pin = entered.trim();
+      try {
+        localStorage.setItem(PIN_KEY, pin);
+      } catch {
+        /* not stored */
+      }
+      continue;
+    }
+    if (!res.ok) {
+      padNote.hidden = false;
+      padNote.textContent = (await res.text()).trim();
+    } else {
+      padNote.hidden = true;
+    }
+    return res.ok;
+  }
+  return false;
+}
+
+// Movement is collected and sent as one request at a time, so a slow network
+// delays the pointer slightly instead of building a queue.
+const pending = { dx: 0, dy: 0, scrollX: 0, scrollY: 0 };
+let sending = false;
+
+async function flush() {
+  if (sending) return;
+  const dx = Math.trunc(pending.dx), dy = Math.trunc(pending.dy);
+  const scrollX = Math.trunc(pending.scrollX), scrollY = Math.trunc(pending.scrollY);
+  if (!dx && !dy && !scrollX && !scrollY) return;
+  pending.dx -= dx; pending.dy -= dy; pending.scrollX -= scrollX; pending.scrollY -= scrollY;
+  sending = true;
+  await inputRequest("/api/pointer", { dx, dy, scrollX, scrollY });
+  sending = false;
+  void flush();
+}
+
+const touches = new Map<number, { x: number; y: number }>();
+let gesture = { start: 0, moved: 0, fingers: 0 };
+const TAP_MS = 280;
+const TAP_SLOP = 10;
+const SCROLL_STEP = 22; // pixels of two-finger drag per wheel notch
+
+pad.addEventListener("pointerdown", (e) => {
+  pad.setPointerCapture(e.pointerId);
+  if (touches.size === 0) gesture = { start: performance.now(), moved: 0, fingers: 0 };
+  touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  gesture.fingers = Math.max(gesture.fingers, touches.size);
+  pad.classList.add("active");
+});
+
+pad.addEventListener("pointermove", (e) => {
+  const last = touches.get(e.pointerId);
+  if (!last) return;
+  const dx = e.clientX - last.x, dy = e.clientY - last.y;
+  touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  gesture.moved += Math.abs(dx) + Math.abs(dy);
+  if (touches.size >= 2) {
+    // Content follows the fingers. Each finger reports its own movement, so halve it.
+    pending.scrollY += dy / 2 / SCROLL_STEP;
+    pending.scrollX -= dx / 2 / SCROLL_STEP;
+  } else {
+    // Slow movements stay precise; fast swipes cross the screen.
+    const speed = Math.hypot(dx, dy);
+    const gain = 1.4 + Math.min(2.6, speed / 9);
+    pending.dx += dx * gain;
+    pending.dy += dy * gain;
+  }
+  void flush();
+});
+
+function endTouch(e: PointerEvent) {
+  if (!touches.delete(e.pointerId)) return;
+  if (touches.size > 0) return;
+  pad.classList.remove("active");
+  const quick = performance.now() - gesture.start < TAP_MS && gesture.moved < TAP_SLOP * gesture.fingers;
+  if (quick) {
+    if (navigator.vibrate) navigator.vibrate(8);
+    void inputRequest("/api/pointer", { click: gesture.fingers >= 2 ? "right" : "left" });
+  }
+}
+pad.addEventListener("pointerup", endTouch);
+pad.addEventListener("pointercancel", endTouch);
+
+document.getElementById("click-left")!.addEventListener("click", () => inputRequest("/api/pointer", { click: "left" }));
+document.getElementById("click-right")!.addEventListener("click", () => inputRequest("/api/pointer", { click: "right" }));
+
+// "Hold" keeps the left button pressed, to drag sliders or select text.
+let dragging = false;
+dragBtn.addEventListener("click", async () => {
+  const next = !dragging;
+  if (await inputRequest("/api/pointer", { button: "left", down: next })) {
+    dragging = next;
+    dragBtn.setAttribute("aria-pressed", String(dragging));
+  }
+});
+
+document.querySelectorAll<HTMLButtonElement>("button[data-key]").forEach((btn) => {
+  btn.addEventListener("click", () => inputRequest("/api/type", { key: btn.dataset.key }));
+});
+
+textForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const value = text.value;
+  if (!value) return;
+  if (await inputRequest("/api/type", { text: value })) text.value = "";
+});
+
+async function loadRemoteInfo() {
+  try {
+    const info = await (await fetch("/api/remote")).json();
+    document.getElementById("tv-row")!.hidden = !info.tv.available;
+    padBox.hidden = !info.input.available;
+    textForm.hidden = !info.input.typing;
+    // Switched on in the settings but not usable yet: say what is missing.
+    padNote.hidden = !(info.input.enabled && !info.input.available);
+    padNote.textContent = info.input.problem ?? "";
+  } catch {
+    /* the status dot shows the backend is away */
+  }
+}
+void loadRemoteInfo();
 
 // Keyboard on a laptop works too.
 const keymap: Record<string, string> = {

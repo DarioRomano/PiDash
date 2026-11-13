@@ -12,15 +12,19 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/DarioRomano/PiDash/internal/apps"
+	"github.com/DarioRomano/PiDash/internal/cec"
 	"github.com/DarioRomano/PiDash/internal/config"
+	"github.com/DarioRomano/PiDash/internal/input"
 	"github.com/DarioRomano/PiDash/internal/kiosk"
 	"github.com/DarioRomano/PiDash/internal/photos"
 	"github.com/DarioRomano/PiDash/internal/providers"
 	"github.com/DarioRomano/PiDash/internal/providers/system"
 	"github.com/DarioRomano/PiDash/internal/providers/weather"
 	"github.com/DarioRomano/PiDash/internal/server"
+	"github.com/DarioRomano/PiDash/internal/tv"
 	"github.com/DarioRomano/PiDash/web"
 )
 
@@ -35,6 +39,7 @@ func main() {
 		verbose   = flag.Bool("v", false, "debug logging")
 		showVer   = flag.Bool("version", false, "print version and exit")
 		execApp   = flag.String("exec-app", "", "internal: replace this process with the configured app of this id")
+		cecCmd    = flag.String("cec", "", "talk to the TV over HDMI-CEC and exit: setup, on, off or status")
 	)
 	flag.Parse()
 
@@ -48,6 +53,10 @@ func main() {
 		level = slog.LevelDebug
 	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+
+	if *cecCmd != "" {
+		os.Exit(runCEC(*cecCmd))
+	}
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
@@ -122,10 +131,58 @@ func main() {
 		os.Exit(1)
 	}
 
-	srv := server.New(cfg, log, static, kiosk.New(cfg.Kiosk.Unit, *mock, log), appManager, photoService, newRunner)
+	// TV power schedule over HDMI-CEC.
+	tvOpts := tv.Options{TV: cec.New(), Log: log, AppRunning: func() bool { return appManager.Status().Running != "" }}
+	for _, c := range []struct {
+		value string
+		dst   **tv.Clock
+	}{{cfg.TV.Off, &tvOpts.Off}, {cfg.TV.On, &tvOpts.On}} {
+		if c.value == "" {
+			continue
+		}
+		clock, err := tv.ParseClock(c.value)
+		if err != nil {
+			log.Error("config", "err", err)
+			os.Exit(2)
+		}
+		*c.dst = &clock
+	}
+	tvService := tv.New(tvOpts)
+
+	// The phone as mouse and keyboard, and the TV remote's long-press exit.
+	phoneInput := input.NewService(cfg.Remote.MouseKeyboard, log)
+	defer phoneInput.Close()
+	var exitKeys []uint16
+	for _, name := range cfg.Input.AppExitKeys {
+		code, err := input.ParseKey(name)
+		if err != nil {
+			log.Error("config: input.app_exit_keys", "err", err)
+			os.Exit(2)
+		}
+		exitKeys = append(exitKeys, code)
+	}
+
+	srv := server.New(cfg, log, static, server.Deps{
+		Kiosk: kiosk.New(cfg.Kiosk.Unit, *mock, log), Apps: appManager, Photos: photoService,
+		Input: phoneInput, TV: tvService, NewRunner: newRunner,
+	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if len(exitKeys) > 0 && len(cfg.Apps) > 0 {
+		watcher := &input.Watcher{
+			Keys: exitKeys, Hold: cfg.Input.AppExitHold.Duration, Log: log,
+			Active: func() bool { return appManager.Status().Running != "" },
+			OnExit: func() {
+				log.Info("exit key held on the remote: closing the app")
+				if err := appManager.Stop(context.Background()); err != nil {
+					log.Warn("closing the app", "err", err)
+				}
+			},
+		}
+		go watcher.Run(ctx)
+	}
 
 	log.Info("pidash starting", "version", version, "config", *cfgPath)
 	if err := srv.Run(ctx); err != nil {
@@ -204,4 +261,33 @@ func newPhotoService(cfg config.Photos, mock bool, log *slog.Logger) (*photos.Se
 		CacheBytes:     int64(cfg.CacheMB) << 20,
 		Log:            log,
 	}), nil
+}
+
+// runCEC handles `pidash -cec <command>` and returns the exit status. The
+// kiosk unit uses "setup" so the TV switches to the Pi and forwards its
+// remote's keys; the other commands are handy for trying CEC by hand.
+func runCEC(command string) int {
+	c := cec.New()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	var err error
+	switch command {
+	case "setup", "on":
+		err = c.Setup(ctx)
+	case "off":
+		err = c.Standby(ctx)
+	case "status":
+		var p cec.Power
+		if p, err = c.PowerStatus(ctx); err == nil {
+			fmt.Println("TV power:", p)
+		}
+	default:
+		fmt.Fprintln(os.Stderr, "usage: pidash -cec setup|on|off|status")
+		return 2
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "pidash:", err)
+		return 1
+	}
+	return 0
 }

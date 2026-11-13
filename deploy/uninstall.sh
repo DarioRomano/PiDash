@@ -2,8 +2,8 @@
 # Removes PiDash for the current user. Your settings are kept unless --purge is given.
 # apt packages installed by install.sh are left alone.
 # Without --purge the browser profiles of your web apps (YouTube, Netflix, ... logins) are kept too.
-# If console mode was set up (install.sh --console-apps), its three system files
-# are removed too, which needs sudo.
+# The system files added by install.sh --console-apps and --phone-input are
+# removed too, which needs sudo.
 set -uo pipefail
 
 if [ "$(id -u)" -eq 0 ]; then
@@ -22,6 +22,13 @@ rm -f "$HOME/.config/systemd/user/pidash.service" \
       "$HOME/.local/share/applications/pidash.desktop" \
       "$HOME/.config/autostart/pidash.desktop"
 systemctl --user daemon-reload >/dev/null 2>&1
+
+# The udev rule added by `install.sh --phone-input`.
+if [ -e /etc/udev/rules.d/70-pidash-uinput.rules ]; then
+  echo "Removing the phone mouse/keyboard permission (needs sudo)"
+  sudo rm -f /etc/udev/rules.d/70-pidash-uinput.rules
+  sudo udevadm control --reload-rules
+fi
 
 # System-wide pieces of console mode, present only after `install.sh --console-apps`.
 if [ -e "/etc/systemd/system/pidash-console@.service" ] || [ -e /etc/polkit-1/rules.d/50-pidash-console.rules ] || [ -e /usr/local/lib/pidash/vt-switch.sh ]; then

@@ -10,12 +10,16 @@
 # Remove everything again with deploy/uninstall.sh.
 #
 # Usage (as your normal user, NOT with sudo):
-#   bash deploy/install.sh [--autostart] [--console-apps] [--binary PATH]
+#   bash deploy/install.sh [--autostart] [--console-apps] [--phone-input] [--binary PATH]
 #     --autostart     also open the dashboard automatically when the desktop starts
 #     --console-apps  allow apps with mode = "console" (Moonlight, Kodi, ...) to run
 #                     on their own virtual terminal. This is the one part that is
 #                     system-wide: it adds a systemd unit, a small helper script
 #                     and a polkit rule under /etc and /usr/local (needs sudo).
+#     --phone-input   allow the phone remote to act as a mouse and keyboard. Adds
+#                     one udev rule under /etc (needs sudo) and the small tool
+#                     used for typing. You also need to set
+#                     mouse_keyboard = true under [remote] in the settings.
 #     --binary        path to the pidash binary (default: looks next to deploy/)
 set -euo pipefail
 
@@ -28,14 +32,16 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 AUTOSTART=0
 CONSOLE_APPS=0
+PHONE_INPUT=0
 CONSOLE_VT="${PIDASH_CONSOLE_VT:-8}"
 BINARY=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --autostart) AUTOSTART=1 ;;
     --console-apps) CONSOLE_APPS=1 ;;
+    --phone-input) PHONE_INPUT=1 ;;
     --binary) BINARY="${2:?--binary needs a path}"; shift ;;
-    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 1 ;;
   esac
   shift
@@ -72,6 +78,12 @@ fi
 if [ "$CONSOLE_APPS" -eq 1 ]; then
   command -v chvt >/dev/null 2>&1 || missing+=(kbd)
 fi
+if [ "$PHONE_INPUT" -eq 1 ]; then
+  # Typing text into apps: wtype on the Wayland desktop, xdotool on X11.
+  for tool in wtype xdotool; do
+    if ! command -v "$tool" >/dev/null 2>&1 && apt-cache show "$tool" >/dev/null 2>&1; then missing+=("$tool"); fi
+  done
+fi
 if [ ${#missing[@]} -gt 0 ]; then
   echo "    installing: ${missing[*]} (needs sudo)"
   sudo apt-get update -qq
@@ -85,7 +97,8 @@ mkdir -p "$APP_DIR" "$CONF_DIR" "$UNIT_DIR" "$MENU_DIR"
 # Install to a temp name and rename, so a running backend is replaced atomically.
 install -m 0755 "$BINARY" "$APP_DIR/pidash.new"
 mv -f "$APP_DIR/pidash.new" "$APP_DIR/pidash"
-install -m 0755 "$HERE/kiosk.sh" "$HERE/cec-setup.sh" "$APP_DIR/"
+install -m 0755 "$HERE/kiosk.sh" "$APP_DIR/"
+rm -f "$APP_DIR/cec-setup.sh"   # replaced by "pidash -cec setup"
 if [ -f "$HERE/uninstall.sh" ]; then install -m 0755 "$HERE/uninstall.sh" "$APP_DIR/"; fi
 if [ ! -f "$CONF_DIR/config.toml" ]; then
   install -m 0644 "$ROOT/config.example.toml" "$CONF_DIR/config.toml"
@@ -123,6 +136,23 @@ if [ "$CONSOLE_APPS" -eq 1 ]; then
   sudo systemctl daemon-reload
   rm -r "$tmp"
   echo "    console apps will use virtual terminal $CONSOLE_VT (Ctrl+Alt+F$CONSOLE_VT)"
+fi
+
+if [ "$PHONE_INPUT" -eq 1 ]; then
+  echo "==> Allowing the phone remote to act as mouse and keyboard (system-wide, needs sudo)"
+  sudo install -m 0644 -o root -g root "$HERE/70-pidash-uinput.rules" /etc/udev/rules.d/70-pidash-uinput.rules
+  sudo modprobe uinput 2>/dev/null || true
+  sudo udevadm control --reload-rules
+  sudo udevadm trigger --name-match=uinput 2>/dev/null || sudo udevadm trigger
+  if ! grep -Eq '^\s*mouse_keyboard\s*=\s*true' "$CONF_DIR/config.toml"; then
+    echo "    now switch it on: set  mouse_keyboard = true  under [remote] in $CONF_DIR/config.toml"
+  fi
+fi
+
+if ! id -nG | tr ' ' '\n' | grep -qx input; then
+  echo "NOTE: you are not in the 'input' group. Holding Back on the TV remote will not"
+  echo "      close apps, and the phone cannot act as a mouse, until you are:"
+  echo "      sudo usermod -aG input $USER   (then log out and in again)"
 fi
 
 if ! id -nG | tr ' ' '\n' | grep -qx video; then

@@ -22,6 +22,8 @@ type Config struct {
 	Apps    []App   `toml:"apps"`
 	Photos  Photos  `toml:"photos"`
 	Weather Weather `toml:"weather"`
+	Remote  Remote  `toml:"remote"`
+	TV      TV      `toml:"tv"`
 }
 
 // Server holds HTTP settings.
@@ -46,10 +48,37 @@ type Display struct {
 	Locale string `toml:"locale" json:"locale"`
 }
 
-// Input maps browser KeyboardEvent.code values to dashboard actions.
+// Input maps browser KeyboardEvent.code values to dashboard actions, and
+// names the remote-control keys that close an app.
 type Input struct {
 	Keys map[string]string `toml:"keys"`
+	// AppExitKeys are Linux key names (KEY_EXIT, KEY_BACK, …) that return from
+	// an app to the dashboard when held for AppExitHold. They are read straight
+	// from the remote, so they work while the app has the screen.
+	AppExitKeys []string `toml:"app_exit_keys"`
+	// AppExitHold is how long the key must be held; "0s" acts on the first press.
+	AppExitHold Duration `toml:"app_exit_hold"`
 }
+
+// Remote configures the phone remote.
+type Remote struct {
+	// MouseKeyboard lets the phone act as a mouse and keyboard for whatever is
+	// on screen. Off by default: it gives every device on the home network
+	// control of the desktop session.
+	MouseKeyboard bool `toml:"mouse_keyboard"`
+	// PIN, when set, must be entered on the phone before it can act as mouse
+	// and keyboard.
+	PIN string `toml:"pin"`
+}
+
+// TV is the daily schedule for switching the TV off and on over HDMI-CEC.
+type TV struct {
+	// Off and On are times of day like "23:30"; empty means "do not".
+	Off string `toml:"off"`
+	On  string `toml:"on"`
+}
+
+var clockPattern = regexp.MustCompile(`^([01]?\d|2[0-3]):[0-5]\d$`)
 
 // System configures the system-stats provider.
 type System struct {
@@ -206,7 +235,7 @@ func Default() Config {
 	return Config{
 		Server:  Server{Listen: ":8080"},
 		Display: Display{SafeArea: 0.03, DebugKeys: true, PixelShift: 4, Clock24h: true},
-		Input: Input{Keys: map[string]string{
+		Input: Input{AppExitKeys: []string{"KEY_EXIT", "KEY_BACK"}, AppExitHold: Duration{2 * time.Second}, Keys: map[string]string{
 			"ArrowUp":        "up",
 			"ArrowDown":      "down",
 			"ArrowLeft":      "left",
@@ -331,6 +360,20 @@ func (c *Config) finish() error {
 	}
 	if err := c.Weather.validate(); err != nil {
 		return err
+	}
+	for name, v := range map[string]string{"tv.off": c.TV.Off, "tv.on": c.TV.On} {
+		if v != "" && !clockPattern.MatchString(v) {
+			return fmt.Errorf("%s must be a time of day like \"23:30\", got %q", name, v)
+		}
+	}
+	if c.TV.Off != "" && c.TV.Off == c.TV.On {
+		return fmt.Errorf("tv.off and tv.on must be different times")
+	}
+	if n := len(c.Remote.PIN); n != 0 && (n < 4 || n > 32) {
+		return fmt.Errorf("remote.pin must be 4 to 32 characters")
+	}
+	if c.Input.AppExitHold.Duration < 0 || c.Input.AppExitHold.Duration > 10*time.Second {
+		return fmt.Errorf("input.app_exit_hold must be between 0s and 10s")
 	}
 	return c.validate()
 }
