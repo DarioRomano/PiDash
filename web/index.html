@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=1920, initial-scale=1" />
+    <title>PiDash</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="stage">
+      <div id="backdrop" aria-hidden="true"></div>
+      <div id="scrim" aria-hidden="true"></div>
+
+      <main id="overlay" data-density="compact">
+        <section id="clock">
+          <div id="time"><span id="hm">--:--</span><span id="ampm"></span></div>
+          <div id="date">&nbsp;</div>
+        </section>
+        <section id="weather" hidden></section>
+      </main>
+
+      <aside id="status">
+        <span id="conn" class="dot" title="Connection"></span>
+        <span id="stale" hidden>stale</span>
+        <span id="debug" hidden></span>
+      </aside>
+
+      <nav id="rail" hidden></nav>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

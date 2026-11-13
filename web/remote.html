@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0d12" />
+    <title>PiDash Remote</title>
+    <link rel="stylesheet" href="/src/remote.css" />
+  </head>
+  <body>
+    <header>
+      <h1>PiDash</h1>
+      <span id="status" class="dot"></span>
+    </header>
+
+    <section class="dpad">
+      <button data-action="up" aria-label="Up">▲</button>
+      <button data-action="left" aria-label="Left">◀</button>
+      <button data-action="select" class="ok">OK</button>
+      <button data-action="right" aria-label="Right">▶</button>
+      <button data-action="down" aria-label="Down">▼</button>
+    </section>
+
+    <section class="row">
+      <button data-action="back">Back</button>
+      <button data-action="home">Home</button>
+      <button data-action="playpause">⏯</button>
+    </section>
+
+    <section class="numpad">
+      <button data-action="1">1</button><button data-action="2">2</button><button data-action="3">3</button>
+      <button data-action="4">4</button><button data-action="5">5</button><button data-action="6">6</button>
+      <button data-action="7">7</button><button data-action="8">8</button><button data-action="9">9</button>
+      <button data-action="0" class="zero">0</button>
+    </section>
+
+    <form id="textform" class="row">
+      <input id="text" type="text" placeholder="Send text…" autocomplete="off" />
+      <button type="submit">Send</button>
+    </form>
+
+    <script type="module" src="/src/remote.ts"></script>
+  </body>
+</html>
