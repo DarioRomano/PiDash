@@ -164,7 +164,7 @@ func main() {
 
 	srv := server.New(cfg, log, static, server.Deps{
 		Kiosk: kiosk.New(cfg.Kiosk.Unit, *mock, log), Apps: appManager, Photos: photoService,
-		Input: phoneInput, TV: tvService, NewRunner: newRunner,
+		Input: phoneInput, TV: tvService, Version: version, NewRunner: newRunner,
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

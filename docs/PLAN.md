@@ -347,6 +347,31 @@ PiDash is a guest on the existing desktop. It never changes how the Pi boots.
 - Later: night schedule in config (`display.off = "23:30"`, `display.on = "06:30"`)
   using CEC standby/wake.
 
+## Shipping
+
+The goal: a Pi owner needs one command and no build tools; a maintainer needs
+one command to publish.
+
+- **Packages** (`scripts/dist.sh`): one tarball per platform (arm64, 32-bit ARM,
+  amd64) holding the static binary with the frontend embedded, the installer
+  and its files, and the example settings. Asset names carry no version, so
+  `releases/latest/download/…` is a stable address. A `SHA256SUMS` file sits
+  next to them.
+- **Publishing** (`make release VERSION=vX.Y.Z`): checks, tags and pushes. The
+  Release workflow builds the packages and creates the GitHub release with
+  generated notes. Tags with a suffix become pre-releases.
+- **Installing and updating** (`install.sh` at the repository root, installed
+  on the Pi as `update.sh`): detects the platform, downloads the package and
+  checksums, verifies, unpacks and runs the packaged installer. The options
+  used at install time are saved and reused on update. Settings and data are
+  never overwritten.
+- **After an update** the backend restarts under systemd; the dashboard sees a
+  new version in its first event and reloads, so the TV never runs an old page
+  against a new backend. Shutdown closes open event streams, so restarts are
+  immediate.
+- **CI** runs lint (Go, TypeScript, shellcheck), tests with the race detector
+  and a package build on every push and pull request.
+
 ## Dev workflow
 
 - `make dev` runs the Go backend with a `--mock` flag (canned weather, sample

@@ -29,18 +29,19 @@ import (
 
 // Server is the PiDash HTTP server.
 type Server struct {
-	cfg    config.Config
-	log    *slog.Logger
-	hub    *hub
-	runner *providers.Runner
-	kiosk  *kiosk.Controller
-	apps   *apps.Manager
-	photos *photos.Service // nil when no photo source is configured
-	input  *input.Service
-	tv     *tv.Service
-	pin    pinGuard
-	static fs.FS
-	mux    *http.ServeMux
+	cfg     config.Config
+	log     *slog.Logger
+	hub     *hub
+	runner  *providers.Runner
+	kiosk   *kiosk.Controller
+	apps    *apps.Manager
+	photos  *photos.Service // nil when no photo source is configured
+	input   *input.Service
+	tv      *tv.Service
+	pin     pinGuard
+	version string
+	static  fs.FS
+	mux     *http.ServeMux
 }
 
 // Deps are the services the HTTP server exposes.
@@ -50,6 +51,8 @@ type Deps struct {
 	Photos *photos.Service // nil when no photo source is configured
 	Input  *input.Service
 	TV     *tv.Service
+	// Version is the PiDash version, shown on the phone remote.
+	Version string
 	// NewRunner builds the provider runner around the server's publish function.
 	NewRunner func(publish func(providers.Entry)) *providers.Runner
 }
@@ -58,7 +61,7 @@ type Deps struct {
 func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	k, am, ps, newRunner := d.Kiosk, d.Apps, d.Photos, d.NewRunner
 	s := &Server{cfg: cfg, log: log, hub: newHub(), kiosk: k, apps: am, photos: ps, input: d.Input, tv: d.TV,
-		pin: pinGuard{pin: cfg.Remote.PIN}, static: static, mux: http.NewServeMux()}
+		pin: pinGuard{pin: cfg.Remote.PIN}, version: d.Version, static: static, mux: http.NewServeMux()}
 	s.runner = newRunner(func(e providers.Entry) { s.hub.broadcast("state", e) })
 
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
@@ -106,6 +109,9 @@ func (s *Server) Run(ctx context.Context) error {
 		Addr:              s.cfg.Server.Listen,
 		Handler:           s.withLogging(s.mux),
 		ReadHeaderTimeout: 5 * time.Second,
+		// Requests end when the server is asked to stop. Without this the
+		// dashboard's open event stream would hold up every restart.
+		BaseContext: func(net.Listener) context.Context { return ctx },
 	}
 	ln, err := net.Listen("tcp", s.cfg.Server.Listen)
 	if err != nil {
@@ -130,11 +136,18 @@ func (s *Server) Run(ctx context.Context) error {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, map[string]any{"ok": true, "clients": s.hub.count()})
+	writeJSON(w, map[string]any{"ok": true, "clients": s.hub.count(), "version": s.version})
+}
+
+// clientConfig is what the dashboard needs to know about the settings.
+func (s *Server) clientConfig() config.Client {
+	c := s.cfg.ForClient()
+	c.Version = s.version
+	return c
 }
 
 func (s *Server) handleConfig(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, s.cfg.ForClient())
+	writeJSON(w, s.clientConfig())
 }
 
 func (s *Server) handleState(w http.ResponseWriter, _ *http.Request) {
@@ -286,14 +299,15 @@ func (s *Server) handleAppIcon(w http.ResponseWriter, r *http.Request) {
 
 // remoteInfo tells the phone remote which extra controls to show.
 type remoteInfo struct {
-	Input input.Status `json:"input"`
-	TV    tv.Status    `json:"tv"`
+	Input   input.Status `json:"input"`
+	TV      tv.Status    `json:"tv"`
+	Version string       `json:"version"`
 }
 
 func (s *Server) handleRemoteInfo(w http.ResponseWriter, _ *http.Request) {
 	in := s.input.Status()
 	in.PINRequired = in.Enabled && s.pin.pin != ""
-	writeJSON(w, remoteInfo{Input: in, TV: s.tv.Status()})
+	writeJSON(w, remoteInfo{Input: in, TV: s.tv.Status(), Version: s.version})
 }
 
 // inputError maps problems of the phone's mouse and keyboard to HTTP.
@@ -506,7 +520,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Initial burst: config, then the current state of every provider.
-	if err := send("config", s.cfg.ForClient()); err != nil {
+	if err := send("config", s.clientConfig()); err != nil {
 		return
 	}
 	for _, e := range s.runner.Snapshot() {

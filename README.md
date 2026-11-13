@@ -27,26 +27,52 @@ with its own profile: close it and you are back on your desktop, exactly as you
 left it. Everything installs into your home directory and can be removed again.
 
 Requirements: a Raspberry Pi 5 running Raspberry Pi OS with desktop (Bookworm or
-newer), connected to the TV.
+newer), connected to the TV and to the internet.
 
-**Option A: from another computer over SSH** (needs Go 1.22+ and Node 18+ there):
-
-```sh
-make install PI_HOST=pi@raspberrypi.local     # first time
-make deploy  PI_HOST=pi@raspberrypi.local     # later updates
-```
-
-**Option B: directly on the Pi** (needs Go 1.22+ and Node 18+ on the Pi; on
-Raspberry Pi OS Trixie: `sudo apt install golang nodejs npm`):
+Open a terminal on the Pi, or connect with SSH, and run this as your normal
+user:
 
 ```sh
-git clone https://github.com/DarioRomano/PiDash && cd PiDash
-make install-local
+curl -fsSL https://raw.githubusercontent.com/DarioRomano/PiDash/main/install.sh | bash
 ```
 
-Add `INSTALL_FLAGS=--autostart` to either command if you want the dashboard to
-open by itself whenever the desktop starts. Without it, the Pi boots to your
-normal desktop and the dashboard only appears when you ask for it.
+That downloads the latest release for your Pi, checks it against the release's
+checksums, and installs it. Nothing is compiled on the Pi. When it finishes it
+prints how to start the dashboard and the address of the phone remote.
+
+Options go after `bash -s --`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/DarioRomano/PiDash/main/install.sh | bash -s -- --autostart --phone-input
+```
+
+| Option | What it adds |
+|--------|--------------|
+| `--autostart` | The dashboard opens by itself whenever the desktop starts. Without it, the Pi boots to your normal desktop and the dashboard appears when you ask for it |
+| `--console-apps` | Lets apps such as Moonlight and Kodi run outside the desktop, see [Apps](#apps) |
+| `--phone-input` | Lets the phone act as mouse and keyboard, see [Phone as mouse and keyboard](#phone-as-mouse-and-keyboard) |
+
+If you prefer to look before you run: download `install.sh` from this
+repository, read it, and run `bash install.sh`. A specific version can be
+installed with `PIDASH_VERSION=v0.2.0` in front of `bash`.
+
+### Updating
+
+```sh
+bash ~/.local/share/pidash/update.sh
+```
+
+This fetches the latest release and installs it over the old one. Your
+settings, chosen photo folders, app logins and the options you installed with
+are kept. The dashboard on the TV reloads by itself when the new version
+starts. The phone remote shows the installed version at the bottom.
+
+### Uninstalling
+
+```sh
+bash ~/.local/share/pidash/uninstall.sh            # keeps your settings
+bash ~/.local/share/pidash/uninstall.sh --purge    # removes them too
+```
 
 What the installer does:
 
@@ -509,14 +535,53 @@ profile paint and layout on the real device.
 
 ## Development
 
+You need Go 1.22 or newer and Node 18 or newer.
+
 ```sh
-make dev            # Go backend on :8080 with mock data + Vite dev server on :5173
-make build          # native binary in bin/pidash (frontend embedded)
-make lint test
+make dev            # Go backend on :8080 with sample data + Vite dev server on :5173
+make build          # native binary in bin/pidash, with the frontend embedded
+make lint test      # static checks (Go, TypeScript, shell) and tests
 ```
 
-Arrow keys, Enter, Escape and digits stand in for the remote during development.
-Hold Escape for two seconds to trigger "exit to desktop".
+`make dev` uses generated sample photos, a made-up forecast and pretend app
+launches, so everything can be worked on without a Pi, a NAS or a TV. Arrow
+keys, Enter, Escape and the mouse work as on the TV; hold Escape for two
+seconds to trigger "exit to desktop".
+
+To try a change on your own Pi straight from the checkout, without making a
+release:
+
+```sh
+make install PI_HOST=pi@raspberrypi.local     # first time
+make deploy  PI_HOST=pi@raspberrypi.local     # afterwards: rebuild, copy, restart
+```
+
+Add `INSTALL_FLAGS="--autostart --console-apps --phone-input"` to `make install`
+as needed. On the Pi itself, `make install-local` does the same from a checkout
+there.
+
+## Releasing
+
+A release is one command, run on the main branch with everything committed:
+
+```sh
+make release VERSION=v0.2.0
+```
+
+It runs the checks, creates the tag and pushes it. GitHub Actions then builds
+the packages for 64-bit and 32-bit Raspberry Pi OS and for ordinary PCs, and
+publishes them as a GitHub release with generated notes and checksums. From
+that moment the one-line installer installs the new version, and
+`update.sh` on every Pi picks it up.
+
+- Versions follow `vMAJOR.MINOR.PATCH`. A suffix such as `v0.3.0-rc.1` makes a
+  pre-release, which the installer skips unless asked for by name.
+- `make dist` builds the same packages locally into `dist/`, to inspect them or
+  to install from a file: unpack one and run `bash deploy/install.sh` inside it.
+- Every push and pull request runs the same checks and a package build in
+  GitHub Actions (`.github/workflows/ci.yml`).
+- The download address can be redirected with `PIDASH_BASE_URL`, for a mirror
+  or for testing a release before it is published.
 
 ## Layout
 
@@ -532,7 +597,10 @@ internal/photos/     background slideshow: Synology Photos and folder sources, r
 internal/input/      phone as virtual mouse and keyboard; TV remote long-press watcher
 internal/cec/        HDMI-CEC through cec-ctl: register with the TV, power on/off
 internal/tv/         daily TV power schedule
-deploy/              install.sh, uninstall.sh, systemd user units, kiosk and CEC scripts
+deploy/              the installer run on the Pi, uninstaller, systemd units, kiosk launcher
+install.sh           one-line installer and updater: downloads a release and runs deploy/install.sh
+scripts/dist.sh      builds the release packages
+.github/workflows/   CI on every push, and the release build on a version tag
 ```
 
 ## License

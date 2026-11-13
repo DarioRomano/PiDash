@@ -30,6 +30,7 @@ fi
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
+GIVEN_FLAGS=()
 AUTOSTART=0
 CONSOLE_APPS=0
 PHONE_INPUT=0
@@ -37,9 +38,9 @@ CONSOLE_VT="${PIDASH_CONSOLE_VT:-8}"
 BINARY=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --autostart) AUTOSTART=1 ;;
-    --console-apps) CONSOLE_APPS=1 ;;
-    --phone-input) PHONE_INPUT=1 ;;
+    --autostart) AUTOSTART=1; GIVEN_FLAGS+=("$1") ;;
+    --console-apps) CONSOLE_APPS=1; GIVEN_FLAGS+=("$1") ;;
+    --phone-input) PHONE_INPUT=1; GIVEN_FLAGS+=("$1") ;;
     --binary) BINARY="${2:?--binary needs a path}"; shift ;;
     -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 1 ;;
@@ -48,7 +49,8 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$BINARY" ]; then
-  for c in "$ROOT/pidash-arm64" "$ROOT/bin/pidash-arm64" "$ROOT/bin/pidash"; do
+  # "pidash" next to deploy/ is the layout of a release package.
+  for c in "$ROOT/pidash" "$ROOT/pidash-arm64" "$ROOT/bin/pidash-arm64" "$ROOT/bin/pidash"; do
     if [ -f "$c" ]; then BINARY="$c"; break; fi
   done
 fi
@@ -100,6 +102,9 @@ mv -f "$APP_DIR/pidash.new" "$APP_DIR/pidash"
 install -m 0755 "$HERE/kiosk.sh" "$APP_DIR/"
 rm -f "$APP_DIR/cec-setup.sh"   # replaced by "pidash -cec setup"
 if [ -f "$HERE/uninstall.sh" ]; then install -m 0755 "$HERE/uninstall.sh" "$APP_DIR/"; fi
+# The updater: fetches the latest release and runs its installer with the same options.
+if [ -f "$ROOT/install.sh" ]; then install -m 0755 "$ROOT/install.sh" "$APP_DIR/update.sh"; fi
+printf '%s\n' "${GIVEN_FLAGS[@]}" | sed '/^$/d' > "$APP_DIR/install-flags"
 if [ ! -f "$CONF_DIR/config.toml" ]; then
   install -m 0644 "$ROOT/config.example.toml" "$CONF_DIR/config.toml"
   echo "    wrote $CONF_DIR/config.toml"
@@ -163,7 +168,7 @@ fi
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 cat <<MSG
 
-PiDash is installed.
+PiDash $("$APP_DIR/pidash" -version 2>/dev/null | awk '{print $2}') is installed.
 
   Show on TV       : open "PiDash" from the desktop menu, or
                      systemctl --user start pidash-kiosk
@@ -175,5 +180,6 @@ PiDash is installed.
                      http://${IP:-<pi-ip>}:8080/photos
   Settings         : $CONF_DIR/config.toml  (then: systemctl --user restart pidash)
   Logs             : journalctl --user -u pidash -u pidash-kiosk -f
+  Update           : bash $APP_DIR/update.sh
   Uninstall        : bash $APP_DIR/uninstall.sh
 MSG

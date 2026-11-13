@@ -446,6 +446,9 @@ func (c Config) validate() error {
 type Client struct {
 	Display Display           `json:"display"`
 	Keys    map[string]string `json:"keys"`
+	// Version is the running PiDash version. The dashboard reloads itself
+	// when it changes, so an update reaches the TV without a restart.
+	Version string `json:"version"`
 }
 
 // ForClient returns the browser-facing view of the configuration.

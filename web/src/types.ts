@@ -11,6 +11,7 @@ export interface DisplayConfig {
 export interface ClientConfig {
   display: DisplayConfig;
   keys: Record<string, string>;
+  version: string;
 }
 
 export interface StateEntry<T = unknown> {

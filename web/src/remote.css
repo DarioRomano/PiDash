@@ -76,3 +76,4 @@ input:focus { outline: 2px solid var(--accent); }
 #drag[aria-pressed="true"] { outline: 2px solid var(--accent); color: var(--accent); }
 .note { font-size: 14px; color: var(--dim); line-height: 1.4; }
 #textform button { flex: 0 0 92px; font-size: 17px; padding: 14px 6px; }
+#version { text-align: center; font-size: 12px; color: var(--dim); opacity: 0.7; padding-top: 4px; }

@@ -240,7 +240,16 @@ async function activateRailItem(item: RailItem) {
 
 let pixelShiftTimer = 0;
 
+let runningVersion = "";
+
 function applyConfig(cfg: ClientConfig) {
+  // After an update the backend restarts with a new version: load the new
+  // dashboard too, so the TV never runs an old page against a new backend.
+  if (runningVersion && cfg.version && cfg.version !== runningVersion) {
+    location.reload();
+    return;
+  }
+  runningVersion = cfg.version;
   const d = cfg.display;
   document.documentElement.style.setProperty("--safe", `${(d.safe_area * 100).toFixed(2)}%`);
   clock.configure(d.clock_24h, d.locale);

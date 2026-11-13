@@ -290,6 +290,7 @@ textForm.addEventListener("submit", async (e) => {
 async function loadRemoteInfo() {
   try {
     const info = await (await fetch("/api/remote")).json();
+    document.getElementById("version")!.textContent = info.version ? `PiDash ${info.version}` : "";
     document.getElementById("tv-row")!.hidden = !info.tv.available;
     padBox.hidden = !info.input.available;
     textForm.hidden = !info.input.typing;

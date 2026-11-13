@@ -1,17 +1,22 @@
-# PiDash build & deploy.
+# PiDash build, deploy and release.
+#
+# Development
 #   make dev            run backend (-mock) + Vite dev server with HMR
 #   make build          build frontend and a native binary into bin/pidash
-#   make build-pi       cross-compile for the Pi (linux/arm64) into bin/pidash-arm64
+#   make lint test      static checks and tests
 #
-# From another machine, over SSH (override the address with PI_HOST=pi@192.168.1.50):
-#   make install        first-time install on the Pi's existing desktop
-#   make deploy         push a new build and restart the backend
+# Your own Pi, straight from this checkout (override with PI_HOST=pi@192.168.1.50)
+#   make install        first-time install over SSH
+#   make deploy         push a new build over SSH and restart the backend
 #   make uninstall      remove PiDash from the Pi again
+#   make install-local  install on this machine (when working on the Pi itself)
+#   Add INSTALL_FLAGS="--autostart --console-apps --phone-input" as needed.
 #
-# Directly on the Pi (needs Go 1.22+ and Node 18+ on the Pi):
-#   make install-local
-#
-# Add INSTALL_FLAGS=--autostart to open the dashboard whenever the desktop starts.
+# Releases
+#   make dist                    build the release packages into dist/
+#   make release VERSION=v0.2.0  tag and push; GitHub Actions builds and publishes
+#                                the release, which the one-line installer and
+#                                every Pi's update.sh then pick up
 
 PI_HOST  ?= pi@pidash.local
 VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
@@ -20,7 +25,7 @@ LDFLAGS   = -s -w -X main.version=$(VERSION)
 INSTALL_FLAGS ?=
 APP_DIR   = .local/share/pidash
 
-.PHONY: dev dev-backend dev-web build build-web build-pi deploy install install-local uninstall lint test clean
+.PHONY: dev dev-backend dev-web build build-web build-pi deploy install install-local uninstall lint test clean dist release
 
 dev:
 	@$(MAKE) -j2 dev-backend dev-web
@@ -50,7 +55,7 @@ deploy: build-pi
 
 install: build-pi
 	ssh $(PI_HOST) 'mkdir -p /tmp/pidash-install'
-	scp -r bin/pidash-arm64 deploy config.example.toml $(PI_HOST):/tmp/pidash-install/
+	scp -r bin/pidash-arm64 deploy config.example.toml install.sh $(PI_HOST):/tmp/pidash-install/
 	ssh -t $(PI_HOST) 'cd /tmp/pidash-install && bash deploy/install.sh $(INSTALL_FLAGS); rc=$$?; cd / && rm -r /tmp/pidash-install; exit $$rc'
 
 install-local: build
@@ -61,11 +66,29 @@ uninstall:
 
 lint:
 	go vet ./...
+	@test -z "$$(gofmt -l .)" || (echo "gofmt needed:"; gofmt -l .; exit 1)
 	cd web && npx tsc --noEmit
+	@if command -v shellcheck >/dev/null 2>&1; then shellcheck -S warning install.sh deploy/*.sh scripts/*.sh; else echo "shellcheck not installed, skipping the shell scripts"; fi
 
 test:
 	go test ./...
 
+dist: build-web
+	scripts/dist.sh $(VERSION)
+
+# Publishing is one command: it checks the tree, tags it and pushes the tag.
+# The Release workflow on GitHub does the rest.
+release:
+	@echo "$(VERSION)" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$$' || (echo "usage: make release VERSION=v0.2.0"; exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "commit or stash your changes first"; exit 1)
+	@! git rev-parse -q --verify "refs/tags/$(VERSION)" >/dev/null || (echo "tag $(VERSION) already exists"; exit 1)
+	$(MAKE) lint test
+	git tag -a "$(VERSION)" -m "PiDash $(VERSION)"
+	git push origin "$(VERSION)"
+	@echo
+	@echo "Tag $(VERSION) pushed. GitHub Actions is now building the release:"
+	@echo "  https://github.com/DarioRomano/PiDash/actions"
+
 clean:
-	rm -rf bin web/dist/*
+	rm -rf bin dist web/dist/*
 	@touch web/dist/.gitkeep
