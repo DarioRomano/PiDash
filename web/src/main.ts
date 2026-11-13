@@ -231,6 +231,7 @@ const rail = new Rail(
   activateRailItem,
   (open) => {
     stage.classList.toggle("rail-open", open);
+    ambient.setLifted(open);
     railActivity();
   },
 );
@@ -426,8 +427,33 @@ function formatUptime(sec: number): string {
 
 // --- Actions ----------------------------------------------------------------
 
+// The background answers to the remote: it flows the way an arrow points and
+// swells on a press, so the screen feels alive under the hand.
+function stirAmbient(action: Action) {
+  switch (action) {
+    case "left":
+      ambient.nudge(-1, 0);
+      break;
+    case "right":
+      ambient.nudge(1, 0);
+      break;
+    case "up":
+      ambient.nudge(0, -1);
+      break;
+    case "down":
+      ambient.nudge(0, 1);
+      break;
+    case "select":
+      ambient.pulse(1);
+      break;
+    default:
+      ambient.pulse(0.45);
+  }
+}
+
 input.on((action) => {
   railActivity();
+  stirAmbient(action);
   if (action === "exit") {
     exitToDesktop();
     return;
@@ -557,6 +583,7 @@ function pointerActive() {
   }, 3500);
 }
 window.addEventListener("pointermove", (e) => {
+  ambient.pointTo((e.clientX / window.innerWidth) * 2 - 1, (e.clientY / window.innerHeight) * 2 - 1);
   // Ignore the jitter of a mouse lying still and the event browsers fire on load.
   pointerTravel += Math.abs(e.movementX) + Math.abs(e.movementY);
   if (e.pointerType !== "mouse" || pointerTravel > 6) {

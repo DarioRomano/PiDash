@@ -268,11 +268,20 @@ as sunrise are shown in the local time of the place you configured.
 ### Background without photos
 
 While no photo is on screen (no photo source, nothing chosen yet, or the NAS is
-away), the background is a slow play of soft colours. With the app row open it
-takes on the colours of the selected app's icon: red for YouTube, the icon's
-own mix for anything else. It is drawn very small and stretched, so it costs
-the Pi next to nothing even on a 4K screen, and it stops while a photo or an
-app covers it.
+away), the background shows broad ribbons of colour that wind slowly across
+the screen.
+
+- **They react to you.** Left and right send them flowing that way, up and
+  down make them sway, OK sends a swell through them, and opening the app row
+  lifts them along with the clock. With a mouse they lean towards the pointer.
+  A few seconds later they are back to their slow drift.
+- **They take the colours of the selected app.** With the app row open, the
+  ribbons turn to the colours of the selected icon: red for YouTube, the
+  icon's own mix for anything else.
+- **They are cheap.** The picture is drawn small and stretched, so a 4K screen
+  costs the Pi no more than a small one, and drawing stops while a photo or an
+  app covers it. If the system is set to reduce motion, the ribbons stand
+  still and only change colour.
 
 ### Background photos from Synology Photos
 

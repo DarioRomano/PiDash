@@ -1,11 +1,16 @@
-// The ambient background: slow, soft glows of colour, shown whenever no photo
-// is on screen. Its colours follow the icon of the app that is selected in the
-// app row and drift back to a calm default when the row closes.
+// The ambient background, shown whenever no photo is on screen: broad ribbons
+// of colour that wind slowly across the screen over a few soft glows.
 //
-// It is painted into a tiny canvas (160x90) that the browser stretches over
-// the screen. Stretching blurs it for free, so a 4K screen costs no more than
-// a small one, and a fine static grain on top hides the colour steps that dark
-// gradients otherwise show on a TV.
+// The ribbons answer to what the person does. Left and right send them
+// flowing that way, up and down make them sway, OK sends a swell through
+// them, opening the app row lifts them with the clock, and they lean a little
+// towards the mouse pointer. Their colours follow the icon of the app selected
+// in the app row and return to a calm default when the row closes.
+//
+// Everything is painted into a small canvas (480x270) that the browser
+// stretches over the screen. The stretch softens the edges for free, so a 4K
+// screen costs no more than a small one, and a fine static grain on top hides
+// the colour steps that dark gradients otherwise show on a TV.
 
 export type RGB = [number, number, number];
 
@@ -16,18 +21,35 @@ export const DEFAULT_PALETTE: RGB[] = [
   [104, 50, 138], // plum
 ];
 
-const W = 160;
-const H = 90;
-const FRAME_MS = 33; // about 30 pictures a second is plenty for motion this slow
+const W = 480;
+const H = 270;
+const CALM_FRAME_MS = 33; // about 30 pictures a second while only drifting
 const SETTLE_S = 0.6; // how quickly colours follow a new palette
 const LINGER_MS = 2200; // keep painting while a photo fades in on top
+const TILT = -0.2; // the ribbons run slightly uphill, in radians
 
-/** One glow: which palette colour it takes and how it wanders. */
+/** A soft glow behind the ribbons: which palette colour it takes and how it wanders. */
 const GLOWS = [
-  { colour: 0, x: 0.28, y: 0.72, ax: 0.2, ay: 0.16, period: 71, phase: 0.0, size: 0.62, strength: 0.6 },
-  { colour: 1, x: 0.74, y: 0.34, ax: 0.18, ay: 0.2, period: 89, phase: 1.9, size: 0.58, strength: 0.52 },
-  { colour: 2, x: 0.55, y: 0.85, ax: 0.26, ay: 0.12, period: 113, phase: 3.7, size: 0.5, strength: 0.46 },
-  { colour: 0, x: 0.9, y: 0.82, ax: 0.12, ay: 0.14, period: 97, phase: 5.1, size: 0.4, strength: 0.34 },
+  { colour: 0, x: 0.26, y: 0.74, ax: 0.2, ay: 0.16, period: 71, phase: 0.0, size: 0.6, strength: 0.42 },
+  { colour: 1, x: 0.76, y: 0.3, ax: 0.18, ay: 0.2, period: 89, phase: 1.9, size: 0.56, strength: 0.36 },
+  { colour: 2, x: 0.58, y: 0.88, ax: 0.26, ay: 0.12, period: 113, phase: 3.7, size: 0.48, strength: 0.32 },
+];
+
+/**
+ * A ribbon: a band that winds across the screen, swelling and pinching like a
+ * strip of cloth seen edge-on. It blends from palette colour `from` to `to`.
+ * `depth` is how strongly it answers to input; nearer ribbons move more.
+ */
+const RIBBONS = [
+  { from: 1, to: 2, y: 0.6, amp: 0.2, waves: 0.8, speed: 0.07, phase: 2.1, thick: 0.3, depth: 0.6, alpha: 0.2 },
+  { from: 0, to: 1, y: 0.4, amp: 0.17, waves: 1.1, speed: 0.1, phase: 0.3, thick: 0.22, depth: 1.0, alpha: 0.26 },
+  { from: 2, to: 0, y: 0.24, amp: 0.13, waves: 1.5, speed: 0.13, phase: 4.4, thick: 0.15, depth: 1.5, alpha: 0.24 },
+];
+/** Each ribbon is painted three times, wider and fainter, for a feathered edge. */
+const FEATHER = [
+  [1, 1],
+  [1.7, 0.42],
+  [2.6, 0.18],
 ];
 
 export class Ambient {
@@ -40,6 +62,16 @@ export class Ambient {
   private clock = Math.random() * 600; // seconds; a different sky after every start
   private lingerTimer = 0;
   private still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // What input has set in motion. Everything here settles back to rest.
+  private flow = 0; // how far the ribbons have been pushed along, in radians
+  private flowSpeed = 0;
+  private sway = 0; // vertical offset, as a fraction of the height
+  private swaySpeed = 0;
+  private lift = 0; // where the sway rests: raised while the app row is open
+  private swell = 0; // 0..1 and a little more: wider, brighter waves
+  private lean: [number, number] = [0, 0]; // towards the pointer, -1..1
+  private leanTarget: [number, number] = [0, 0];
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -58,6 +90,34 @@ export class Ambient {
     this.start();
   }
 
+  /** Pushes the ribbons: dx along their length (-1 left, 1 right), dy up or down. */
+  nudge(dx: number, dy: number) {
+    if (this.still) return;
+    this.flowSpeed = clamp(this.flowSpeed + dx * 2.4, -7, 7);
+    this.swaySpeed = clamp(this.swaySpeed + dy * 0.5, -1.2, 1.2);
+    this.pulse(0.25);
+  }
+
+  /** Sends a swell through the ribbons; 1 is a firm press. */
+  pulse(strength = 1) {
+    if (this.still) return;
+    this.swell = Math.min(1.4, this.swell + strength);
+    this.start();
+  }
+
+  /** Raises the ribbons while the app row is open, along with the clock. */
+  setLifted(lifted: boolean) {
+    this.lift = lifted && !this.still ? -0.09 : 0;
+    this.start();
+  }
+
+  /** The pointer's place on screen, each axis from -1 to 1. */
+  pointTo(x: number, y: number) {
+    if (this.still) return;
+    this.leanTarget = [clamp(x, -1, 1), clamp(y, -1, 1)];
+    this.start();
+  }
+
   /** Paints only while it can be seen: no photo on top, nothing covering the dashboard. */
   setActive(active: boolean) {
     if (active === this.active) return;
@@ -67,7 +127,7 @@ export class Ambient {
       this.canvas.hidden = this.grain.hidden = false;
       this.start();
     } else {
-      // A photo fades in over the glows; stop once it has fully covered them.
+      // A photo fades in over the ribbons; stop once it has fully covered them.
       this.lingerTimer = window.setTimeout(() => {
         this.canvas.hidden = this.grain.hidden = true;
         cancelAnimationFrame(this.raf);
@@ -82,13 +142,25 @@ export class Ambient {
     this.raf = requestAnimationFrame(this.frame);
   }
 
+  /** True while something set off by input is still visibly moving. */
+  private get stirred() {
+    return (
+      Math.abs(this.flowSpeed) > 0.03 ||
+      Math.abs(this.swaySpeed) > 0.004 ||
+      Math.abs(this.sway - this.lift) > 0.002 ||
+      this.swell > 0.02 ||
+      Math.abs(this.lean[0] - this.leanTarget[0]) + Math.abs(this.lean[1] - this.leanTarget[1]) > 0.01
+    );
+  }
+
   private frame = (now: number) => {
     this.raf = 0;
-    const dt = this.last ? Math.min(0.25, (now - this.last) / 1000) : 0;
-    if (this.last && now - this.last < FRAME_MS) {
+    // Drifting needs few pictures; a reaction to a key press gets every one.
+    if (this.last && !this.stirred && now - this.last < CALM_FRAME_MS) {
       this.raf = requestAnimationFrame(this.frame);
       return;
     }
+    const dt = this.last ? Math.min(0.1, (now - this.last) / 1000) : 0;
     this.last = now;
 
     // Colours ease towards the target palette.
@@ -101,36 +173,105 @@ export class Ambient {
         this.colours[i][c] += d * k;
       }
     }
+
     if (!this.still) this.clock += dt;
+    // A push along the ribbons glides to a stop.
+    this.flow += this.flowSpeed * dt;
+    this.flowSpeed *= Math.exp(-dt / 0.7);
+    // The sway is a damped spring around its resting height.
+    this.swaySpeed += (-(this.sway - this.lift) * 26 - this.swaySpeed * 6.5) * dt;
+    this.sway += this.swaySpeed * dt;
+    this.swell *= Math.exp(-dt / 1.1);
+    const follow = 1 - Math.exp(-dt / 0.5);
+    this.lean[0] += (this.leanTarget[0] - this.lean[0]) * follow;
+    this.lean[1] += (this.leanTarget[1] - this.lean[1]) * follow;
+
     this.paint();
 
-    // With motion switched off in the system, repaint only while colours change.
-    if (!this.still || moving) this.raf = requestAnimationFrame(this.frame);
+    // With motion switched off in the system, repaint only while something changes.
+    if (!this.still || moving || this.stirred) this.raf = requestAnimationFrame(this.frame);
   };
 
   private paint() {
     const ctx = this.ctx;
     if (!ctx) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalCompositeOperation = "source-over";
-    ctx.fillStyle = `rgb(${BASE[0]},${BASE[1]},${BASE[2]})`;
+    ctx.fillStyle = rgba(BASE, 1);
     ctx.fillRect(0, 0, W, H);
-    ctx.globalCompositeOperation = "lighter"; // glows add up where they overlap
+    ctx.globalCompositeOperation = "lighter"; // colours add up where shapes overlap
+
     for (const g of GLOWS) {
       const a = (this.clock / g.period) * Math.PI * 2 + g.phase;
       // Two different rhythms per axis, so a path never visibly repeats.
-      const x = (g.x + g.ax * Math.sin(a) + 0.05 * Math.sin(a * 2.3 + 1)) * W;
-      const y = (g.y + g.ay * Math.cos(a * 0.8) + 0.04 * Math.cos(a * 1.7 + 2)) * H;
+      const x = (g.x + g.ax * Math.sin(a) + 0.05 * Math.sin(a * 2.3 + 1) - this.lean[0] * 0.01) * W;
+      const y = (g.y + g.ay * Math.cos(a * 0.8) + 0.04 * Math.cos(a * 1.7 + 2) + this.sway * 0.4) * H;
       const r = g.size * W * (1 + 0.12 * Math.sin(a * 0.6 + g.phase));
-      const [cr, cg, cb] = this.colours[g.colour].map(Math.round);
+      const c = this.colours[g.colour];
       const glow = ctx.createRadialGradient(x, y, 0, x, y, r);
-      glow.addColorStop(0, `rgba(${cr},${cg},${cb},${g.strength})`);
-      glow.addColorStop(0.45, `rgba(${cr},${cg},${cb},${g.strength * 0.42})`);
-      glow.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+      glow.addColorStop(0, rgba(c, g.strength));
+      glow.addColorStop(0.45, rgba(c, g.strength * 0.42));
+      glow.addColorStop(1, rgba(c, 0));
       ctx.fillStyle = glow;
       ctx.fillRect(0, 0, W, H);
     }
+
+    // The ribbons are drawn in a tilted frame, wider than the screen, so their
+    // ends are never seen.
+    ctx.translate(W / 2, H / 2);
+    ctx.rotate(TILT);
+    ctx.translate(-W / 2, -H / 2);
+    const bright = 1 + 0.22 * Math.min(1, this.swell);
+    for (const r of RIBBONS) {
+      const from = lighten(this.colours[r.from], 0.16);
+      const to = lighten(this.colours[r.to], 0.16);
+      for (const [width, share] of FEATHER) {
+        const alpha = r.alpha * share * bright;
+        const fill = ctx.createLinearGradient(-0.25 * W, 0, 1.25 * W, 0);
+        fill.addColorStop(0, rgba(from, alpha * 0.5));
+        fill.addColorStop(0.3, rgba(from, alpha));
+        fill.addColorStop(0.72, rgba(to, alpha));
+        fill.addColorStop(1, rgba(to, alpha * 0.5));
+        ctx.fillStyle = fill;
+        this.traceRibbon(ctx, r, width);
+        ctx.fill();
+      }
+    }
+  }
+
+  /** Traces one ribbon's outline: along its upper edge, back along the lower. */
+  private traceRibbon(ctx: CanvasRenderingContext2D, r: (typeof RIBBONS)[number], width: number) {
+    const t = this.clock;
+    const push = this.flow * r.depth;
+    const reach = 1 + 0.4 * this.swell; // a swell makes the waves taller
+    const top: [number, number][] = [];
+    const bottom: [number, number][] = [];
+    for (let i = 0; i <= 50; i++) {
+      const u = -0.25 + (i / 50) * 1.5; // along the ribbon; 0..1 is the screen
+      const turn = u * Math.PI * 2 * r.waves;
+      const centre =
+        r.y +
+        this.sway * r.depth +
+        this.lean[1] * 0.012 * r.depth +
+        r.amp * reach * (0.7 * Math.sin(turn + r.phase - push + t * r.speed) + 0.45 * Math.sin(turn * 0.47 + r.phase * 1.7 + push * 0.6 - t * r.speed * 0.6));
+      // Pinches to a waist and opens again, like cloth turning over.
+      const turnOver = Math.sin(turn * 0.6 + r.phase * 0.5 - push * 0.5 + t * r.speed * 0.7);
+      const half = (r.thick * (0.2 + 0.8 * turnOver * turnOver) * (1 + 0.25 * this.swell) * width) / 2;
+      const x = (u - this.lean[0] * 0.015 * r.depth) * W;
+      top.push([x, (centre - half) * H]);
+      bottom.push([x, (centre + half) * H]);
+    }
+    ctx.beginPath();
+    ctx.moveTo(top[0][0], top[0][1]);
+    for (const [x, y] of top) ctx.lineTo(x, y);
+    for (let i = bottom.length - 1; i >= 0; i--) ctx.lineTo(bottom[i][0], bottom[i][1]);
+    ctx.closePath();
   }
 }
+
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+const rgba = (c: RGB, a: number) => `rgba(${Math.round(c[0])},${Math.round(c[1])},${Math.round(c[2])},${a.toFixed(3)})`;
+const lighten = (c: RGB, by: number): RGB => [c[0] + (255 - c[0]) * by, c[1] + (255 - c[1]) * by, c[2] + (255 - c[2]) * by];
 
 /** A small tile of faint light and dark specks, as a data URL. */
 function grainTile(): string {
