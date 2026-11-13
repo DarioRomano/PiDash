@@ -160,6 +160,37 @@ func TestChoosingSynologyFoldersBuildsTheSlideshow(t *testing.T) {
 	_ = svc2
 }
 
+func TestChoosingASharedAlbum(t *testing.T) {
+	nas, syn := newFakeNAS(t)
+	nas.viewerOnly = true
+	svc, wait := startService(t, Options{Source: syn, PreferOriginal: true})
+
+	albums, err := svc.Folders(context.Background(), "a:")
+	if err != nil || len(albums) != 2 {
+		t.Fatalf("albums = %+v, err %v", albums, err)
+	}
+	svc.SetSelection(Selection{Folders: []Folder{albums[1]}, Recursive: true})
+	st := wait("the album's 2 photos", idle(2))
+	if st.Error != "" {
+		t.Errorf("error = %q", st.Error)
+	}
+	if f := st.Selection.Folders[0]; f.Path != "Albums / For the TV" || f.Detail != "" {
+		t.Errorf("saved choice = %+v", f)
+	}
+	// Downloading is not allowed for this album, so the preview is shown.
+	path, err := svc.Image(context.Background(), "p-700")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := frameColor(t, path, FrameW/2, FrameH/2); !near(c, color.RGBA{30, 200, 60, 255}) {
+		t.Errorf("centre = %v, want the green preview", c)
+	}
+
+	// Ticking "Albums" itself takes every album; a photo in two places counts once.
+	svc.SetSelection(Selection{Folders: []Folder{{ID: "a:", Name: "Albums"}, {ID: "p:3", Name: "Holiday"}}, Recursive: true})
+	wait("3 folder photos + 2 album photos + 1 from the Shared Space", idle(6))
+}
+
 func TestPreviewQualityNeverDownloadsFullFiles(t *testing.T) {
 	nas, syn := newFakeNAS(t)
 	svc, wait := startService(t, Options{Source: syn, PreferOriginal: false})

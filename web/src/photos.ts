@@ -1,4 +1,5 @@
-// Folder picker for the background slideshow. Opened from the phone remote.
+// Picker for the folders and albums of the background slideshow. Opened from the
+// phone remote and from the settings page.
 import type { PhotoFolder, PhotoSelection, PhotosStatus } from "./types";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -68,9 +69,8 @@ function refresh() {
 
   const dirty = selectionKey(current()) !== selectionKey(saved);
   saveBtn.disabled = !dirty || saving;
-  saveBtn.textContent = saving ? "Saving…" : "Use these folders";
-  summary.textContent =
-    chosen.size === 0 ? "No folders chosen" : chosen.size === 1 ? "1 folder chosen" : `${chosen.size} folders chosen`;
+  saveBtn.textContent = saving ? "Saving…" : "Use these photos";
+  summary.textContent = chosen.size === 0 ? "Nothing chosen" : `${chosen.size} chosen`;
 }
 
 function showStatus(st: PhotosStatus) {
@@ -87,7 +87,7 @@ function showStatus(st: PhotosStatus) {
     statusEl.textContent = st.error;
     statusEl.classList.add("error");
   } else if (st.indexing) {
-    statusEl.textContent = `${st.source} · reading folders…`;
+    statusEl.textContent = `${st.source} · reading your choice…`;
   } else {
     const n = st.count.toLocaleString();
     statusEl.textContent = `${st.source} · ${n} ${st.count === 1 ? "photo" : "photos"} in the slideshow`;
@@ -108,7 +108,7 @@ async function loadChildren(parent: string, container: HTMLElement, ancestors: s
     if (!res.ok) throw new Error((await res.text()).trim());
     const data: { folders: PhotoFolder[] } = await res.json();
     if (data.folders.length === 0) {
-      note.textContent = depth === 0 ? "No folders found." : "No folders inside.";
+      note.textContent = depth === 0 ? "No folders found." : parent === "a:" ? "No albums yet." : "No folders inside.";
       return;
     }
     container.replaceChildren(...data.folders.map((f) => makeNode(f, ancestors, depth)));
@@ -130,7 +130,13 @@ function makeNode(folder: PhotoFolder, ancestors: string[], depth: number): HTML
   const expand = document.createElement("button");
   expand.className = "expand";
   expand.textContent = "›";
-  expand.setAttribute("aria-label", `Show the folders inside ${folder.name}`);
+  expand.setAttribute("aria-label", `Show what is inside ${folder.name}`);
+  if (folder.leaf) {
+    // An album has nothing to open; the empty space keeps the names aligned.
+    expand.disabled = true;
+    expand.classList.add("leaf");
+    expand.setAttribute("aria-hidden", "true");
+  }
 
   const label = document.createElement("label");
   const box = document.createElement("input");
@@ -139,6 +145,12 @@ function makeNode(folder: PhotoFolder, ancestors: string[], depth: number): HTML
   name.className = "name";
   name.textContent = folder.name;
   label.append(box, name);
+  if (folder.detail) {
+    const detail = document.createElement("span");
+    detail.className = "detail";
+    detail.textContent = folder.detail;
+    label.append(detail);
+  }
   row.append(expand, label);
 
   const children = document.createElement("div");

@@ -173,8 +173,8 @@ What it covers:
   weather service found before you save.
 - **Background photos:** where photos come from, the connection to Synology
   Photos with a **Test connection** button, the picture quality, and how long
-  each photo stays. After saving, **Choose folders** takes you to the folder
-  picker.
+  each photo stays. After saving, **Choose folders and albums** takes you to
+  the picker.
 - **Apps:** the app row. Add from a list of ready-made apps (YouTube, Netflix,
   Synology Photos, Plex, Moonlight, Kodi, Steam Link) or any website by
   address, reorder them, and remove them.
@@ -246,8 +246,8 @@ as sunrise are shown in the local time of the place you configured.
 
 ### Background photos from Synology Photos
 
-PiDash can show a slideshow behind the clock, taken from folders you choose in
-Synology Photos.
+PiDash can show a slideshow behind the clock, taken from folders and albums you
+choose in Synology Photos.
 
 1. **On the NAS**, decide which account PiDash signs in with. A separate user
    that can only see the photos you want on the TV is the safest choice. The
@@ -267,15 +267,22 @@ Synology Photos.
 
    Then run `systemctl --user restart pidash`.
 3. **On your phone**, open `http://<pi-ip>:8080/photos`. It is also linked from
-   the phone remote as **Background photos**. Browse your Personal Space and
-   Shared Space, tick the folders you want, and tap **Use these folders**.
+   the phone remote as **Background photos**. Browse your Personal Space,
+   Shared Space and Albums, tick what you want, and tap **Use these photos**.
    "Include the folders inside them" decides whether subfolders count. The TV
    switches to the new photos within a few seconds. Until you have chosen, the
    TV shows a message with this address.
 
 You can change the choice at any time on the same page. New photos added to the
-chosen folders show up by themselves within six hours, or immediately when you
-save the selection again.
+chosen folders and albums show up by themselves within six hours, or
+immediately when you save the selection again.
+
+**Albums** lists the account's own albums and the albums other people shared
+with it. This makes a neat setup: collect the photos for the TV in one album in
+your own account, share that album with the PiDash account, and tick it here.
+The PiDash account then sees nothing else. If the share only allows viewing,
+not downloading, PiDash uses the NAS's previews (1280 pixels on the long side)
+instead of the full files.
 
 How photos are shown:
 

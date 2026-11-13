@@ -27,6 +27,10 @@ type Folder struct {
 	// Name is the folder's own name; Path its full, human-readable location.
 	Name string `json:"name"`
 	Path string `json:"path"`
+	// Leaf marks a folder that cannot contain others, such as an album.
+	Leaf bool `json:"leaf,omitempty"`
+	// Detail is a short note for the picker, e.g. "12 items". It is not saved.
+	Detail string `json:"detail,omitempty"`
 }
 
 // Item is one photo.
@@ -246,6 +250,7 @@ func (s *Service) SetSelection(sel Selection) error {
 		if f.Path == "" {
 			f.Path = f.Name
 		}
+		f.Detail = ""
 		clean.Folders = append(clean.Folders, f)
 	}
 	if err := s.saveSelection(clean); err != nil {

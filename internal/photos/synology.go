@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,14 +22,19 @@ import (
 // Synology Photos has two libraries: each user's Personal Space and the common
 // Shared Space. Both appear as top-level folders. Folder ids used here are
 // "p:<id>" and "s:<id>"; "p:" and "s:" alone are the libraries' roots.
+//
+// Albums appear as a third top-level entry, "a:", with one entry "a:<id>" per
+// album: the account's own albums and the ones other people shared with it.
 type Synology struct {
 	base       string
 	user, pass string
 	hc         *http.Client
 
-	mu    sync.Mutex
-	sid   string
-	roots map[string]int // space -> root folder id
+	mu       sync.Mutex
+	sid      string
+	roots    map[string]int // space -> root folder id
+	albums   []album        // the last album list, kept briefly
+	albumsAt time.Time
 }
 
 // SynologyOptions configure the connection to the NAS.
@@ -59,9 +65,11 @@ func NewSynology(o SynologyOptions) *Synology {
 const (
 	spacePersonal = "p"
 	spaceShared   = "s"
+	// spaceAlbum is not a library: an album collects photos from either one.
+	spaceAlbum = "a"
 )
 
-var spaceLabel = map[string]string{spacePersonal: "Personal Space", spaceShared: "Shared Space"}
+var spaceLabel = map[string]string{spacePersonal: "Personal Space", spaceShared: "Shared Space", spaceAlbum: "Albums"}
 
 // apiName returns the API for a library: SYNO.Foto.* is the Personal Space,
 // SYNO.FotoTeam.* the Shared Space.
@@ -255,7 +263,7 @@ func (s *Synology) call(ctx context.Context, params url.Values, out any) error {
 
 func splitID(id string) (space string, n int, isRoot bool, err error) {
 	space, rest, ok := strings.Cut(id, ":")
-	if !ok || (space != spacePersonal && space != spaceShared) {
+	if !ok || (space != spacePersonal && space != spaceShared && space != spaceAlbum) {
 		return "", 0, false, fmt.Errorf("bad folder id %q", id)
 	}
 	if rest == "" {
@@ -291,17 +299,6 @@ func (s *Synology) rootID(ctx context.Context, space string) (int, error) {
 	return data.Folder.ID, nil
 }
 
-func (s *Synology) resolve(ctx context.Context, id string) (space string, folderID int, err error) {
-	space, n, isRoot, err := splitID(id)
-	if err != nil {
-		return "", 0, err
-	}
-	if isRoot {
-		n, err = s.rootID(ctx, space)
-	}
-	return space, n, err
-}
-
 // Folders implements Source.
 func (s *Synology) Folders(ctx context.Context, parent string) ([]Folder, error) {
 	if parent == "" {
@@ -319,14 +316,30 @@ func (s *Synology) Folders(ctx context.Context, parent string) ([]Folder, error)
 			out = append(out, Folder{ID: space + ":", Name: spaceLabel[space], Path: spaceLabel[space]})
 		}
 		if len(out) == 0 {
-			return nil, firstErr
+			// An account made only to receive a shared album may have no
+			// library of its own; it is still usable if its albums can be read.
+			if _, err := s.listAlbums(ctx, 0); err != nil {
+				return nil, firstErr
+			}
 		}
+		out = append(out, Folder{ID: spaceAlbum + ":", Name: spaceLabel[spaceAlbum], Path: spaceLabel[spaceAlbum]})
 		return out, nil
 	}
 
-	space, id, err := s.resolve(ctx, parent)
+	space, id, isRoot, err := splitID(parent)
 	if err != nil {
 		return nil, err
+	}
+	if space == spaceAlbum {
+		if !isRoot {
+			return nil, nil // an album has nothing inside but photos
+		}
+		return s.albumFolders(ctx)
+	}
+	if isRoot {
+		if id, err = s.rootID(ctx, space); err != nil {
+			return nil, err
+		}
 	}
 	var out []Folder
 	const page = 500
@@ -362,33 +375,60 @@ func (s *Synology) Folders(ctx context.Context, parent string) ([]Folder, error)
 
 // Items implements Source.
 func (s *Synology) Items(ctx context.Context, folder Folder) ([]Item, error) {
-	space, id, err := s.resolve(ctx, folder.ID)
+	space, id, isRoot, err := splitID(folder.ID)
 	if err != nil {
 		return nil, err
 	}
+	if space == spaceAlbum {
+		if isRoot {
+			return nil, nil // the list of albums itself holds no photos
+		}
+		return s.albumItems(ctx, id, folder)
+	}
+	if isRoot {
+		if id, err = s.rootID(ctx, space); err != nil {
+			return nil, err
+		}
+	}
+	return s.listItems(ctx, apiName(space, "Browse.Item"), url.Values{"folder_id": {strconv.Itoa(id)}}, folder.Path,
+		func(rawItem) (string, string) { return space, "" })
+}
+
+// rawItem is a photo as the NAS lists it.
+type rawItem struct {
+	ID       int    `json:"id"`
+	Filename string `json:"filename"`
+	Time     int64  `json:"time"`
+	Type     string `json:"type"`
+	// OwnerUserID is 0 for photos in the Shared Space.
+	OwnerUserID *int `json:"owner_user_id"`
+	Additional  struct {
+		Thumbnail struct {
+			CacheKey string `json:"cache_key"`
+			UnitID   int    `json:"unit_id"`
+		} `json:"thumbnail"`
+	} `json:"additional"`
+}
+
+// listItems reads every page of a photo list. where selects the list (a folder
+// or an album); place tells, for each photo, which library's API serves it and
+// what must follow the unit id in Item.ID.
+func (s *Synology) listItems(ctx context.Context, api string, where url.Values, label string, place func(rawItem) (space, suffix string)) ([]Item, error) {
 	var out []Item
 	const page = 500
 	for offset := 0; offset < maxItems; offset += page {
 		var data struct {
-			List []struct {
-				ID         int    `json:"id"`
-				Filename   string `json:"filename"`
-				Time       int64  `json:"time"`
-				Type       string `json:"type"`
-				Additional struct {
-					Thumbnail struct {
-						CacheKey string `json:"cache_key"`
-						UnitID   int    `json:"unit_id"`
-					} `json:"thumbnail"`
-				} `json:"additional"`
-			} `json:"list"`
+			List []rawItem `json:"list"`
 		}
-		err := s.call(ctx, url.Values{
-			"api": {apiName(space, "Browse.Item")}, "version": {"1"}, "method": {"list"},
-			"folder_id": {strconv.Itoa(id)}, "offset": {strconv.Itoa(offset)}, "limit": {strconv.Itoa(page)},
+		params := url.Values{
+			"api": {api}, "version": {"1"}, "method": {"list"},
+			"offset": {strconv.Itoa(offset)}, "limit": {strconv.Itoa(page)},
 			"additional": {`["thumbnail"]`},
-		}, &data)
-		if err != nil {
+		}
+		for k, v := range where {
+			params[k] = v
+		}
+		if err := s.call(ctx, params, &data); err != nil {
 			return out, err
 		}
 		for _, it := range data.List {
@@ -404,13 +444,14 @@ func (s *Synology) Items(ctx context.Context, folder Folder) ([]Item, error) {
 			if it.Type == "live" {
 				name += ".live" // the full file may be a video container: always use the preview
 			}
+			space, suffix := place(it)
 			out = append(out, Item{
 				Key:     space + "-" + strconv.Itoa(it.ID),
 				Name:    name,
-				Folder:  folder.Path,
+				Folder:  label,
 				Taken:   time.Unix(it.Time, 0).UTC(),
 				Version: it.Additional.Thumbnail.CacheKey,
-				ID:      space + ":" + strconv.Itoa(unit),
+				ID:      space + ":" + strconv.Itoa(unit) + suffix,
 			})
 		}
 		if len(data.List) < page {
@@ -420,13 +461,175 @@ func (s *Synology) Items(ctx context.Context, folder Folder) ([]Item, error) {
 	return out, nil
 }
 
+// album is an album as the NAS lists it.
+type album struct {
+	ID        int    `json:"id"`
+	Name      string `json:"name"`
+	ItemCount int    `json:"item_count"`
+	// Passphrase is set on albums that are shared. Photos of an album someone
+	// else shared with this account can only be read by quoting it.
+	Passphrase string `json:"passphrase"`
+}
+
+func (s *Synology) albumPages(ctx context.Context, api, method, category string) ([]album, error) {
+	var out []album
+	const page = 500
+	for offset := 0; offset < maxFolders; offset += page {
+		var data struct {
+			List []album `json:"list"`
+		}
+		params := url.Values{
+			"api": {api}, "version": {"1"}, "method": {method},
+			"offset": {strconv.Itoa(offset)}, "limit": {strconv.Itoa(page)},
+		}
+		if category != "" {
+			params.Set("category", category)
+		}
+		if err := s.call(ctx, params, &data); err != nil {
+			return nil, err
+		}
+		out = append(out, data.List...)
+		if len(data.List) < page {
+			break
+		}
+	}
+	return out, nil
+}
+
+// listAlbums returns the account's own albums and the albums shared with it.
+// A list younger than maxAge is reused.
+func (s *Synology) listAlbums(ctx context.Context, maxAge time.Duration) ([]album, error) {
+	s.mu.Lock()
+	cached, at := s.albums, s.albumsAt
+	s.mu.Unlock()
+	if maxAge > 0 && !at.IsZero() && time.Since(at) < maxAge {
+		return cached, nil
+	}
+
+	// One request covers both kinds on current versions of Synology Photos.
+	list, err := s.albumPages(ctx, "SYNO.Foto.Browse.Album", "list", "normal_share_with_me")
+	var apiErr *synoError
+	if err != nil && errors.As(err, &apiErr) && !isSessionError(err) {
+		// Otherwise ask for the two kinds separately. Shared albums are a
+		// bonus here: failing to list them does not hide the account's own.
+		var own, shared []album
+		if own, err = s.albumPages(ctx, "SYNO.Foto.Browse.Album", "list", ""); err == nil {
+			shared, _ = s.albumPages(ctx, "SYNO.Foto.Sharing.Misc", "list_shared_with_me_album", "")
+			list = append(own, shared...)
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	seen := map[int]bool{}
+	unique := list[:0]
+	for _, a := range list {
+		if !seen[a.ID] {
+			seen[a.ID] = true
+			unique = append(unique, a)
+		}
+	}
+	sort.SliceStable(unique, func(i, j int) bool { return strings.ToLower(unique[i].Name) < strings.ToLower(unique[j].Name) })
+
+	s.mu.Lock()
+	s.albums, s.albumsAt = unique, time.Now()
+	s.mu.Unlock()
+	return unique, nil
+}
+
+func (s *Synology) albumFolders(ctx context.Context) ([]Folder, error) {
+	albums, err := s.listAlbums(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Folder, 0, len(albums))
+	for _, a := range albums {
+		detail := strconv.Itoa(a.ItemCount) + " items"
+		if a.ItemCount == 1 {
+			detail = "1 item"
+		}
+		out = append(out, Folder{
+			ID:     spaceAlbum + ":" + strconv.Itoa(a.ID),
+			Name:   a.Name,
+			Path:   spaceLabel[spaceAlbum] + " / " + a.Name,
+			Leaf:   true,
+			Detail: detail,
+		})
+	}
+	return out, nil
+}
+
+// albumItems lists the photos of one album. The album is looked up by its id
+// each time, because its passphrase changes when sharing is switched off and on.
+func (s *Synology) albumItems(ctx context.Context, id int, folder Folder) ([]Item, error) {
+	albums, err := s.listAlbums(ctx, time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	var found *album
+	for i := range albums {
+		if albums[i].ID == id {
+			found = &albums[i]
+			break
+		}
+	}
+	if found == nil {
+		return nil, errors.New("the album no longer exists, or is no longer shared with this NAS account")
+	}
+
+	where := url.Values{"album_id": {strconv.Itoa(id)}}
+	if found.Passphrase != "" {
+		where = url.Values{"passphrase": {strconv.Quote(found.Passphrase)}}
+	}
+	suffix := ":" + found.Passphrase // marks the photo as coming from an album
+	return s.listItems(ctx, "SYNO.Foto.Browse.Item", where, folder.Path, func(it rawItem) (string, string) {
+		// An album mixes photos from both libraries.
+		if it.OwnerUserID != nil && *it.OwnerUserID == 0 {
+			return spaceShared, suffix
+		}
+		return spacePersonal, suffix
+	})
+}
+
 // Fetch implements Source. The preview is Synology's largest ready-made
 // thumbnail (1280 pixels on the long side), already rotated upright.
 func (s *Synology) Fetch(ctx context.Context, item Item, original bool) ([]byte, bool, error) {
-	space, unit, _, err := splitID(item.ID)
+	// Item.ID is "<library>:<unit>", followed for a photo found in an album
+	// by ":<the album's passphrase, if it has one>".
+	parts := strings.SplitN(item.ID, ":", 3)
+	if len(parts) < 2 || (parts[0] != spacePersonal && parts[0] != spaceShared) {
+		return nil, false, fmt.Errorf("bad photo id %q", item.Key)
+	}
+	unit, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return nil, false, fmt.Errorf("bad photo id %q", item.Key)
+	}
+	space, fromAlbum, passphrase := parts[0], len(parts) == 3, ""
+	if fromAlbum {
+		passphrase = parts[2]
+	}
+
+	body, err := s.fetch(ctx, space, unit, item.Version, passphrase, original)
+	var apiErr *synoError
+	if err != nil && fromAlbum && errors.As(err, &apiErr) {
+		// Which library a photo in an album belongs to is read from its owner,
+		// which not every version reports; the other library is worth one try.
+		other := spacePersonal
+		if space == spacePersonal {
+			other = spaceShared
+		}
+		if alt, altErr := s.fetch(ctx, other, unit, item.Version, passphrase, original); altErr == nil {
+			body, err = alt, nil
+		}
+	}
 	if err != nil {
 		return nil, false, err
 	}
+	return body, !original, nil
+}
+
+func (s *Synology) fetch(ctx context.Context, space string, unit int, cacheKey, passphrase string, original bool) ([]byte, error) {
 	var params url.Values
 	var limit int64
 	if original {
@@ -439,16 +642,19 @@ func (s *Synology) Fetch(ctx context.Context, item Item, original bool) ([]byte,
 		params = url.Values{
 			"api": {apiName(space, "Thumbnail")}, "version": {"1"}, "method": {"get"},
 			"mode": {"download"}, "type": {"unit"}, "size": {"xl"},
-			"id": {strconv.Itoa(unit)}, "cache_key": {item.Version},
+			"id": {strconv.Itoa(unit)}, "cache_key": {cacheKey},
 		}
 		limit = 32 << 20
 	}
+	if passphrase != "" {
+		params.Set("passphrase", strconv.Quote(passphrase))
+	}
 	body, contentType, err := s.do(ctx, params, limit)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	if len(body) == 0 || strings.Contains(contentType, "json") || strings.Contains(contentType, "html") {
-		return nil, false, errors.New("the NAS did not return an image")
+		return nil, errors.New("the NAS did not return an image")
 	}
-	return body, !original, nil
+	return body, nil
 }

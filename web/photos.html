@@ -17,14 +17,14 @@
     </header>
 
     <main id="main" hidden>
-      <p class="intro">Choose the folders whose photos appear behind the clock on the TV.</p>
+      <p class="intro">Choose the folders and albums whose photos appear behind the clock on the TV.</p>
 
       <label class="option">
         <input type="checkbox" id="recursive" />
         <span>Include the folders inside them</span>
       </label>
 
-      <section id="tree" aria-label="Folders"></section>
+      <section id="tree" aria-label="Folders and albums"></section>
 
       <section id="chosen-box" hidden>
         <h2>Chosen</h2>
@@ -46,7 +46,7 @@ password = "…"</pre>
 
     <footer id="footer" hidden>
       <span id="summary"></span>
-      <button id="save" disabled>Use these folders</button>
+      <button id="save" disabled>Use these photos</button>
     </footer>
 
     <script type="module" src="/src/photos.ts"></script>

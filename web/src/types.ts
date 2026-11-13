@@ -60,6 +60,10 @@ export interface PhotoFolder {
   id: string;
   name: string;
   path: string;
+  /** Cannot contain other folders: an album. */
+  leaf?: boolean;
+  /** A short note next to the name, e.g. "12 items". */
+  detail?: string;
 }
 
 export interface PhotoSelection {
