@@ -20,6 +20,7 @@ type Config struct {
 	System  System  `toml:"system"`
 	Kiosk   Kiosk   `toml:"kiosk"`
 	Apps    []App   `toml:"apps"`
+	Photos  Photos  `toml:"photos"`
 }
 
 // Server holds HTTP settings.
@@ -61,6 +62,51 @@ type Kiosk struct {
 	// "Show on TV" / "Exit to desktop" controls.
 	Unit string `toml:"unit"`
 }
+
+// Photo sources for the background slideshow.
+const (
+	PhotoSourceNone     = ""
+	PhotoSourceSynology = "synology"
+	PhotoSourceFolder   = "folder"
+)
+
+// Photos configures the background slideshow.
+type Photos struct {
+	// Source is "synology", "folder", or "" for no photos.
+	Source string `toml:"source"`
+	// Interval is how long each photo stays on screen.
+	Interval Duration `toml:"interval"`
+	// Refresh is how often the chosen folders are re-read for new photos.
+	Refresh Duration `toml:"refresh"`
+	// CacheMB limits the disk space used for rendered photos.
+	CacheMB  int            `toml:"cache_mb"`
+	Synology SynologyPhotos `toml:"synology"`
+	Folder   PhotoFolder    `toml:"folder"`
+}
+
+// SynologyPhotos is the connection to Synology Photos on a NAS.
+type SynologyPhotos struct {
+	// URL is the address of DSM, e.g. "http://192.168.1.20:5000".
+	URL      string `toml:"url"`
+	Username string `toml:"username"`
+	Password string `toml:"password"`
+	// InsecureTLS accepts a self-signed HTTPS certificate.
+	InsecureTLS bool `toml:"insecure_tls"`
+	// Quality is "original" (render from the full file, sharpest) or
+	// "preview" (use the NAS's ready-made 1280-pixel preview, fastest).
+	Quality string `toml:"quality"`
+}
+
+// PhotoFolder is a folder of photos on the Pi or a mounted share.
+type PhotoFolder struct {
+	Path string `toml:"path"`
+}
+
+// Photo quality settings.
+const (
+	PhotoQualityOriginal = "original"
+	PhotoQualityPreview  = "preview"
+)
 
 // App launch modes.
 const (
@@ -144,6 +190,12 @@ func Default() Config {
 		}},
 		System: System{Enabled: true, Interval: Duration{10 * time.Second}},
 		Kiosk:  Kiosk{Unit: "pidash-kiosk.service"},
+		Photos: Photos{
+			Interval: Duration{30 * time.Second},
+			Refresh:  Duration{6 * time.Hour},
+			CacheMB:  2000,
+			Synology: SynologyPhotos{Quality: PhotoQualityOriginal},
+		},
 	}
 }
 
@@ -235,7 +287,45 @@ func (c *Config) finish() error {
 			return fmt.Errorf("apps[%d] (%s): browser, adblock and user_agent only apply to web apps (url)", i, a.ID)
 		}
 	}
+	if err := c.Photos.validate(); err != nil {
+		return err
+	}
 	return c.validate()
+}
+
+func (p *Photos) validate() error {
+	if p.Interval.Duration < 5*time.Second {
+		return fmt.Errorf("photos.interval must be at least 5s")
+	}
+	if p.Refresh.Duration < time.Minute {
+		return fmt.Errorf("photos.refresh must be at least 1m")
+	}
+	if p.CacheMB < 50 {
+		return fmt.Errorf("photos.cache_mb must be at least 50")
+	}
+	switch p.Source {
+	case PhotoSourceNone:
+	case PhotoSourceSynology:
+		s := &p.Synology
+		s.URL = strings.TrimRight(strings.TrimSpace(s.URL), "/")
+		u, err := url.Parse(s.URL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("photos.synology.url must be the address of your NAS, like http://192.168.1.20:5000, got %q", s.URL)
+		}
+		if s.Username == "" || s.Password == "" {
+			return fmt.Errorf("photos.synology needs username and password")
+		}
+		if s.Quality != PhotoQualityOriginal && s.Quality != PhotoQualityPreview {
+			return fmt.Errorf("photos.synology.quality must be %q or %q, got %q", PhotoQualityOriginal, PhotoQualityPreview, s.Quality)
+		}
+	case PhotoSourceFolder:
+		if !strings.HasPrefix(p.Folder.Path, "/") {
+			return fmt.Errorf("photos.folder.path must be a full path like /home/pi/Pictures, got %q", p.Folder.Path)
+		}
+	default:
+		return fmt.Errorf("photos.source must be %q, %q or empty, got %q", PhotoSourceSynology, PhotoSourceFolder, p.Source)
+	}
+	return nil
 }
 
 func (c Config) validate() error {

@@ -1,8 +1,9 @@
 import { Clock } from "./clock";
 import { Input } from "./input";
 import { Rail, type RailItem } from "./rail";
+import { Slideshow } from "./slideshow";
 import { connect } from "./sse";
-import type { AppsStatus, ClientConfig, StateEntry, SystemState } from "./types";
+import type { AppsStatus, ClientConfig, PhotoItem, PhotosStatus, StateEntry, SystemState } from "./types";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 
@@ -51,6 +52,7 @@ async function keepAwake() {
 keepAwake();
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") keepAwake();
+  updateSuspended();
 });
 
 // --- Exit to desktop ----------------------------------------------------------
@@ -86,6 +88,44 @@ function toast(text: string, ms = 4000) {
   toastEl.classList.add("visible");
   clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => toastEl.classList.remove("visible"), ms);
+}
+
+// --- Background photos --------------------------------------------------------
+
+const captionEl = $("#caption");
+let dateLocale: string | undefined;
+let lanAddress = "";
+
+function showCaption(item: PhotoItem | null) {
+  if (!item) {
+    captionEl.textContent = "";
+    return;
+  }
+  // "Holiday · June 2024": the innermost folder and when the photo was taken.
+  const folder = item.folder.split(" / ").pop() ?? "";
+  const taken = new Date(item.taken);
+  const when = isNaN(taken.getTime()) || taken.getFullYear() < 1990
+    ? ""
+    : new Intl.DateTimeFormat(dateLocale, { month: "long", year: "numeric" }).format(taken);
+  captionEl.textContent = [folder, when].filter(Boolean).join("  ·  ");
+}
+
+const slideshow = new Slideshow($("#backdrop"), showCaption);
+let photosHintShown = false;
+
+function onPhotos(st: PhotosStatus) {
+  slideshow.setStatus(st);
+  // First run: a source is configured but no folders have been chosen yet.
+  if (st.enabled && !st.indexing && st.count === 0 && st.selection.folders.length === 0 && !st.error && !photosHintShown) {
+    photosHintShown = true;
+    const where = lanAddress ? `http://${lanAddress}:${location.port || "80"}/photos` : "the phone remote";
+    toast(`Choose the folders for the background photos: open ${where}`, 15000);
+  }
+}
+
+function updateSuspended() {
+  // Do not load photos while an app covers the dashboard or the screen is hidden.
+  slideshow.setSuspended(appsStatus.running !== "" || document.visibilityState !== "visible");
 }
 
 // --- Panel rail and apps ------------------------------------------------------
@@ -124,6 +164,7 @@ function onApps(st: AppsStatus) {
   const previousError = appsStatus.error;
   appsStatus = st;
   rail.setItems(railItems());
+  updateSuspended();
   railHint.textContent = st.apps.length
     ? "◀ ▶ choose  ·  OK open  ·  Back close"
     : "Add apps under [[apps]] in ~/.config/pidash/config.toml  ·  Back close";
@@ -168,6 +209,7 @@ function applyConfig(cfg: ClientConfig) {
   const d = cfg.display;
   document.documentElement.style.setProperty("--safe", `${(d.safe_area * 100).toFixed(2)}%`);
   clock.configure(d.clock_24h, d.locale);
+  dateLocale = d.locale || undefined;
   input.setKeyMap(cfg.keys);
   input.setDebugElement(d.debug_keys ? debug : null);
   if (!d.debug_keys) debug.hidden = true;
@@ -211,6 +253,7 @@ function onState(entry: StateEntry) {
 
 function renderSystem(s: SystemState | null) {
   if (!s) return;
+  lanAddress = s.addresses[0] ?? "";
   const up = formatUptime(s.uptimeSeconds);
   const temp = s.cpuTempC == null ? "" : ` · ${s.cpuTempC.toFixed(0)}°C`;
   sysBadge.textContent =
@@ -251,7 +294,15 @@ input.on((action) => {
       density = 1;
       overlay.dataset.density = DENSITIES[density];
       break;
-    // left/right/playpause are wired up with the photo slideshow.
+    case "left":
+      slideshow.previous();
+      break;
+    case "right":
+      slideshow.next();
+      break;
+    case "playpause":
+      if (slideshow.hasPhotos) toast(slideshow.togglePause() ? "Slideshow paused" : "Slideshow resumed", 2000);
+      break;
   }
 });
 
@@ -265,5 +316,6 @@ connect("/events", {
     onApps(st);
     appsLoaded = true;
   },
+  onPhotos,
   onStatus: (ok) => conn.classList.toggle("ok", ok),
 });

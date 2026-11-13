@@ -52,6 +52,36 @@ export interface AppsStatus {
   error?: string;
 }
 
+export interface PhotoFolder {
+  id: string;
+  name: string;
+  path: string;
+}
+
+export interface PhotoSelection {
+  folders: PhotoFolder[];
+  recursive: boolean;
+}
+
+export interface PhotosStatus {
+  enabled: boolean;
+  source: string;
+  count: number;
+  indexing: boolean;
+  error?: string;
+  intervalSeconds: number;
+  selection: PhotoSelection;
+  version: number;
+}
+
+export interface PhotoItem {
+  key: string;
+  name: string;
+  folder: string;
+  taken: string;
+  v: string;
+}
+
 /** The complete remote-control vocabulary. Everything else is ignored. */
 export type Action =
   | "up" | "down" | "left" | "right"

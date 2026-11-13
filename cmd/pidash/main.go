@@ -16,6 +16,7 @@ import (
 	"github.com/DarioRomano/PiDash/internal/apps"
 	"github.com/DarioRomano/PiDash/internal/config"
 	"github.com/DarioRomano/PiDash/internal/kiosk"
+	"github.com/DarioRomano/PiDash/internal/photos"
 	"github.com/DarioRomano/PiDash/internal/providers"
 	"github.com/DarioRomano/PiDash/internal/providers/system"
 	"github.com/DarioRomano/PiDash/internal/server"
@@ -101,7 +102,13 @@ func main() {
 	appManager := apps.NewManager(cfg.Apps, appBackend, log)
 	appManager.ResolveIcons(apps.DefaultIconFinder())
 
-	srv := server.New(cfg, log, static, kiosk.New(cfg.Kiosk.Unit, *mock, log), appManager, newRunner)
+	photoService, err := newPhotoService(cfg.Photos, *mock, log)
+	if err != nil {
+		log.Error("photos", "err", err)
+		os.Exit(1)
+	}
+
+	srv := server.New(cfg, log, static, kiosk.New(cfg.Kiosk.Unit, *mock, log), appManager, photoService, newRunner)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -142,4 +149,45 @@ func runApp(cfg config.Config, id string, log *slog.Logger) error {
 		return syscall.Exec("/bin/sh", []string{"sh", "-c", a.Command}, env)
 	}
 	return fmt.Errorf("no app with id %q in the config", id)
+}
+
+// newPhotoService builds the background slideshow from the config. It returns
+// nil when no photo source is configured.
+func newPhotoService(cfg config.Photos, mock bool, log *slog.Logger) (*photos.Service, error) {
+	var src photos.Source
+	name := "photos"
+	switch cfg.Source {
+	case config.PhotoSourceSynology:
+		src = photos.NewSynology(photos.SynologyOptions{
+			URL: cfg.Synology.URL, Username: cfg.Synology.Username, Password: cfg.Synology.Password,
+			InsecureTLS: cfg.Synology.InsecureTLS,
+		})
+	case config.PhotoSourceFolder:
+		src = photos.NewLocalDir(cfg.Folder.Path)
+	default:
+		if !mock {
+			return nil, nil
+		}
+		// Development: generated sample pictures, kept apart from real data.
+		src, name = photos.Mock{}, "photos-mock"
+	}
+
+	dataDir, err := apps.DataDir()
+	if err != nil {
+		return nil, err
+	}
+	cacheRoot, err := os.UserCacheDir()
+	if err != nil {
+		return nil, err
+	}
+	return photos.New(photos.Options{
+		Source:         src,
+		Interval:       cfg.Interval.Duration,
+		Refresh:        cfg.Refresh.Duration,
+		PreferOriginal: cfg.Synology.Quality == config.PhotoQualityOriginal,
+		StatePath:      filepath.Join(dataDir, name+"-selection.json"),
+		CacheDir:       filepath.Join(cacheRoot, "pidash", name),
+		CacheBytes:     int64(cfg.CacheMB) << 20,
+		Log:            log,
+	}), nil
 }

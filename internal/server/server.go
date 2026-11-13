@@ -5,6 +5,8 @@ package server
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,12 +14,14 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/DarioRomano/PiDash/internal/apps"
 	"github.com/DarioRomano/PiDash/internal/config"
 	"github.com/DarioRomano/PiDash/internal/kiosk"
+	"github.com/DarioRomano/PiDash/internal/photos"
 	"github.com/DarioRomano/PiDash/internal/providers"
 )
 
@@ -29,13 +33,14 @@ type Server struct {
 	runner *providers.Runner
 	kiosk  *kiosk.Controller
 	apps   *apps.Manager
+	photos *photos.Service // nil when no photo source is configured
 	static fs.FS
 	mux    *http.ServeMux
 }
 
 // New wires the HTTP handlers. static is the built frontend (web/dist).
-func New(cfg config.Config, log *slog.Logger, static fs.FS, k *kiosk.Controller, am *apps.Manager, newRunner func(publish func(providers.Entry)) *providers.Runner) *Server {
-	s := &Server{cfg: cfg, log: log, hub: newHub(), kiosk: k, apps: am, static: static, mux: http.NewServeMux()}
+func New(cfg config.Config, log *slog.Logger, static fs.FS, k *kiosk.Controller, am *apps.Manager, ps *photos.Service, newRunner func(publish func(providers.Entry)) *providers.Runner) *Server {
+	s := &Server{cfg: cfg, log: log, hub: newHub(), kiosk: k, apps: am, photos: ps, static: static, mux: http.NewServeMux()}
 	s.runner = newRunner(func(e providers.Entry) { s.hub.broadcast("state", e) })
 
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
@@ -50,6 +55,15 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, k *kiosk.Controller,
 	s.mux.HandleFunc("POST /api/apps/start", s.handleAppStart)
 	s.mux.HandleFunc("POST /api/apps/stop", s.handleAppStop)
 	s.mux.HandleFunc("GET /api/apps/{id}/icon", s.handleAppIcon)
+	if ps != nil {
+		ps.OnChange(func(st photos.Status) { s.hub.broadcast("photos", st) })
+	}
+	s.mux.HandleFunc("GET /api/photos", s.handlePhotos)
+	s.mux.HandleFunc("GET /api/photos/folders", s.handlePhotoFolders)
+	s.mux.HandleFunc("PUT /api/photos/selection", s.handlePhotoSelection)
+	s.mux.HandleFunc("GET /api/photos/playlist", s.handlePhotoPlaylist)
+	s.mux.HandleFunc("GET /photos/{key}", s.handlePhotoImage)
+	s.mux.HandleFunc("GET /photos", s.servePage("photos.html"))
 	s.mux.HandleFunc("GET /remote", s.servePage("remote.html"))
 	s.mux.HandleFunc("GET /remote/", s.servePage("remote.html"))
 	s.mux.Handle("GET /", http.FileServerFS(static))
@@ -60,6 +74,9 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, k *kiosk.Controller,
 func (s *Server) Run(ctx context.Context) error {
 	go s.runner.Run(ctx)
 	go s.apps.Run(ctx)
+	if s.photos != nil {
+		go s.photos.Run(ctx)
+	}
 
 	srv := &http.Server{
 		Addr:              s.cfg.Server.Listen,
@@ -232,6 +249,100 @@ func (s *Server) handleAppIcon(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, icon.Path)
 }
 
+func (s *Server) photoStatus() photos.Status {
+	if s.photos == nil {
+		return photos.Status{Selection: photos.Selection{Folders: []photos.Folder{}}}
+	}
+	return s.photos.Status()
+}
+
+func (s *Server) handlePhotos(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, s.photoStatus())
+}
+
+// handlePhotoFolders lists the folders inside ?parent= for the folder picker.
+func (s *Server) handlePhotoFolders(w http.ResponseWriter, r *http.Request) {
+	if s.photos == nil {
+		http.Error(w, "no photo source is configured", http.StatusNotFound)
+		return
+	}
+	folders, err := s.photos.Folders(r.Context(), r.URL.Query().Get("parent"))
+	if err != nil {
+		// The message is written for people: it says what is wrong with the NAS connection.
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, map[string]any{"folders": folders})
+}
+
+// handlePhotoSelection saves which folders the background uses.
+func (s *Server) handlePhotoSelection(w http.ResponseWriter, r *http.Request) {
+	if s.photos == nil {
+		http.Error(w, "no photo source is configured", http.StatusNotFound)
+		return
+	}
+	var sel photos.Selection
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&sel); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if err := s.photos.SetSelection(sel); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, s.photos.Status())
+}
+
+// playlistItem is one photo as the dashboard sees it.
+type playlistItem struct {
+	Key    string    `json:"key"`
+	Name   string    `json:"name"`
+	Folder string    `json:"folder"`
+	Taken  time.Time `json:"taken"`
+	// V changes when the photo is edited, so the browser does not show a stale copy.
+	V string `json:"v"`
+}
+
+func (s *Server) handlePhotoPlaylist(w http.ResponseWriter, r *http.Request) {
+	out := struct {
+		Version int            `json:"version"`
+		Items   []playlistItem `json:"items"`
+	}{Items: []playlistItem{}}
+	if s.photos != nil {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		if limit <= 0 || limit > 1000 {
+			limit = 200
+		}
+		version, items := s.photos.Playlist(limit)
+		out.Version = version
+		for _, it := range items {
+			sum := sha1.Sum([]byte(it.Version))
+			out.Items = append(out.Items, playlistItem{Key: it.Key, Name: it.Name, Folder: it.Folder, Taken: it.Taken, V: hex.EncodeToString(sum[:4])})
+		}
+	}
+	writeJSON(w, out)
+}
+
+// handlePhotoImage serves one photo as a ready-to-show 1920x1080 JPEG.
+func (s *Server) handlePhotoImage(w http.ResponseWriter, r *http.Request) {
+	if s.photos == nil {
+		http.NotFound(w, r)
+		return
+	}
+	path, err := s.photos.Image(r.Context(), r.PathValue("key"))
+	switch {
+	case errors.Is(err, photos.ErrNotFound):
+		http.NotFound(w, r)
+		return
+	case err != nil:
+		s.log.Warn("photo", "key", r.PathValue("key"), "err", err)
+		http.Error(w, "could not load this photo", http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	http.ServeFile(w, r, path)
+}
+
 // handleEvents streams config, current state and subsequent updates as SSE.
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	fl, ok := w.(http.Flusher)
@@ -274,6 +385,9 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := send("apps", s.apps.Status()); err != nil {
+		return
+	}
+	if err := send("photos", s.photoStatus()); err != nil {
 		return
 	}
 

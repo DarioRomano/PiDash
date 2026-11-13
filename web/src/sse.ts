@@ -1,10 +1,11 @@
-import type { AppsStatus, ClientConfig, InputEvent, StateEntry } from "./types";
+import type { AppsStatus, ClientConfig, InputEvent, PhotosStatus, StateEntry } from "./types";
 
 export interface SSEHandlers {
   onConfig(cfg: ClientConfig): void;
   onState(entry: StateEntry): void;
   onInput(ev: InputEvent): void;
   onApps(status: AppsStatus): void;
+  onPhotos(status: PhotosStatus): void;
   onStatus(connected: boolean): void;
 }
 
@@ -22,6 +23,7 @@ export function connect(url: string, h: SSEHandlers): EventSource {
   es.addEventListener("state", (e) => h.onState(JSON.parse((e as MessageEvent).data)));
   es.addEventListener("input", (e) => h.onInput(JSON.parse((e as MessageEvent).data)));
   es.addEventListener("apps", (e) => h.onApps(JSON.parse((e as MessageEvent).data)));
+  es.addEventListener("photos", (e) => h.onPhotos(JSON.parse((e as MessageEvent).data)));
 
   return es;
 }

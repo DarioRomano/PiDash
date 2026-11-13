@@ -16,6 +16,7 @@ with the TV's own remote (HDMI-CEC) or a phone.
 | Config      | One `config.toml`                                       | Human-editable on the Pi over SSH.                                  |
 | Remote      | HDMI-CEC (primary) + phone web remote (fallback)        | No extra hardware; the phone covers text entry and TVs without CEC. |
 | First panels| Clock & date, weather (Open-Meteo), photo slideshow     | No API keys required.                                               |
+| Photos      | Synology Photos API or a local folder; folders chosen in a phone-friendly picker | The photos already live on the NAS; choosing folders should not need a config file. |
 | Apps        | Launcher with two modes: desktop, and console (own VT)  | Makes the dashboard the TV's home screen; console mode gives Moonlight/Kodi direct display access. |
 
 ## Experience
@@ -109,8 +110,10 @@ like a key press. Bound to the LAN only.
 │   ├─ POST /api/input     from phone remote                     │
 │   ├─ GET/POST /api/kiosk start/stop the fullscreen browser     │
 │   ├─ /api/apps           list, start, stop launcher apps       │
-│   ├─ GET  /photos/{id}   resized, cached            (planned)  │
-│   └─ providers: system, weather, photos             (planned)  │
+│   ├─ GET  /photos/{key}  one photo as a 1920x1080 JPEG, cached │
+│   ├─ /api/photos         status, folder tree, selection, list  │
+│   ├─ GET  /photos        folder picker page (phone)            │
+│   └─ providers: system, weather                     (planned)  │
 └────────────────────────────────────────────────────────────────┘
           ▲ phone on LAN  ▲ laptop: make deploy (ssh)
 ```
@@ -124,6 +127,7 @@ internal/server/       HTTP mux, SSE hub, input endpoint, static embed
 internal/providers/    weather/ (Open-Meteo), photos/ (scan, resize, cache), system/
 internal/kiosk/        start/stop the fullscreen browser via its systemd user unit
 internal/apps/         app launcher: manager, systemd backend, session env detection
+internal/photos/       slideshow: sources (Synology Photos, folder, mock), index, render, cache
 internal/cec/          optional, later: schedule TV standby/wake via cec-ctl
 web/                   Vite + TS: src/panels/*, src/input.ts, src/sse.ts, remote/
 deploy/                install.sh, uninstall.sh, systemd user units, kiosk.sh, cec-setup.sh
@@ -131,6 +135,53 @@ config.example.toml
 Makefile               dev / build / deploy / lint
 docs/PLAN.md           this file
 ```
+
+## Background photos
+
+The slideshow has three parts.
+
+**Sources** implement one small interface: list the folders inside a folder,
+list the photos in a folder, fetch a photo. Implementations: Synology Photos, a
+local folder, and a generator of sample pictures for `-mock`.
+
+- *Synology Photos* talks to DSM 7's web API (`/webapi/entry.cgi`): sign in with
+  `SYNO.API.Auth`, browse with `SYNO.Foto.Browse.Folder` / `.Item` (Personal
+  Space) and `SYNO.FotoTeam.*` (Shared Space), fetch with `SYNO.Foto.Thumbnail`
+  (ready-made 1280 px preview) or `SYNO.Foto.Download` (full file). An expired
+  session is renewed transparently. Login problems are translated into plain
+  messages (wrong password, 2-step verification, not a NAS, unreachable).
+  This API is not officially documented; it is implemented from community
+  documentation and covered by tests against a fake NAS, and still needs to be
+  confirmed against real hardware.
+
+**Service** (`internal/photos`): keeps the user's selection (a list of folders
+plus "include subfolders") in a small JSON file, walks those folders into an
+in-memory index, and re-reads them every few hours and whenever the selection
+changes. If the source cannot be reached, the previous index is kept and the
+error is reported in the status. It hands out shuffled playlists and renders
+photos on demand. Only photos in the index can be requested.
+
+**Rendering**: each photo becomes a 1920×1080 JPEG, once, cached on disk with
+least-recently-used eviction under a size limit.
+
+- EXIF orientation is read from the file and applied.
+- If filling the screen would crop away at most about a quarter (so 4:3 and 3:2
+  landscape photos), the photo fills the screen. Otherwise (portraits,
+  panoramas) it is shown whole on a blurred, darkened copy of itself. The blur
+  is made by shrinking the photo to a few pixels and enlarging it again, so it
+  costs nothing at display time and needs no CSS filter.
+- JPEG/PNG are rendered from the full file; other formats (HEIC, RAW) and any
+  full file that fails to decode fall back to the source's preview.
+- One render at a time, and concurrent requests for the same photo share it.
+
+**Frontend**: two stacked `<img>` elements crossfaded by opacity; the incoming
+photo fades in above the outgoing one so brightness never dips. The next photo
+is requested as soon as the current one is shown, so its render is ready in
+time. The slideshow stops fetching while an app covers the dashboard.
+
+**Folder picker** (`/photos`, linked from the phone remote): a lazily loaded
+folder tree with checkboxes, the list of chosen folders, and live status while
+the Pi re-reads the library.
 
 ## Apps (launcher)
 
@@ -219,8 +270,10 @@ PiDash is a guest on the existing desktop. It never changes how the Pi boots.
 2. **Panel rail and apps.** *(done)* Rail navigation with the remote, app
    launcher with desktop and console modes, launch feedback on the TV, app
    controls and "Back to dashboard" on the phone remote.
-3. **Ambient screen.** Photo provider with resize cache and crossfade; clock and
-   weather overlay; overlay density levels.
+3. **Background photos.** *(done)* Synology Photos and local-folder sources,
+   folder picker on the phone, smart fill/fit rendering with disk cache,
+   crossfading slideshow with previous/next/pause and captions.
+3b. **Weather.** Open-Meteo provider and overlay.
 4. **Resilience & schedule.** Reconnect handling, TV standby/wake via CEC.
 5. **Polish & docs.** Weather detail panel, system panel.
 
@@ -232,8 +285,7 @@ Known gaps in the launcher, candidates for a follow-up:
 - **Pointer-driven websites.** Netflix and Synology Photos want a mouse. Fix: a
   touchpad on the phone remote that drives a virtual pointer.
 - **Typing into apps.** The phone remote's text field only reaches the dashboard.
-- **Synology Photos as the slideshow source**, through its API, instead of only
-  opening its website.
+- **Choosing by album, person or date** in Synology Photos, in addition to folders.
 
 ## Later ideas (not in scope now)
 

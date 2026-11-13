@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0d12" />
+    <title>PiDash · Background photos</title>
+    <link rel="stylesheet" href="/src/photos.css" />
+  </head>
+  <body>
+    <header>
+      <a href="/remote" class="back" aria-label="Back to the remote">‹</a>
+      <div>
+        <h1>Background photos</h1>
+        <p id="status">Loading…</p>
+      </div>
+    </header>
+
+    <main id="main" hidden>
+      <p class="intro">Choose the folders whose photos appear behind the clock on the TV.</p>
+
+      <label class="option">
+        <input type="checkbox" id="recursive" />
+        <span>Include the folders inside them</span>
+      </label>
+
+      <section id="tree" aria-label="Folders"></section>
+
+      <section id="chosen-box" hidden>
+        <h2>Chosen</h2>
+        <ul id="chosen"></ul>
+      </section>
+    </main>
+
+    <section id="disabled" hidden>
+      <p>No photo source is set up yet. Add one to <code>~/.config/pidash/config.toml</code> on the Pi, for example:</p>
+      <pre>[photos]
+source = "synology"
+
+[photos.synology]
+url = "http://192.168.1.20:5000"
+username = "pidash"
+password = "…"</pre>
+      <p>Then run <code>systemctl --user restart pidash</code> and reload this page.</p>
+    </section>
+
+    <footer id="footer" hidden>
+      <span id="summary"></span>
+      <button id="save" disabled>Use these folders</button>
+    </footer>
+
+    <script type="module" src="/src/photos.ts"></script>
+  </body>
+</html>

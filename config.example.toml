@@ -28,6 +28,43 @@ interval = "10s"
 # Set to "" to disable those controls.
 unit = "pidash-kiosk.service"
 
+# --- Background photos ------------------------------------------------------
+# A slideshow behind the clock. Set `source`, fill in the matching section
+# below, restart the backend, then choose the folders on your phone:
+#   http://<pi-address>:8080/photos   (also linked from the phone remote)
+#
+# On the TV: left/right = previous/next photo, play/pause = hold the current
+# one, up = show the photo's folder and date.
+[photos]
+# "synology" = Synology Photos on your NAS, "folder" = a folder on this Pi,
+# "" = no photos.
+source = ""
+# How long each photo stays on screen.
+interval = "30s"
+# How often the chosen folders are checked for new photos.
+refresh = "6h"
+# Disk space for prepared photos, in MB. The oldest are removed first.
+cache_mb = 2000
+
+# Synology Photos (DSM 7).
+# Tip: create a separate NAS user for PiDash that can only see the photos you
+# want on the TV. The account must not use 2-step verification.
+[photos.synology]
+# The address you use to open DSM in a browser.
+url = "http://YOUR-NAS:5000"
+username = ""
+password = ""
+# true accepts a self-signed HTTPS certificate (only needed for https:// addresses).
+insecure_tls = false
+# "original": prepare each photo from the full file for the sharpest picture.
+# "preview":  use the NAS's ready-made 1280-pixel preview. Faster, slightly soft.
+quality = "original"
+
+# A folder on this Pi, or a network share mounted on it. All its photos are
+# shown unless you narrow it down in the folder picker.
+[photos.folder]
+path = "/home/pi/Pictures"
+
 # --- Apps -------------------------------------------------------------------
 # Things you can launch from the dashboard: press OK to open the app row.
 # Add one [[apps]] block per app. An app is either a website or a program.

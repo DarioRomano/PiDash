@@ -55,3 +55,10 @@ input:focus { outline: 2px solid var(--accent); }
 #running-name { flex: 2; font-size: 16px; color: #6fd08c; }
 #app-stop { flex: 3; font-size: 17px; padding: 14px; background: #46a758; color: #06130a; font-weight: 600; }
 #app-msg { font-size: 14px; color: #f2a0a3; line-height: 1.35; }
+
+.link {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 16px 18px; border-radius: 16px; background: var(--panel); color: var(--fg);
+  font-size: 17px; text-decoration: none;
+}
+.link span { color: var(--dim); font-size: 22px; line-height: 1; }

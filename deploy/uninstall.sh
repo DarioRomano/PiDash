@@ -43,7 +43,8 @@ rmdir "$HOME/.local/share/pidash" 2>/dev/null
 if [ "$PURGE" -eq 1 ]; then
   rm -f "$HOME/.config/pidash/config.toml"
   rmdir "$HOME/.config/pidash" 2>/dev/null
-  rm -rf "$HOME/.cache/pidash-chromium" "$HOME/.local/share/pidash/profiles"
+  rm -rf "$HOME/.cache/pidash-chromium" "$HOME/.cache/pidash" "$HOME/.local/share/pidash/profiles"
+  rm -f "$HOME/.local/share/pidash/photos-selection.json"
   rmdir "$HOME/.local/share/pidash" 2>/dev/null
   echo "PiDash removed, including settings and the browser profile."
 else

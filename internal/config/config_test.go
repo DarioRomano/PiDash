@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,6 +68,12 @@ func TestInvalidConfigsAreRejected(t *testing.T) {
 		"bad browser":        "[[apps]]\nid = \"a\"\nurl = \"https://example.com\"\nbrowser = \"safari\"\n",
 		"adblock chromium":   "[[apps]]\nid = \"a\"\nurl = \"https://example.com\"\nadblock = true\n",
 		"adblock on program": "[[apps]]\nid = \"a\"\ncommand = \"x\"\nadblock = true\n",
+		"photo source":       "[photos]\nsource = \"flickr\"\n",
+		"synology no login":  "[photos]\nsource = \"synology\"\n[photos.synology]\nurl = \"http://nas:5000\"\n",
+		"synology bad url":   "[photos]\nsource = \"synology\"\n[photos.synology]\nurl = \"nas\"\nusername = \"a\"\npassword = \"b\"\n",
+		"synology quality":   "[photos]\nsource = \"synology\"\n[photos.synology]\nurl = \"http://nas:5000\"\nusername = \"a\"\npassword = \"b\"\nquality = \"best\"\n",
+		"relative folder":    "[photos]\nsource = \"folder\"\n[photos.folder]\npath = \"Pictures\"\n",
+		"interval too short": "[photos]\ninterval = \"1s\"\n",
 		"duplicate id":       "[[apps]]\nid = \"a\"\ncommand = \"x\"\n[[apps]]\nid = \"a\"\ncommand = \"y\"\n",
 	}
 	for name, body := range cases {
@@ -117,5 +124,43 @@ user_agent = "TV/1.0"
 	}
 	if a := cfg.Apps[1]; a.Browser != BrowserFirefox || !a.AdBlock || a.UserAgent != "TV/1.0" {
 		t.Errorf("youtube = %+v", a)
+	}
+}
+
+func TestPhotoSettings(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := cfg.Photos; p.Source != PhotoSourceNone || p.Interval.Duration.Seconds() != 30 || p.CacheMB != 2000 || p.Synology.Quality != PhotoQualityOriginal {
+		t.Errorf("defaults = %+v", p)
+	}
+
+	cfg, err = load(t, `
+[photos]
+source = "synology"
+interval = "45s"
+
+[photos.synology]
+url = "https://nas.example.com:5001/"
+username = "pidash"
+password = "s3cret"
+insecure_tls = true
+quality = "preview"
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := cfg.Photos.Synology
+	if s.URL != "https://nas.example.com:5001" || !s.InsecureTLS || s.Quality != PhotoQualityPreview || cfg.Photos.Interval.Duration.Seconds() != 45 {
+		t.Errorf("synology = %+v", cfg.Photos)
+	}
+	// The password must never be sent to the browser.
+	if b, _ := json.Marshal(cfg.ForClient()); strings.Contains(string(b), "s3cret") {
+		t.Error("client config leaks the NAS password")
+	}
+
+	if _, err := load(t, "[photos]\nsource = \"folder\"\n[photos.folder]\npath = \"/srv/photos\"\n"); err != nil {
+		t.Errorf("folder source: %v", err)
 	}
 }

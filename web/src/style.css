@@ -49,6 +49,7 @@ html, body {
 #backdrop {
   position: absolute;
   inset: 0;
+  z-index: 0; /* own stacking context: the photo layers stay below everything else */
   background: radial-gradient(120% 90% at 20% 100%, #1a2338 0%, #0b0d12 60%);
 }
 #backdrop img {
@@ -100,6 +101,18 @@ html, body {
 }
 
 #weather { margin-top: 36px; font-size: 40px; color: var(--fg-dim); }
+
+/* Photo caption: only in the "detailed" overlay. */
+#caption {
+  height: 34px;
+  margin-top: 14px;
+  font-size: 26px;
+  color: var(--fg-dim);
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+#overlay[data-density="detailed"] #caption { opacity: 1; }
 
 #status {
   position: absolute;

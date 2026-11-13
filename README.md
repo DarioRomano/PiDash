@@ -13,8 +13,9 @@ See [docs/PLAN.md](docs/PLAN.md) for the architecture and roadmap.
 ## Status
 
 Working today: fullscreen dashboard with a clock on top of the existing desktop,
-start/exit controls, an app launcher (YouTube, Netflix, Synology Photos,
-Moonlight, Kodi, Steam Link, …),
+start/exit controls, a background photo slideshow from Synology Photos or a
+local folder with a folder picker on your phone, an app launcher (YouTube,
+Netflix, Synology Photos, Moonlight, Kodi, Steam Link, …),
 remote-control input mapping with on-screen key debugging, phone remote, system
 stats. Photos and weather are next.
 
@@ -57,6 +58,7 @@ What the installer does:
 | "PiDash" entry in the desktop menu | `~/.local/share/applications/` |
 | Packages, only if missing | `chromium`, `v4l-utils`, `curl`, `fonts-inter`, `firefox`, `libwidevinecdm0` |
 | Browser profiles of website apps (created on first launch) | `~/.local/share/pidash/profiles/` |
+| Chosen photo folders, and prepared photos | `~/.local/share/pidash/photos-selection.json`, `~/.cache/pidash/photos/` |
 | Only with `--console-apps` | three system files, see [Apps](#apps) |
 
 ## Using it
@@ -64,6 +66,8 @@ What the installer does:
 | To… | Do this |
 |-----|---------|
 | Show the dashboard on the TV | Open **PiDash** from the desktop menu, tap **Show on TV** on the phone remote, or run `systemctl --user start pidash-kiosk` |
+| Choose the background photos | Open `http://<pi-ip>:8080/photos`, or tap **Background photos** on the phone remote |
+| Flip through photos | ◀ ▶ on the dashboard. Play/pause holds the current photo. ▲ shows its folder and date |
 | Launch an app | Press **OK** on the dashboard to open the app row, choose with ◀ ▶ and press OK. Or tap the app on the phone remote |
 | Get back from an app | Quit the app, or tap **Back to dashboard** on the phone remote |
 | Go back to the desktop | **Hold Back for 2 seconds** on the TV remote, press **Alt+F4** or **F10** on a keyboard, or tap **Exit to desktop** on the phone remote |
@@ -76,6 +80,79 @@ The screen stays awake while the dashboard is showing; your normal screen
 blanking applies again once you exit. The layout scales to whatever resolution
 the desktop uses. For the smoothest result on a 4K TV, set the desktop to
 1920x1080 in *Preferences → Screen Configuration*.
+
+### Background photos from Synology Photos
+
+PiDash can show a slideshow behind the clock, taken from folders you choose in
+Synology Photos.
+
+1. **On the NAS**, decide which account PiDash signs in with. A separate user
+   that can only see the photos you want on the TV is the safest choice. The
+   account must not use 2-step verification, because PiDash cannot answer the
+   code prompt.
+2. **On the Pi**, add this to `~/.config/pidash/config.toml`:
+
+   ```toml
+   [photos]
+   source = "synology"
+
+   [photos.synology]
+   url = "http://192.168.1.20:5000"   # the address you open DSM with
+   username = "pidash"
+   password = "your-password"
+   ```
+
+   Then run `systemctl --user restart pidash`.
+3. **On your phone**, open `http://<pi-ip>:8080/photos`. It is also linked from
+   the phone remote as **Background photos**. Browse your Personal Space and
+   Shared Space, tick the folders you want, and tap **Use these folders**.
+   "Include the folders inside them" decides whether subfolders count. The TV
+   switches to the new photos within a few seconds. Until you have chosen, the
+   TV shows a message with this address.
+
+You can change the choice at any time on the same page. New photos added to the
+chosen folders show up by themselves within six hours, or immediately when you
+save the selection again.
+
+How photos are shown:
+
+- Every photo is prepared once on the Pi as a 1920×1080 picture and kept on
+  disk, so the TV never has to load a large file. The first time a photo
+  appears, preparing it takes about a second; this happens ahead of time while
+  the previous photo is showing.
+- Landscape photos fill the screen. Portrait photos and panoramas are shown
+  whole, on a blurred, darkened copy of themselves, instead of being cropped.
+- Photos are rotated the right way up using the camera's rotation tag.
+- JPEG and PNG photos are prepared from the full file for the sharpest result.
+  HEIC and RAW photos use the 1280-pixel preview the NAS has already made. Set
+  `quality = "preview"` to use previews for everything, which is lighter on the
+  NAS and the Pi. Videos are skipped.
+- If the NAS is switched off or unreachable, the photos already prepared keep
+  showing, and the folder picker says what is wrong.
+
+More settings, with their defaults:
+
+```toml
+[photos]
+interval = "30s"    # how long each photo stays
+refresh = "6h"      # how often the folders are checked for new photos
+cache_mb = 2000     # disk space for prepared photos
+
+[photos.synology]
+insecure_tls = false   # true accepts a self-signed certificate on an https:// address
+quality = "original"   # or "preview"
+```
+
+Good to know:
+
+- The NAS password is stored in the config file, which the installer makes
+  readable by your user only.
+- Like the phone remote, the folder picker is open to every device on your home
+  network. Anyone on it can see the folder names and the chosen photos. Using a
+  NAS account limited to the photos meant for the TV keeps that harmless.
+- To use a folder on the Pi or a mounted network share instead of Synology
+  Photos, set `source = "folder"` and `[photos.folder] path = "/home/pi/Pictures"`.
+  All its photos are shown; the folder picker can narrow it down.
 
 ### Apps
 
@@ -266,6 +343,7 @@ internal/providers/  provider interface + runner, system/ stats
 web/                 Vite + TypeScript frontend (dashboard + phone remote)
 internal/kiosk/      start/stop the fullscreen browser (systemd user unit)
 internal/apps/       app launcher (desktop and console modes)
+internal/photos/     background slideshow: Synology Photos and folder sources, rendering, cache
 deploy/              install.sh, uninstall.sh, systemd user units, kiosk and CEC scripts
 ```
 

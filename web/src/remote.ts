@@ -135,6 +135,10 @@ document.getElementById("app-stop")!.addEventListener("click", () => appRequest(
 // Live updates, so the phone notices when an app is closed with the controller.
 const events = new EventSource("/events");
 events.addEventListener("apps", (e) => showApps(JSON.parse((e as MessageEvent).data)));
+// The folder picker for the background is offered once a photo source is set up.
+events.addEventListener("photos", (e) => {
+  document.getElementById("photos-link")!.hidden = !JSON.parse((e as MessageEvent).data).enabled;
+});
 events.addEventListener("open", () => statusDot.classList.add("ok"));
 events.addEventListener("error", () => statusDot.classList.remove("ok"));
 

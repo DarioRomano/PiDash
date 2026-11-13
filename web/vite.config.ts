@@ -14,6 +14,7 @@ export default defineConfig({
       input: {
         index: resolve(__dirname, "index.html"),
         remote: resolve(__dirname, "remote.html"),
+        photos: resolve(__dirname, "photos.html"),
       },
     },
   },

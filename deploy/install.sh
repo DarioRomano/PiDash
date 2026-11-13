@@ -93,6 +93,8 @@ if [ ! -f "$CONF_DIR/config.toml" ]; then
 else
   echo "    kept existing $CONF_DIR/config.toml"
 fi
+# The settings can hold your NAS password: readable by you only.
+chmod 600 "$CONF_DIR/config.toml"
 
 echo "==> Installing user services and menu entry"
 install -m 0644 "$HERE/pidash.service" "$HERE/pidash-kiosk.service" "$UNIT_DIR/"
@@ -139,6 +141,8 @@ PiDash is installed.
                      or use the phone remote
   Phone remote     : http://${IP:-<pi-ip>}:8080/remote
   Apps             : press OK on the dashboard; add them under [[apps]] in the settings
+  Background photos: set [photos] in the settings, then pick folders at
+                     http://${IP:-<pi-ip>}:8080/photos
   Settings         : $CONF_DIR/config.toml  (then: systemctl --user restart pidash)
   Logs             : journalctl --user -u pidash -u pidash-kiosk -f
   Uninstall        : bash $APP_DIR/uninstall.sh
