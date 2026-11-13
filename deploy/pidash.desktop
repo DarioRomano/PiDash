@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=PiDash
+Comment=Show the dashboard fullscreen on the TV
+Exec=systemctl --user start pidash-kiosk.service
+Icon=video-display
+Terminal=false
+Categories=AudioVideo;Utility;
+StartupNotify=false

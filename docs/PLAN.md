@@ -8,8 +8,8 @@ with the TV's own remote (HDMI-CEC) or a phone.
 | Area        | Choice                                                  | Why                                                                 |
 |-------------|---------------------------------------------------------|---------------------------------------------------------------------|
 | Hardware    | Raspberry Pi 5, HDMI0 to the TV                         | Enough GPU/CPU for smooth Chromium at 1080p; HDMI0 carries CEC.     |
-| OS          | Raspberry Pi OS Lite (Bookworm, 64-bit)                 | No desktop to fight with; boots straight into the kiosk.            |
-| Display     | `cage` (single-app Wayland compositor) + Chromium kiosk | Hardware-accelerated compositing, trivially restartable.            |
+| OS          | The existing Raspberry Pi OS desktop, untouched         | No reflashing; the Pi stays a normal desktop computer.              |
+| Display     | Chromium `--kiosk` as an app in the desktop session     | Fullscreen over the desktop; exit returns to it. Own browser profile.|
 | Frontend    | Vite + vanilla TypeScript, fixed 1920×1080 layout       | Small, no framework overhead, easy to keep off the hot path.        |
 | Backend     | Go, single static binary, frontend embedded via `embed` | One file to deploy, low memory, cross-compiles from any laptop.     |
 | Transport   | Server-Sent Events for push, HTTP POST for input        | Stdlib only, `EventSource` reconnects by itself.                    |
@@ -30,7 +30,8 @@ Remote actions (the only input vocabulary the app understands):
 | `left/right`| ◀ ▶               | Previous / next photo                                      |
 | `up/down`   | ▲ ▼               | Cycle overlay density: photo only → compact → detailed     |
 | `select`    | OK                | Open the panel rail (clock, weather detail, photos, system) |
-| `back`      | Back / Exit       | Close rail, return to ambient                              |
+| `back`      | Back / Exit       | Close rail, return to ambient. **Hold 2 s: exit to desktop** |
+| `exit`      | F10 (mappable)    | Close the dashboard and return to the desktop              |
 | `0-9`       | Number keys       | Jump straight to a panel                                   |
 | `play/pause`| ⏯                 | Pause / resume slideshow                                   |
 
@@ -42,7 +43,9 @@ a widget later (calendar, RSS, Home Assistant) means adding one of each.
 
 These keep the Pi 5 GPU and CPU idle most of the time.
 
-- **Render at 1080p**, even if the TV is 4K. Set the kiosk output mode to 1920×1080.
+- **Designed at 1080p, scaled to the desktop resolution.** The layout is a fixed
+  1920×1080 stage with one uniform `transform: scale()`. Recommend setting the
+  desktop to 1080p on a 4K TV: cheaper to render, and the TV upscales for free.
 - **Animate only `transform` and `opacity`.** No `backdrop-filter`, `filter: blur`,
   or large `box-shadow`. Scrims are static gradients.
 - **Photo crossfade** = two stacked `<img>` elements, opacity transition, next
@@ -57,10 +60,11 @@ These keep the Pi 5 GPU and CPU idle most of the time.
 - **Stale-tolerant**: the backend caches the last good result for every provider.
   When the internet drops the dashboard keeps showing data with a small "stale"
   marker instead of an error.
-- Chromium flags: `--kiosk --noerrdialogs --disable-infobars --ozone-platform=wayland
-  --enable-gpu-rasterization --enable-zero-copy --disable-pinch --overscroll-history-navigation=0
-  --autoplay-policy=no-user-gesture-required --remote-debugging-port=9222`
-  (the last one lets you open DevTools from your laptop to profile on the real device).
+- Chromium flags live in `deploy/kiosk.sh` (GPU rasterisation, zero-copy, no
+  pinch/overscroll, separate `--user-data-dir`, DevTools on localhost:9222 for
+  profiling on the real device through an SSH tunnel).
+- **Wake lock**: the page holds a screen wake lock, so the desktop's screen
+  blanking is inhibited only while the dashboard is showing.
 
 ## Remote control details
 
@@ -69,11 +73,13 @@ These keep the Pi 5 GPU and CPU idle most of the time.
 On Pi 5 with the KMS driver the kernel exposes `/dev/cec0`. Steps:
 
 1. Install `v4l-utils` for `cec-ctl`.
-2. A oneshot systemd unit at boot runs
-   `cec-ctl --playback --osd-name PiDash -d /dev/cec0` so the TV sees the Pi as a
-   playback device and forwards remote keys.
+2. When the kiosk starts, `deploy/cec-setup.sh` runs
+   `cec-ctl --playback --osd-name PiDash` on the adapter that has a TV attached,
+   wakes the TV and claims active source, so the TV switches to the Pi and
+   forwards remote keys.
 3. The kernel's CEC RC passthrough turns keys into normal Linux input events
-   (`KEY_UP`, `KEY_OK`, …). `cage` passes them to Chromium as keyboard events.
+   (`KEY_UP`, `KEY_OK`, …). The desktop compositor passes them to the focused
+   fullscreen Chromium window as keyboard events.
 4. Frontend maps `keydown` codes to the action vocabulary above. The mapping is
    in `config.toml` because brands disagree on Back/Exit and colour keys.
 5. Bonus: the backend can send `cec-ctl --to 0 --standby` / `--image-view-on`
@@ -89,19 +95,21 @@ like a key press. Bound to the LAN only.
 ## Architecture
 
 ```
-┌──────────────── Raspberry Pi 5 ────────────────┐
-│ systemd                                        │
-│  ├─ pidash-kiosk.service  cage → chromium ─────┼──► HDMI0 ──► TV
-│  ├─ pidash.service        Go binary :8080      │        ▲  CEC keys
-│  └─ pidash-cec.service    cec-ctl --playback   │◄───────┘
-│                                                │
-│  Go binary                                     │
-│   ├─ embedded web/dist (dashboard, /remote)    │
-│   ├─ GET  /events        SSE: state + input    │
-│   ├─ POST /api/input     from phone remote     │
-│   ├─ GET  /photos/{id}   resized, cached       │
-│   └─ providers: clock, weather, photos, system │
-└────────────────────────────────────────────────┘
+┌──────────── Raspberry Pi 5, normal desktop session ────────────┐
+│ systemd --user                                                 │
+│  ├─ pidash.service         Go binary :8080 (always on, tiny)   │
+│  └─ pidash-kiosk.service   chromium --kiosk  ──────────────────┼──► HDMI ──► TV
+│        started on demand: menu entry / phone / autostart       │       ▲ CEC keys
+│        stopped: hold Back / Alt+F4 / phone  → back to desktop  │◄──────┘
+│                                                                │
+│  Go binary                                                     │
+│   ├─ embedded web/dist (dashboard, /remote)                    │
+│   ├─ GET  /events        SSE: config + state + input           │
+│   ├─ POST /api/input     from phone remote                     │
+│   ├─ GET/POST /api/kiosk start/stop the fullscreen browser     │
+│   ├─ GET  /photos/{id}   resized, cached            (planned)  │
+│   └─ providers: system, weather, photos             (planned)  │
+└────────────────────────────────────────────────────────────────┘
           ▲ phone on LAN  ▲ laptop: make deploy (ssh)
 ```
 
@@ -112,27 +120,34 @@ cmd/pidash/            main.go — flags, config, server start
 internal/config/       TOML loading + defaults + validation
 internal/server/       HTTP mux, SSE hub, input endpoint, static embed
 internal/providers/    weather/ (Open-Meteo), photos/ (scan, resize, cache), system/
-internal/cec/          optional: schedule TV standby/wake via cec-ctl
+internal/kiosk/        start/stop the fullscreen browser via its systemd user unit
+internal/cec/          optional, later: schedule TV standby/wake via cec-ctl
 web/                   Vite + TS: src/panels/*, src/input.ts, src/sse.ts, remote/
-deploy/                install.sh, systemd units, chromium flags, cage launcher
+deploy/                install.sh, uninstall.sh, systemd user units, kiosk.sh, cec-setup.sh
 config.example.toml
 Makefile               dev / build / deploy / lint
 docs/PLAN.md           this file
 ```
 
-## Boot & operations
+## Install & operations
 
-- `pidash-kiosk.service` runs as the `pi` user on `tty1` with `PAMName=login` so
-  logind grants seat access; it starts `cage -- chromium <flags> http://localhost:8080`.
-  `Restart=always` for both it and `pidash.service`.
-- `deploy/install.sh` turns a fresh Pi OS Lite image into a working dashboard:
-  installs `cage chromium v4l-utils`, copies units, enables them, writes a default
-  config.
-- `make deploy` cross-compiles for `linux/arm64`, copies the binary and config over
-  SSH and restarts the service. Builds take seconds; no toolchain on the Pi.
+PiDash is a guest on the existing desktop. It never changes how the Pi boots.
+
+- Everything is per-user: files in `~/.local/share/pidash`, settings in
+  `~/.config/pidash/config.toml`, two systemd **user** units, one menu entry.
+  `deploy/uninstall.sh` removes it all.
+- `pidash.service` (backend) starts with the desktop session and idles at a few MB.
+- `pidash-kiosk.service` (fullscreen Chromium) runs only on demand. It finds the
+  running Wayland or X11 session itself, uses a dedicated browser profile, and
+  uses `Restart=on-failure` so crashes recover but a deliberate exit stays exited.
+- Optional autostart (`install.sh --autostart`) adds an XDG autostart entry so
+  the dashboard opens whenever the desktop starts. Off by default.
+- `make install` / `make deploy` from a laptop over SSH, or `make install-local`
+  on the Pi itself.
 - Overscan: set the TV to "Just Scan" / "Screen Fit"; the layout also has a
   configurable safe-area inset as a fallback.
-- Night schedule in config: `display.off = "23:30"`, `display.on = "06:30"`.
+- Later: night schedule in config (`display.off = "23:30"`, `display.on = "06:30"`)
+  using CEC standby/wake.
 
 ## Dev workflow
 
@@ -145,9 +160,9 @@ docs/PLAN.md           this file
 
 ## Milestones
 
-1. **Boots into a clock.** Install script, kiosk unit, Go binary serving a static
-   page with a ticking clock. Confirm CEC key events reach the browser
-   (`console.log(e.code)`).
+1. **Clock on the TV, and a way back.** *(done)* User-level installer, backend,
+   fullscreen kiosk on the desktop with start/exit controls, key mapping with
+   on-screen debug to confirm CEC key events reach the browser, phone remote.
 2. **Ambient screen.** Photo provider with resize cache and crossfade; clock and
    weather overlay; overlay density levels; pixel shift.
 3. **Input.** Action vocabulary, key mapping from config, panel rail, phone
@@ -160,5 +175,5 @@ docs/PLAN.md           this file
 ## Later ideas (not in scope now)
 
 Calendar (ICS), RSS headlines, Home Assistant entities, accent colour extracted
-from the current photo, read-only root filesystem with overlay for SD-card
-longevity, 4K output mode for Pi 5 once 1080p is proven smooth.
+from the current photo, a dedicated appliance mode (Pi OS Lite + `cage`) for a
+Pi that does nothing else.

@@ -1,23 +1,13 @@
+# systemd USER unit: ~/.config/systemd/user/pidash.service
+# The dashboard backend. Starts when you log in to the desktop; uses a few MB of RAM.
 [Unit]
 Description=PiDash backend (dashboard server)
-After=network-online.target
-Wants=network-online.target
 
 [Service]
 Type=simple
-User=@USER@
-Group=@USER@
-ExecStart=/opt/pidash/pidash -config /etc/pidash/config.toml
+ExecStart=%h/.local/share/pidash/pidash -config %h/.config/pidash/config.toml
 Restart=always
 RestartSec=2
-# Hardening
-NoNewPrivileges=yes
-ProtectSystem=strict
-ProtectHome=read-only
-PrivateTmp=yes
-ReadWritePaths=/var/lib/pidash
-StateDirectory=pidash
-Environment=PIDASH_STATE_DIR=/var/lib/pidash
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target

@@ -1,4 +1,5 @@
-# PiDash configuration. Copy to /etc/pidash/config.toml on the Pi.
+# PiDash configuration. Lives at ~/.config/pidash/config.toml on the Pi.
+# After editing: systemctl --user restart pidash
 # Every key is optional; omitted keys use the built-in defaults shown here.
 
 [server]
@@ -21,8 +22,16 @@ locale = ""
 enabled = true
 interval = "10s"
 
+[kiosk]
+# systemd user unit that runs the fullscreen browser. It powers "Show on TV" and
+# "Exit to desktop" on the phone remote and hold-Back-to-exit on the TV remote.
+# Set to "" to disable those controls.
+unit = "pidash-kiosk.service"
+
 # Map browser KeyboardEvent.code values to actions.
-# Actions: up down left right select back menu home playpause 0-9
+# Actions: up down left right select back menu home playpause exit 0-9
+# "exit" closes the dashboard and returns to the desktop. Holding any key mapped
+# to "back" for two seconds does the same, so a TV remote always has a way out.
 # If this table is present it REPLACES the defaults, so list everything you need.
 # Find the codes your remote sends by enabling display.debug_keys above.
 [input.keys]
@@ -38,6 +47,7 @@ Backspace = "back"
 BrowserBack = "back"
 ContextMenu = "menu"
 Home = "home"
+F10 = "exit"
 MediaPlayPause = "playpause"
 MediaPlay = "playpause"
 MediaPause = "playpause"

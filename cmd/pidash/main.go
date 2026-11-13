@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"github.com/DarioRomano/PiDash/internal/config"
+	"github.com/DarioRomano/PiDash/internal/kiosk"
 	"github.com/DarioRomano/PiDash/internal/providers"
 	"github.com/DarioRomano/PiDash/internal/providers/system"
 	"github.com/DarioRomano/PiDash/internal/server"
@@ -68,11 +69,10 @@ func main() {
 		if cfg.System.Enabled {
 			ps = append(ps, system.New(cfg.System.Interval.Duration))
 		}
-		_ = mock // reserved for providers that need the network (weather, photos)
 		return providers.NewRunner(log, publish, ps...)
 	}
 
-	srv := server.New(cfg, log, static, newRunner)
+	srv := server.New(cfg, log, static, kiosk.New(cfg.Kiosk.Unit, *mock, log), newRunner)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/DarioRomano/PiDash/internal/config"
+	"github.com/DarioRomano/PiDash/internal/kiosk"
 	"github.com/DarioRomano/PiDash/internal/providers"
 )
 
@@ -25,13 +26,14 @@ type Server struct {
 	log    *slog.Logger
 	hub    *hub
 	runner *providers.Runner
+	kiosk  *kiosk.Controller
 	static fs.FS
 	mux    *http.ServeMux
 }
 
 // New wires the HTTP handlers. static is the built frontend (web/dist).
-func New(cfg config.Config, log *slog.Logger, static fs.FS, newRunner func(publish func(providers.Entry)) *providers.Runner) *Server {
-	s := &Server{cfg: cfg, log: log, hub: newHub(), static: static, mux: http.NewServeMux()}
+func New(cfg config.Config, log *slog.Logger, static fs.FS, k *kiosk.Controller, newRunner func(publish func(providers.Entry)) *providers.Runner) *Server {
+	s := &Server{cfg: cfg, log: log, hub: newHub(), kiosk: k, static: static, mux: http.NewServeMux()}
 	s.runner = newRunner(func(e providers.Entry) { s.hub.broadcast("state", e) })
 
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
@@ -39,6 +41,8 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, newRunner func(publi
 	s.mux.HandleFunc("GET /api/config", s.handleConfig)
 	s.mux.HandleFunc("GET /api/state", s.handleState)
 	s.mux.HandleFunc("POST /api/input", s.handleInput)
+	s.mux.HandleFunc("GET /api/kiosk", s.handleKioskStatus)
+	s.mux.HandleFunc("POST /api/kiosk", s.handleKioskControl)
 	s.mux.HandleFunc("GET /remote", s.servePage("remote.html"))
 	s.mux.HandleFunc("GET /remote/", s.servePage("remote.html"))
 	s.mux.Handle("GET /", http.FileServerFS(static))
@@ -119,6 +123,51 @@ func (s *Server) handleInput(w http.ResponseWriter, r *http.Request) {
 	}
 	s.hub.broadcast("input", inputEvent{Action: req.Action, Text: req.Text, Source: "remote"})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// kioskStatus is the response of GET and POST /api/kiosk.
+type kioskStatus struct {
+	// Available is false when kiosk control is disabled in the config.
+	Available bool `json:"available"`
+	// Active is true while the dashboard is showing on the TV.
+	Active bool `json:"active"`
+}
+
+func (s *Server) handleKioskStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, kioskStatus{Available: s.kiosk.Available(), Active: s.kiosk.Active(r.Context())})
+}
+
+// handleKioskControl starts ("start") or stops ("stop") the fullscreen browser.
+func (s *Server) handleKioskControl(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Action string `json:"action"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	var err error
+	active := false
+	switch req.Action {
+	case "start":
+		err, active = s.kiosk.Start(r.Context()), true
+	case "stop":
+		err = s.kiosk.Stop(r.Context())
+	default:
+		http.Error(w, `action must be "start" or "stop"`, http.StatusBadRequest)
+		return
+	}
+	switch {
+	case errors.Is(err, kiosk.ErrUnavailable):
+		http.Error(w, err.Error(), http.StatusNotImplemented)
+		return
+	case err != nil:
+		s.log.Error("kiosk control", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// The unit starts asynchronously, so report the requested state.
+	writeJSON(w, kioskStatus{Available: true, Active: active})
 }
 
 // handleEvents streams config, current state and subsequent updates as SSE.

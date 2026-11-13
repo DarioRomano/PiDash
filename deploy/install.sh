@@ -1,71 +1,111 @@
 #!/bin/bash
-# One-shot installer for a fresh Raspberry Pi OS Lite (Bookworm, 64-bit) on a Pi 5.
-# Run from a directory containing: pidash-arm64, deploy/, config.example.toml
-#   sudo bash deploy/install.sh
-# Re-running is safe; it only updates what changed.
+# Installs PiDash on an EXISTING Raspberry Pi OS desktop, for the current user.
+#
+# It does not change how the Pi boots and does not touch your desktop:
+#   - files go to   ~/.local/share/pidash  and  ~/.config/pidash
+#   - two systemd USER units (backend + fullscreen browser)
+#   - a "PiDash" entry in the desktop menu
+#   - apt packages only if missing: chromium, v4l-utils (CEC), curl, fonts-inter
+# Remove everything again with deploy/uninstall.sh.
+#
+# Usage (as your normal user, NOT with sudo):
+#   bash deploy/install.sh [--autostart] [--binary PATH]
+#     --autostart   also open the dashboard automatically when the desktop starts
+#     --binary      path to the pidash binary (default: looks next to deploy/)
 set -euo pipefail
 
-if [ "$(id -u)" -ne 0 ]; then echo "run with sudo" >&2; exit 1; fi
+if [ "$(id -u)" -eq 0 ]; then
+  echo "Run this as your normal desktop user, without sudo." >&2
+  exit 1
+fi
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
-# The desktop user that will run the kiosk and the backend.
-KIOSK_USER="${KIOSK_USER:-${SUDO_USER:-pi}}"
-id "$KIOSK_USER" >/dev/null 2>&1 || { echo "user $KIOSK_USER does not exist" >&2; exit 1; }
-
-echo "==> Installing packages"
-apt-get update -qq
-# chromium is the Bookworm package name; chromium-browser exists on some images.
-apt-get install -y --no-install-recommends cage v4l-utils curl fonts-inter seatd \
-  $(apt-cache show chromium >/dev/null 2>&1 && echo chromium || echo chromium-browser)
-
-echo "==> Installing files"
-install -d -m 0755 /opt/pidash /etc/pidash
-if [ -f "$ROOT/pidash-arm64" ]; then
-  install -m 0755 "$ROOT/pidash-arm64" /opt/pidash/pidash
-elif [ -f "$ROOT/bin/pidash-arm64" ]; then
-  install -m 0755 "$ROOT/bin/pidash-arm64" /opt/pidash/pidash
-else
-  echo "pidash-arm64 binary not found next to deploy/ — run 'make build-pi' first" >&2; exit 1
-fi
-install -m 0755 "$HERE/kiosk.sh" "$HERE/cec-setup.sh" /opt/pidash/
-if [ ! -f /etc/pidash/config.toml ]; then
-  install -m 0644 "$ROOT/config.example.toml" /etc/pidash/config.toml
-  echo "    wrote /etc/pidash/config.toml (edit it, then: sudo systemctl restart pidash)"
-fi
-
-echo "==> Installing systemd units for user '$KIOSK_USER'"
-for u in pidash.service pidash-kiosk.service pidash-cec.service; do
-  sed "s/@USER@/$KIOSK_USER/g" "$HERE/$u" > "/etc/systemd/system/$u"
+AUTOSTART=0
+BINARY=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --autostart) AUTOSTART=1 ;;
+    --binary) BINARY="${2:?--binary needs a path}"; shift ;;
+    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
+    *) echo "unknown option: $1" >&2; exit 1 ;;
+  esac
+  shift
 done
-# cage needs the user in these groups to open the GPU and input devices via logind/seatd.
-for g in video render input; do getent group "$g" >/dev/null && usermod -aG "$g" "$KIOSK_USER"; done
-systemctl daemon-reload
-systemctl set-default graphical.target
-systemctl disable --now getty@tty1.service >/dev/null 2>&1 || true
-systemctl enable pidash.service pidash-kiosk.service pidash-cec.service
-systemctl restart pidash.service
 
-echo "==> Boot config"
-CMDLINE=/boot/firmware/cmdline.txt
-[ -f "$CMDLINE" ] || CMDLINE=/boot/cmdline.txt
-if [ -f "$CMDLINE" ]; then
-  # Force 1080p60 on HDMI0: cheaper to render than 4K and the TV upscales for free.
-  if ! grep -q 'video=HDMI-A-1' "$CMDLINE"; then
-    sed -i '1 s/$/ video=HDMI-A-1:1920x1080M@60D/' "$CMDLINE"
-    echo "    added video=HDMI-A-1:1920x1080M@60D to $CMDLINE"
-  fi
-  # Quieter boot.
-  for opt in quiet loglevel=3 vt.global_cursor_default=0 consoleblank=0; do
-    grep -q "$opt" "$CMDLINE" || sed -i "1 s/$/ $opt/" "$CMDLINE"
+if [ -z "$BINARY" ]; then
+  for c in "$ROOT/pidash-arm64" "$ROOT/bin/pidash-arm64" "$ROOT/bin/pidash"; do
+    if [ -f "$c" ]; then BINARY="$c"; break; fi
   done
 fi
-CONFIG=/boot/firmware/config.txt
-[ -f "$CONFIG" ] || CONFIG=/boot/config.txt
-if [ -f "$CONFIG" ] && ! grep -q '^disable_splash=1' "$CONFIG"; then
-  echo 'disable_splash=1' >> "$CONFIG"
+if [ -z "$BINARY" ] || [ ! -f "$BINARY" ]; then
+  echo "pidash binary not found. Build it first ('make build' on the Pi, or 'make install PI_HOST=...' from another machine)." >&2
+  exit 1
 fi
 
-echo
-echo "Done. Reboot to start the kiosk:  sudo reboot"
-echo "Then on another machine:  http://$(hostname -I | awk '{print $1}'):8080/remote"
+APP_DIR="$HOME/.local/share/pidash"
+CONF_DIR="$HOME/.config/pidash"
+UNIT_DIR="$HOME/.config/systemd/user"
+MENU_DIR="$HOME/.local/share/applications"
+AUTOSTART_DIR="$HOME/.config/autostart"
+
+echo "==> Checking packages"
+missing=()
+command -v chromium >/dev/null 2>&1 || command -v chromium-browser >/dev/null 2>&1 || missing+=(chromium)
+command -v cec-ctl >/dev/null 2>&1 || missing+=(v4l-utils)
+command -v curl >/dev/null 2>&1 || missing+=(curl)
+fc-list 2>/dev/null | grep -qi '/inter' || missing+=(fonts-inter)
+if [ ${#missing[@]} -gt 0 ]; then
+  echo "    installing: ${missing[*]} (needs sudo)"
+  sudo apt-get update -qq
+  sudo apt-get install -y --no-install-recommends "${missing[@]}"
+else
+  echo "    nothing to install"
+fi
+
+echo "==> Installing files to $APP_DIR"
+mkdir -p "$APP_DIR" "$CONF_DIR" "$UNIT_DIR" "$MENU_DIR"
+# Install to a temp name and rename, so a running backend is replaced atomically.
+install -m 0755 "$BINARY" "$APP_DIR/pidash.new"
+mv -f "$APP_DIR/pidash.new" "$APP_DIR/pidash"
+install -m 0755 "$HERE/kiosk.sh" "$HERE/cec-setup.sh" "$APP_DIR/"
+if [ -f "$HERE/uninstall.sh" ]; then install -m 0755 "$HERE/uninstall.sh" "$APP_DIR/"; fi
+if [ ! -f "$CONF_DIR/config.toml" ]; then
+  install -m 0644 "$ROOT/config.example.toml" "$CONF_DIR/config.toml"
+  echo "    wrote $CONF_DIR/config.toml"
+else
+  echo "    kept existing $CONF_DIR/config.toml"
+fi
+
+echo "==> Installing user services and menu entry"
+install -m 0644 "$HERE/pidash.service" "$HERE/pidash-kiosk.service" "$UNIT_DIR/"
+install -m 0644 "$HERE/pidash.desktop" "$MENU_DIR/pidash.desktop"
+systemctl --user daemon-reload
+systemctl --user enable pidash.service >/dev/null
+systemctl --user restart pidash.service
+
+if [ "$AUTOSTART" -eq 1 ]; then
+  mkdir -p "$AUTOSTART_DIR"
+  install -m 0644 "$HERE/pidash.desktop" "$AUTOSTART_DIR/pidash.desktop"
+  echo "    autostart enabled (remove $AUTOSTART_DIR/pidash.desktop to disable)"
+fi
+
+if ! id -nG | tr ' ' '\n' | grep -qx video; then
+  echo "NOTE: you are not in the 'video' group, so the TV remote (CEC) will not work."
+  echo "      Fix with: sudo usermod -aG video $USER   (then log out and in again)"
+fi
+
+IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+cat <<MSG
+
+PiDash is installed.
+
+  Show on TV       : open "PiDash" from the desktop menu, or
+                     systemctl --user start pidash-kiosk
+  Back to desktop  : hold Back on the TV remote for 2 seconds, press Alt+F4,
+                     or use the phone remote
+  Phone remote     : http://${IP:-<pi-ip>}:8080/remote
+  Settings         : $CONF_DIR/config.toml  (then: systemctl --user restart pidash)
+  Logs             : journalctl --user -u pidash -u pidash-kiosk -f
+  Uninstall        : bash $APP_DIR/uninstall.sh
+MSG

@@ -15,6 +15,7 @@ type Config struct {
 	Display Display `toml:"display"`
 	Input   Input   `toml:"input"`
 	System  System  `toml:"system"`
+	Kiosk   Kiosk   `toml:"kiosk"`
 }
 
 // Server holds HTTP settings.
@@ -48,6 +49,13 @@ type Input struct {
 type System struct {
 	Enabled  bool     `toml:"enabled"`
 	Interval Duration `toml:"interval"`
+}
+
+// Kiosk configures how the fullscreen browser on the TV is started and stopped.
+type Kiosk struct {
+	// Unit is the systemd user unit that runs the browser. Empty disables the
+	// "Show on TV" / "Exit to desktop" controls.
+	Unit string `toml:"unit"`
 }
 
 // Duration is a time.Duration that decodes from TOML strings like "30s".
@@ -87,10 +95,12 @@ func Default() Config {
 			"MediaPause":     "playpause",
 			"ContextMenu":    "menu",
 			"Home":           "home",
+			"F10":            "exit",
 			"Digit0":         "0", "Digit1": "1", "Digit2": "2", "Digit3": "3", "Digit4": "4",
 			"Digit5": "5", "Digit6": "6", "Digit7": "7", "Digit8": "8", "Digit9": "9",
 		}},
 		System: System{Enabled: true, Interval: Duration{10 * time.Second}},
+		Kiosk:  Kiosk{Unit: "pidash-kiosk.service"},
 	}
 }
 

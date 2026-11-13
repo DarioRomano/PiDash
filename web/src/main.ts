@@ -5,7 +5,9 @@ import type { ClientConfig, StateEntry, SystemState } from "./types";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 
+const fit = $("#fit");
 const stage = $("#stage");
+const exitHint = $("#exit-hint");
 const overlay = $("#overlay");
 const conn = $("#conn");
 const stale = $("#stale");
@@ -19,6 +21,59 @@ clock.start();
 
 const input = new Input();
 input.attachKeyboard();
+
+// --- Fit the 1920x1080 design to the actual screen ----------------------------
+
+function fitToScreen() {
+  const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+  fit.style.setProperty("--scale", scale.toFixed(4));
+}
+fitToScreen();
+window.addEventListener("resize", fitToScreen);
+
+// --- Keep the screen awake while the dashboard is showing ---------------------
+// Uses the desktop's idle-inhibit mechanism, so screen blanking only applies
+// again once the dashboard is closed.
+
+let wakeLock: WakeLockSentinel | null = null;
+async function keepAwake() {
+  if (!("wakeLock" in navigator) || wakeLock) return;
+  try {
+    wakeLock = await navigator.wakeLock.request("screen");
+    wakeLock.addEventListener("release", () => (wakeLock = null));
+  } catch {
+    /* not allowed right now; retried on the next visibility change */
+  }
+}
+keepAwake();
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") keepAwake();
+});
+
+// --- Exit to desktop ----------------------------------------------------------
+
+input.onHold((holding) => exitHint.classList.toggle("visible", holding));
+
+async function exitToDesktop() {
+  exitHint.textContent = "Returning to the desktop…";
+  exitHint.classList.add("visible");
+  try {
+    const res = await fetch("/api/kiosk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "stop" }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+  } catch {
+    // Not running as the kiosk unit (e.g. a normal browser tab): try closing the tab.
+    window.close();
+    exitHint.textContent = "Press Alt+F4 to return to the desktop";
+    window.setTimeout(() => {
+      exitHint.classList.remove("visible");
+      exitHint.textContent = "Keep holding to exit to the desktop…";
+    }, 4000);
+  }
+}
 
 // --- Config -----------------------------------------------------------------
 
@@ -101,6 +156,9 @@ input.on((action) => {
     case "home":
       density = 1;
       overlay.dataset.density = DENSITIES[density];
+      break;
+    case "exit":
+      exitToDesktop();
       break;
     // left/right/select/back/playpause/digits are wired up with the photo
     // slideshow and the panel rail in the next milestone.

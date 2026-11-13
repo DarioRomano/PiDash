@@ -32,6 +32,50 @@ form.addEventListener("submit", (e) => {
   text.value = "";
 });
 
+// --- Show on TV / Exit to desktop -------------------------------------------
+
+const kioskRow = document.getElementById("kiosk")!;
+const startBtn = document.getElementById("kiosk-start")!;
+const stopBtn = document.getElementById("kiosk-stop")!;
+
+function showKiosk(s: { available: boolean; active: boolean }) {
+  kioskRow.hidden = !s.available;
+  startBtn.classList.toggle("current", s.active);
+  stopBtn.classList.toggle("current", !s.active);
+}
+
+async function refreshKiosk() {
+  try {
+    const res = await fetch("/api/kiosk");
+    if (res.ok) showKiosk(await res.json());
+  } catch {
+    /* backend unreachable; the status dot already shows it */
+  }
+}
+
+async function setKiosk(action: "start" | "stop") {
+  try {
+    const res = await fetch("/api/kiosk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    statusDot.classList.toggle("ok", res.ok);
+    if (res.ok) showKiosk(await res.json());
+  } catch {
+    statusDot.classList.remove("ok");
+  }
+  // The browser starts asynchronously; confirm the real state shortly after.
+  window.setTimeout(refreshKiosk, 3000);
+}
+
+startBtn.addEventListener("click", () => setKiosk("start"));
+stopBtn.addEventListener("click", () => setKiosk("stop"));
+refreshKiosk();
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") refreshKiosk();
+});
+
 // Keyboard on a laptop works too.
 const keymap: Record<string, string> = {
   ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",

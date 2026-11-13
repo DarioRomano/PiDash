@@ -1,17 +1,26 @@
 # PiDash build & deploy.
-#   make dev        run backend (-mock) + Vite dev server with HMR
-#   make build      build frontend and a native binary into bin/pidash
-#   make build-pi   cross-compile for the Pi (linux/arm64) into bin/pidash-arm64
-#   make deploy     build-pi, copy to the Pi over SSH and restart the service
-#   make install    first-time install on the Pi: deploy + run deploy/install.sh
+#   make dev            run backend (-mock) + Vite dev server with HMR
+#   make build          build frontend and a native binary into bin/pidash
+#   make build-pi       cross-compile for the Pi (linux/arm64) into bin/pidash-arm64
 #
-# Override the Pi address with PI_HOST=pi@192.168.1.50
+# From another machine, over SSH (override the address with PI_HOST=pi@192.168.1.50):
+#   make install        first-time install on the Pi's existing desktop
+#   make deploy         push a new build and restart the backend
+#   make uninstall      remove PiDash from the Pi again
+#
+# Directly on the Pi (needs Go 1.22+ and Node 18+ on the Pi):
+#   make install-local
+#
+# Add INSTALL_FLAGS=--autostart to open the dashboard whenever the desktop starts.
 
 PI_HOST  ?= pi@pidash.local
 VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS   = -s -w -X main.version=$(VERSION)
 
-.PHONY: dev dev-backend dev-web build build-web build-pi deploy install lint test clean
+INSTALL_FLAGS ?=
+APP_DIR   = .local/share/pidash
+
+.PHONY: dev dev-backend dev-web build build-web build-pi deploy install install-local uninstall lint test clean
 
 dev:
 	@$(MAKE) -j2 dev-backend dev-web
@@ -36,13 +45,19 @@ build-pi: build-web
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="$(LDFLAGS)" -o bin/pidash-arm64 ./cmd/pidash
 
 deploy: build-pi
-	scp bin/pidash-arm64 $(PI_HOST):/tmp/pidash
-	ssh $(PI_HOST) 'sudo install -m 0755 /tmp/pidash /opt/pidash/pidash && rm /tmp/pidash && sudo systemctl restart pidash && systemctl --no-pager --lines=5 status pidash'
+	scp bin/pidash-arm64 $(PI_HOST):$(APP_DIR)/pidash.new
+	ssh $(PI_HOST) 'mv -f $(APP_DIR)/pidash.new $(APP_DIR)/pidash && systemctl --user restart pidash && systemctl --user --no-pager --lines=5 status pidash'
 
 install: build-pi
 	ssh $(PI_HOST) 'mkdir -p /tmp/pidash-install'
 	scp -r bin/pidash-arm64 deploy config.example.toml $(PI_HOST):/tmp/pidash-install/
-	ssh $(PI_HOST) 'cd /tmp/pidash-install && sudo bash deploy/install.sh && rm -rf /tmp/pidash-install'
+	ssh -t $(PI_HOST) 'cd /tmp/pidash-install && bash deploy/install.sh $(INSTALL_FLAGS); rc=$$?; cd / && rm -r /tmp/pidash-install; exit $$rc'
+
+install-local: build
+	bash deploy/install.sh --binary bin/pidash $(INSTALL_FLAGS)
+
+uninstall:
+	ssh $(PI_HOST) 'bash $(APP_DIR)/uninstall.sh'
 
 lint:
 	go vet ./...

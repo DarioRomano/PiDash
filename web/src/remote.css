@@ -41,3 +41,7 @@ input {
   font: inherit; font-size: 18px; padding: 16px;
 }
 input:focus { outline: 2px solid var(--accent); }
+
+#kiosk button { font-size: 17px; padding: 14px; }
+#kiosk button.current { outline: 2px solid var(--accent); color: var(--accent); }
+[hidden] { display: none !important; }
