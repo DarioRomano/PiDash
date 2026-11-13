@@ -104,6 +104,51 @@
       </section>
 
       <section class="card">
+        <h2>Calendar</h2>
+        <p class="hint">
+          Shows your next events on the TV. It needs the calendar's link: in Google Calendar the "Secret address in
+          iCal format", in iCloud the link of a public calendar, in Synology Calendar the published link.
+        </p>
+        <ul id="cal-list" class="rows"></ul>
+        <label class="field">
+          <span>Calendar link</span>
+          <input id="cal-url" type="url" autocomplete="off" autocapitalize="off" placeholder="https://… or webcal://…" />
+        </label>
+        <div class="pair">
+          <button id="cal-test" type="button" class="secondary wide">Check link</button>
+          <button id="cal-add" type="button" class="secondary wide">Add to the list</button>
+        </div>
+        <p id="cal-result" class="result"></p>
+      </section>
+
+      <section class="card">
+        <h2>Smart home</h2>
+        <p class="hint">Lights, plugs, scenes and sensors from Home Assistant, as tiles in the app row.</p>
+        <label class="field">
+          <span>Address of Home Assistant</span>
+          <input id="h-url" type="url" autocomplete="off" autocapitalize="off" placeholder="http://homeassistant.local:8123" />
+        </label>
+        <label class="field">
+          <span>Access token</span>
+          <input id="h-token" type="password" autocomplete="new-password" />
+        </label>
+        <button id="h-connect" type="button" class="secondary wide">Connect and list devices</button>
+        <p id="h-result" class="result"></p>
+        <ul id="h-list" class="rows"></ul>
+        <div id="h-add" class="add" hidden>
+          <label class="field">
+            <span>Add a tile</span>
+            <select id="h-pick"></select>
+          </label>
+          <button id="h-add-btn" type="button" class="secondary wide">Add to the app row</button>
+        </div>
+        <p class="hint">
+          The token is made in Home Assistant: your profile, Security, Long-lived access tokens. Locks and alarms are
+          left out on purpose.
+        </p>
+      </section>
+
+      <section class="card">
         <h2>Night</h2>
         <p class="hint">Between these times the TV shows only a dim clock on black. Any button brings the dashboard back for a minute.</p>
         <div class="pair">
@@ -149,6 +194,12 @@
           A program that needs its own command or options can be added in
           <code>~/.config/pidash/config.toml</code> on the Pi. It then shows up here to reorder or remove.
         </p>
+      </section>
+
+      <section class="card">
+        <h2>Updates</h2>
+        <label class="check"><input id="sys-auto" type="checkbox" /><span>Install new versions automatically</span></label>
+        <p class="hint">Checked once a day and installed at night, never while an app is open.</p>
       </section>
 
       <p id="kb-problem" class="hint warn" hidden></p>

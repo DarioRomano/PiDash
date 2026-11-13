@@ -5,7 +5,7 @@ import { Input } from "./input";
 import { Rail, type RailItem } from "./rail";
 import { Slideshow } from "./slideshow";
 import { connect } from "./sse";
-import type { Action, AppsStatus, ClientConfig, PhotoItem, PhotosStatus, StateEntry, SystemState, WeatherState } from "./types";
+import type { Action, AppsStatus, CalendarState, ClientConfig, HomeEntity, PhotoItem, PhotosStatus, StateEntry, SystemState, WeatherState } from "./types";
 import { WeatherView } from "./weather";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
@@ -97,6 +97,7 @@ function toast(text: string, ms = 4000) {
 
 const captionEl = $("#caption");
 let dateLocale: string | undefined;
+let clock24h = true;
 let lanAddress = "";
 
 function showCaption(item: PhotoItem | null) {
@@ -227,6 +228,32 @@ function openSettings() {
 
 // --- Panel rail and apps ------------------------------------------------------
 
+// Smart-home tiles: lights, plugs, scenes and values from Home Assistant.
+const HOME_ID = "__home:";
+let homeEntities: HomeEntity[] = [];
+const svg = (path: string) =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
+function homeGlyph(e: HomeEntity): string {
+  switch (e.domain) {
+    case "light":
+      return svg('<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.300 1 2.200h5.200c0-.900.400-1.700 1-2.200A6 6 0 0 0 12 3z"/>');
+    case "scene":
+    case "script":
+      return svg('<path d="M8 5l11 7-11 7z"/>');
+    case "cover":
+      return svg('<rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M4 8h16M4 13h16M12 13v5"/>');
+    case "sensor":
+    case "climate":
+    case "weather":
+      return svg('<path d="M12 3a2 2 0 0 0-2 2v8.500a4 4 0 1 0 4 0V5a2 2 0 0 0-2-2z"/><path d="M12 9v7"/>');
+    case "switch":
+    case "input_boolean":
+    case "fan":
+      return svg('<path d="M12 3v8"/><path d="M6.300 6.800a8 8 0 1 0 11.400 0"/>');
+  }
+  return svg('<circle cx="12" cy="12" r="7"/>');
+}
+
 const HIDE_ID = "__hide:";
 const HIDE_GLYPH =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
@@ -293,6 +320,9 @@ function railItems(): RailItem[] {
       sub: running ? "Running · OK to stop" : "",
     });
   }
+  for (const e of homeEntities) {
+    items.push({ id: HOME_ID + e.id, label: e.name, sub: e.text, glyph: homeGlyph(e), running: e.on });
+  }
   // A photo that should not come up again can be hidden; of two side by
   // side, either one.
   if (shownPhoto) {
@@ -344,6 +374,20 @@ async function activateRailItem(item: RailItem) {
     openSettings();
     return;
   }
+  if (item.id.startsWith(HOME_ID)) {
+    const e = homeEntities.find((x) => HOME_ID + x.id === item.id);
+    if (!e?.actionable) {
+      toast(e?.available === false ? `${item.label} is not available right now.` : `${item.label} only shows a value.`, 3000);
+      return;
+    }
+    try {
+      const res = await postJSON("/api/home/activate", { id: e.id });
+      if (!res.ok) toast((await res.text()).trim(), 6000);
+    } catch {
+      toast("The PiDash backend is not reachable.", 6000);
+    }
+    return;
+  }
   if (item.id.startsWith(HIDE_ID)) {
     rail.close();
     try {
@@ -393,6 +437,7 @@ function applyConfig(cfg: ClientConfig) {
   const d = cfg.display;
   document.documentElement.style.setProperty("--safe", `${(d.safe_area * 100).toFixed(2)}%`);
   clock.configure(d.clock_24h, d.locale);
+  clock24h = d.clock_24h;
   weather.configure(d.clock_24h, d.locale);
   dateLocale = d.locale || undefined;
   input.setKeyMap(cfg.keys);
@@ -419,6 +464,56 @@ function startPixelShift(max: number) {
   }, 3 * 60 * 1000);
 }
 
+// --- Calendar ---------------------------------------------------------------------
+// The next few events, grouped under "Today", "Tomorrow" or the weekday.
+
+const agendaEl = $("#agenda");
+let agendaEvents: CalendarState["events"] = [];
+const AGENDA_LINES = 5;
+
+function renderAgenda() {
+  const now = new Date();
+  const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const today = dayStart(now);
+  const time = new Intl.DateTimeFormat(dateLocale, { hour: "numeric", minute: "2-digit", hour12: !clock24h });
+  const weekday = new Intl.DateTimeFormat(dateLocale, { weekday: "long" });
+  const date = new Intl.DateTimeFormat(dateLocale, { weekday: "short", day: "numeric", month: "short" });
+
+  const rows: HTMLElement[] = [];
+  let lastDay = "";
+  for (const ev of agendaEvents) {
+    const start = new Date(ev.start);
+    const end = new Date(ev.end);
+    if (end.getTime() <= now.getTime() && !(ev.allDay && end.getTime() > today)) continue; // over
+    if (rows.filter((r) => r.className === "agenda-event").length >= AGENDA_LINES) break;
+    // An event that began earlier and is still going on belongs to today.
+    const day = Math.max(dayStart(start), today);
+    const days = Math.round((day - today) / 86_400_000);
+    const label = days === 0 ? "Today" : days === 1 ? "Tomorrow" : days < 7 ? weekday.format(day) : date.format(day);
+    if (label !== lastDay) {
+      lastDay = label;
+      const h = document.createElement("div");
+      h.className = "agenda-day";
+      h.textContent = label;
+      rows.push(h);
+    }
+    const row = document.createElement("div");
+    row.className = "agenda-event";
+    const when = document.createElement("span");
+    when.className = "agenda-time";
+    when.textContent = ev.allDay || start.getTime() < day ? "" : time.format(start);
+    const what = document.createElement("span");
+    what.className = "agenda-title";
+    what.textContent = ev.title;
+    row.append(what, when);
+    rows.push(row);
+  }
+  agendaEl.replaceChildren(...rows);
+  agendaEl.hidden = rows.length === 0;
+}
+// Events pass, and "Tomorrow" becomes "Today", without anything arriving.
+window.setInterval(renderAgenda, 60_000);
+
 // --- State ------------------------------------------------------------------
 
 const staleProviders = new Set<string>();
@@ -436,6 +531,14 @@ function onState(entry: StateEntry) {
   switch (entry.provider) {
     case "system":
       renderSystem(entry.data as SystemState | null);
+      break;
+    case "home":
+      homeEntities = (entry.data as { entities: HomeEntity[] } | null)?.entities ?? homeEntities;
+      rail.setItems(railItems());
+      break;
+    case "calendar":
+      agendaEvents = (entry.data as CalendarState | null)?.events ?? [];
+      renderAgenda();
       break;
     case "weather":
       weather.update(entry.data as WeatherState | null, entry.stale);

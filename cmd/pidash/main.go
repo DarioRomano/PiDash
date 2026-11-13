@@ -22,7 +22,9 @@ import (
 	"github.com/DarioRomano/PiDash/internal/input"
 	"github.com/DarioRomano/PiDash/internal/kiosk"
 	"github.com/DarioRomano/PiDash/internal/photos"
+	"github.com/DarioRomano/PiDash/internal/hass"
 	"github.com/DarioRomano/PiDash/internal/providers"
+	"github.com/DarioRomano/PiDash/internal/providers/calendar"
 	"github.com/DarioRomano/PiDash/internal/providers/system"
 	"github.com/DarioRomano/PiDash/internal/providers/weather"
 	"github.com/DarioRomano/PiDash/internal/server"
@@ -137,6 +139,12 @@ func main() {
 			}))
 		case *mock:
 			ps = append(ps, weather.Mock{})
+		}
+		if cfg.Home.Enabled() && len(cfg.Home.Entities) > 0 {
+			ps = append(ps, &hass.Provider{Client: hass.New(cfg.Home.URL, cfg.Home.Token), Entities: cfg.Home.Entities})
+		}
+		if len(cfg.Calendar.URLs) > 0 {
+			ps = append(ps, calendar.New(calendar.Options{URLs: cfg.Calendar.URLs, Days: cfg.Calendar.Days}))
 		}
 		return providers.NewRunner(log, publish, ps...)
 	}

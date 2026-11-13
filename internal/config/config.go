@@ -24,6 +24,78 @@ type Config struct {
 	Weather Weather `toml:"weather"`
 	Remote  Remote  `toml:"remote"`
 	TV      TV      `toml:"tv"`
+	// Calendar shows the next events from calendars published as links.
+	Calendar Calendar `toml:"calendar"`
+	// Home shows and switches devices of a Home Assistant installation.
+	Home Home `toml:"homeassistant"`
+	// Update controls automatic updates.
+	Update Update `toml:"update"`
+}
+
+// Calendar lists calendar links.
+type Calendar struct {
+	// URLs are iCalendar links (https:// or webcal://), as calendar programs
+	// offer under "share" or "secret address".
+	URLs []string `toml:"urls"`
+	// Days is how far ahead events are shown.
+	Days int `toml:"days"`
+}
+
+// Home is the connection to Home Assistant.
+type Home struct {
+	// URL is the address of Home Assistant, e.g. "http://homeassistant.local:8123".
+	URL string `toml:"url"`
+	// Token is a long-lived access token, created on the profile page there.
+	Token string `toml:"token"`
+	// Entities are the ids of the things to show as tiles, e.g. "light.sofa".
+	Entities []string `toml:"entities"`
+}
+
+// Enabled reports whether Home Assistant is set up.
+func (h Home) Enabled() bool { return h.URL != "" && h.Token != "" }
+
+// Update controls automatic updates.
+type Update struct {
+	// Auto installs new releases by itself, at night, when no app is open.
+	Auto bool `toml:"auto"`
+}
+
+var entityPattern = regexp.MustCompile(`^[a-z_]+\.[a-z0-9_]+$`)
+
+func (c *Config) validateExtras() error {
+	for i, u := range c.Calendar.URLs {
+		u = strings.TrimSpace(u)
+		c.Calendar.URLs[i] = u
+		parsed, err := url.Parse(u)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https" && parsed.Scheme != "webcal") {
+			return fmt.Errorf("calendar link %d must start with https:// or webcal://", i+1)
+		}
+	}
+	if len(c.Calendar.URLs) > 10 {
+		return fmt.Errorf("at most 10 calendars can be shown")
+	}
+	if c.Calendar.Days == 0 {
+		c.Calendar.Days = 14
+	}
+	if c.Calendar.Days < 1 || c.Calendar.Days > 60 {
+		return fmt.Errorf("calendar.days must be between 1 and 60, got %d", c.Calendar.Days)
+	}
+	c.Home.URL = strings.TrimRight(strings.TrimSpace(c.Home.URL), "/")
+	if c.Home.URL != "" {
+		parsed, err := url.Parse(c.Home.URL)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return fmt.Errorf("the Home Assistant address must be a full http:// or https:// address, got %q", c.Home.URL)
+		}
+	}
+	if len(c.Home.Entities) > 16 {
+		return fmt.Errorf("at most 16 Home Assistant tiles can be shown")
+	}
+	for _, e := range c.Home.Entities {
+		if !entityPattern.MatchString(e) {
+			return fmt.Errorf("%q is not a Home Assistant entity id like light.sofa", e)
+		}
+	}
+	return nil
 }
 
 // Server holds HTTP settings.
@@ -290,9 +362,10 @@ func Default() Config {
 			"Digit0":   "0", "Digit1": "1", "Digit2": "2", "Digit3": "3", "Digit4": "4",
 			"Digit5": "5", "Digit6": "6", "Digit7": "7", "Digit8": "8", "Digit9": "9",
 		}},
-		System:  System{Enabled: true, Interval: Duration{10 * time.Second}},
-		Kiosk:   Kiosk{Unit: "pidash-kiosk.service"},
-		Weather: Weather{Units: "metric", Interval: Duration{15 * time.Minute}},
+		System:   System{Enabled: true, Interval: Duration{10 * time.Second}},
+		Kiosk:    Kiosk{Unit: "pidash-kiosk.service"},
+		Weather:  Weather{Units: "metric", Interval: Duration{15 * time.Minute}},
+		Calendar: Calendar{Days: 14},
 		Photos: Photos{
 			Interval: Duration{30 * time.Second},
 			Refresh:  Duration{6 * time.Hour},
@@ -469,6 +542,9 @@ func (p *Photos) validate() error {
 }
 
 func (c Config) validate() error {
+	if err := c.validateExtras(); err != nil {
+		return err
+	}
 	if (c.Display.NightStart == "") != (c.Display.NightEnd == "") {
 		return fmt.Errorf("display.night_start and display.night_end must both be set, or both be empty")
 	}

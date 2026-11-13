@@ -76,6 +76,27 @@ html, body {
 }
 #backdrop img.visible { opacity: 1; }
 
+/* The next calendar events, opposite the clock. */
+#agenda {
+  position: absolute;
+  right: var(--safe);
+  bottom: var(--safe);
+  width: 620px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.55);
+  transition: opacity 0.4s ease, transform 0.35s ease;
+}
+.agenda-day { margin-top: 14px; font-size: 24px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--fg-dim); text-align: right; }
+.agenda-event { display: flex; justify-content: flex-end; align-items: baseline; gap: 18px; font-size: 34px; line-height: 1.2; }
+.agenda-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agenda-time { flex: 0 0 auto; min-width: 110px; text-align: right; color: var(--fg-dim); font-variant-numeric: tabular-nums; }
+.agenda-time:empty { display: none; }
+#stage.rail-open #agenda { transform: translateY(-330px); }
+#stage.panel-open #agenda { opacity: 0; }
+#stage:has(#overlay[data-density="photo"]) #agenda { opacity: 0; }
+
 /* Night mode: a dim clock on black, nothing else. */
 #stage.night #backdrop, #stage.night #scrim, #stage.night #caption, #stage.night #weather,
 #stage.night #agenda, #stage.night #status, #stage.night #hud { opacity: 0; }

@@ -344,3 +344,63 @@ func TestPhotoMovementAndPairsFromTheSettingsPage(t *testing.T) {
 		t.Errorf("motion %q, pairs %v, interval %v, err %v", cfg.Photos.Motion, cfg.Photos.PairPortraits, cfg.Photos.Interval.Duration, err)
 	}
 }
+
+func TestCalendarLinksAndTheHomeTokenStayOnThePi(t *testing.T) {
+	s, path := open(t)
+	secret := "https://calendar.example.com/private-8f3a2b/basic.ics"
+	err := s.Save(Update{
+		Calendar: &Calendar{Links: []Link{{URL: " " + secret + " "}}},
+		Home:     &Home{URL: "http://ha.local:8123/", Token: "long-lived-token", Entities: []string{"light.sofa"}},
+		System:   &System{AutoUpdate: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := s.Effective()
+	if len(cfg.Calendar.URLs) != 1 || cfg.Calendar.URLs[0] != secret || cfg.Home.URL != "http://ha.local:8123" || cfg.Home.Token != "long-lived-token" || !cfg.Update.Auto {
+		t.Fatalf("calendar %v, home %+v, update %+v", cfg.Calendar.URLs, cfg.Home, cfg.Update)
+	}
+
+	// The page is told where the link leads and that a token exists, not what they are.
+	v := s.View()
+	page, _ := json.Marshal(v)
+	if strings.Contains(string(page), "private-8f3a2b") || strings.Contains(string(page), "long-lived-token") {
+		t.Errorf("a secret reached the page: %s", page)
+	}
+	if len(v.Calendar.Links) != 1 || v.Calendar.Links[0].Host != "calendar.example.com" || v.Calendar.Links[0].Key == "" || !v.Home.TokenSet {
+		t.Fatalf("view = %+v, %+v", v.Calendar, v.Home)
+	}
+
+	// Saving again with what the page has keeps both; a second link is added.
+	err = s.Save(Update{
+		Calendar: &Calendar{Links: []Link{{Key: v.Calendar.Links[0].Key}, {URL: "webcal://other.example.org/cal.ics"}, {Key: "unknown"}}},
+		Home:     &Home{URL: "http://ha.local:8123", Entities: []string{"light.sofa", "scene.movie"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ = s.Effective()
+	if got := strings.Join(cfg.Calendar.URLs, " "); got != secret+" webcal://other.example.org/cal.ics" {
+		t.Errorf("calendars = %s", got)
+	}
+	if cfg.Home.Token != "long-lived-token" || len(cfg.Home.Entities) != 2 {
+		t.Errorf("home = %+v", cfg.Home)
+	}
+
+	// Mistakes are refused; clearing the address forgets the token.
+	if err := s.Save(Update{Calendar: &Calendar{Links: []Link{{URL: "ftp://example.org/x.ics"}}}}); err == nil {
+		t.Error("an ftp link was accepted")
+	}
+	if err := s.Save(Update{Home: &Home{URL: "http://ha.local:8123", Entities: []string{"Light.Sofa; rm"}}}); err == nil {
+		t.Error("a malformed entity id was accepted")
+	}
+	if err := s.Save(Update{Home: &Home{URL: ""}}); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _ = s.Effective(); cfg.Home.Enabled() || cfg.Home.Token != "" {
+		t.Errorf("home after clearing = %+v", cfg.Home)
+	}
+	if fi, _ := os.Stat(path); fi.Mode().Perm() != 0o600 {
+		t.Errorf("settings.json is readable by others: %v", fi.Mode().Perm())
+	}
+}

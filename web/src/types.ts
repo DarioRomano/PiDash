@@ -61,6 +61,29 @@ export interface AppsStatus {
   error?: string;
 }
 
+/** A Home Assistant device or value shown as a tile. */
+export interface HomeEntity {
+  id: string;
+  name: string;
+  domain: string;
+  text: string;
+  on: boolean;
+  actionable: boolean;
+  available: boolean;
+}
+
+/** One coming calendar event. */
+export interface CalendarEvent {
+  title: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+}
+
+export interface CalendarState {
+  events: CalendarEvent[];
+}
+
 export interface PhotoFolder {
   id: string;
   name: string;

@@ -7,9 +7,12 @@
 package settings
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -31,6 +34,50 @@ type File struct {
 	Photos  *Photos  `json:"photos,omitempty"`
 	Screen  *Screen  `json:"screen,omitempty"`
 	Apps    *[]App   `json:"apps,omitempty"`
+	// Calendar, Home and System follow the same rule: absent leaves config.toml in charge.
+	Calendar *Calendar `json:"calendar,omitempty"`
+	Home     *Home     `json:"home,omitempty"`
+	System   *System   `json:"system,omitempty"`
+}
+
+// Calendar settings: the calendar links.
+type Calendar struct {
+	Links []Link `json:"links"`
+}
+
+// Link is one calendar link. Such a link is a secret: whoever has it can read
+// the calendar. So the page is only told where it leads (Host), and names a
+// link it wants to keep by its Key; URL is filled in only for a new one.
+type Link struct {
+	Key  string `json:"key,omitempty"`
+	URL  string `json:"url,omitempty"`
+	Host string `json:"host,omitempty"`
+}
+
+// Home is the connection to Home Assistant.
+type Home struct {
+	URL string `json:"url"`
+	// Token is write-only, like the NAS password: empty keeps the stored one.
+	Token    string   `json:"token,omitempty"`
+	TokenSet bool     `json:"tokenSet,omitempty"`
+	Entities []string `json:"entities"`
+}
+
+// System settings.
+type System struct {
+	AutoUpdate bool `json:"autoUpdate"`
+}
+
+func linkKey(u string) string {
+	sum := sha1.Sum([]byte(u))
+	return hex.EncodeToString(sum[:6])
+}
+
+func linkHost(u string) string {
+	if parsed, err := url.Parse(u); err == nil && parsed.Host != "" {
+		return parsed.Host
+	}
+	return "calendar"
 }
 
 // Screen settings.
@@ -283,6 +330,20 @@ func apply(base config.Config, f File, installed []desktop.Entry) (config.Config
 		}
 	}
 
+	if c := f.Calendar; c != nil {
+		cfg.Calendar.URLs = nil
+		for _, l := range c.Links {
+			if l.URL != "" {
+				cfg.Calendar.URLs = append(cfg.Calendar.URLs, l.URL)
+			}
+		}
+	}
+	if h := f.Home; h != nil {
+		cfg.Home.URL, cfg.Home.Token, cfg.Home.Entities = h.URL, h.Token, append([]string{}, h.Entities...)
+	}
+	if sys := f.System; sys != nil {
+		cfg.Update.Auto = sys.AutoUpdate
+	}
 	if sc := f.Screen; sc != nil {
 		cfg.Display.NightStart, cfg.Display.NightEnd = strings.TrimSpace(sc.NightStart), strings.TrimSpace(sc.NightEnd)
 	}
@@ -398,11 +459,14 @@ func describe(app config.App) App {
 
 // View is what the settings page shows. It never contains a password.
 type View struct {
-	Weather WeatherView `json:"weather"`
-	Photos  PhotosView  `json:"photos"`
-	Screen  Screen      `json:"screen"`
-	Apps    []App       `json:"apps"`
-	Presets []Preset    `json:"presets"`
+	Weather  WeatherView `json:"weather"`
+	Photos   PhotosView  `json:"photos"`
+	Screen   Screen      `json:"screen"`
+	Calendar Calendar    `json:"calendar"`
+	Home     Home        `json:"home"`
+	System   System      `json:"system"`
+	Apps     []App       `json:"apps"`
+	Presets  []Preset    `json:"presets"`
 	// Installed are the programs on the Pi that can be added to the app row.
 	Installed []desktop.Entry `json:"installed"`
 }
@@ -464,9 +528,15 @@ func (s *Store) View() View {
 				PasswordSet: cfg.Photos.Synology.Password != "", InsecureTLS: cfg.Photos.Synology.InsecureTLS,
 				Quality: cfg.Photos.Synology.Quality},
 		},
-		Screen:  Screen{NightStart: cfg.Display.NightStart, NightEnd: cfg.Display.NightEnd},
-		Apps:    []App{},
-		Presets: presetsForPage(),
+		Screen:   Screen{NightStart: cfg.Display.NightStart, NightEnd: cfg.Display.NightEnd},
+		Calendar: Calendar{Links: []Link{}},
+		Home:     Home{URL: cfg.Home.URL, TokenSet: cfg.Home.Token != "", Entities: append([]string{}, cfg.Home.Entities...)},
+		System:   System{AutoUpdate: cfg.Update.Auto},
+		Apps:     []App{},
+		Presets:  presetsForPage(),
+	}
+	for _, u := range cfg.Calendar.URLs {
+		v.Calendar.Links = append(v.Calendar.Links, Link{Key: linkKey(u), Host: linkHost(u)})
 	}
 	if strings.HasPrefix(s.base.Photos.Folder.Path, "/") && s.base.Photos.Source == config.PhotoSourceFolder {
 		v.Photos.FolderPath = s.base.Photos.Folder.Path
@@ -493,10 +563,13 @@ func (s *Store) View() View {
 
 // Update is what the settings page sends. Absent sections stay as they are.
 type Update struct {
-	Weather *Weather `json:"weather"`
-	Photos  *Photos  `json:"photos"`
-	Screen  *Screen  `json:"screen"`
-	Apps    *[]App   `json:"apps"`
+	Weather  *Weather  `json:"weather"`
+	Photos   *Photos   `json:"photos"`
+	Screen   *Screen   `json:"screen"`
+	Apps     *[]App    `json:"apps"`
+	Calendar *Calendar `json:"calendar"`
+	Home     *Home     `json:"home"`
+	System   *System   `json:"system"`
 }
 
 // SynologyPassword returns the stored NAS password, for "test connection"
@@ -534,6 +607,44 @@ func (s *Store) Save(u Update) error {
 	if u.Screen != nil {
 		sc := *u.Screen
 		next.Screen = &sc
+	}
+	if u.Calendar != nil || u.Home != nil {
+		cur, err := apply(s.base, s.file, s.installed())
+		if err != nil {
+			cur = s.base
+		}
+		if u.Calendar != nil {
+			// A link the page kept is named by its key; look its address up.
+			known := map[string]string{}
+			for _, link := range cur.Calendar.URLs {
+				known[linkKey(link)] = link
+			}
+			cal := Calendar{Links: []Link{}}
+			for _, l := range u.Calendar.Links {
+				link := strings.TrimSpace(l.URL)
+				if link == "" {
+					link = known[l.Key]
+				}
+				if link != "" {
+					cal.Links = append(cal.Links, Link{URL: link})
+				}
+			}
+			next.Calendar = &cal
+		}
+		if u.Home != nil {
+			h := Home{URL: strings.TrimSpace(u.Home.URL), Token: strings.TrimSpace(u.Home.Token), Entities: u.Home.Entities}
+			if h.Token == "" {
+				h.Token = cur.Home.Token // unchanged
+			}
+			if h.URL == "" {
+				h.Token, h.Entities = "", nil
+			}
+			next.Home = &h
+		}
+	}
+	if u.System != nil {
+		sys := *u.System
+		next.System = &sys
 	}
 	if u.Apps != nil {
 		apps := make([]App, 0, len(*u.Apps))

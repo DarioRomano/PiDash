@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,10 +23,12 @@ import (
 
 	"github.com/DarioRomano/PiDash/internal/apps"
 	"github.com/DarioRomano/PiDash/internal/config"
+	"github.com/DarioRomano/PiDash/internal/hass"
 	"github.com/DarioRomano/PiDash/internal/input"
 	"github.com/DarioRomano/PiDash/internal/kiosk"
 	"github.com/DarioRomano/PiDash/internal/photos"
 	"github.com/DarioRomano/PiDash/internal/providers"
+	"github.com/DarioRomano/PiDash/internal/providers/calendar"
 	"github.com/DarioRomano/PiDash/internal/providers/weather"
 	"github.com/DarioRomano/PiDash/internal/settings"
 	"github.com/DarioRomano/PiDash/internal/tv"
@@ -124,6 +127,9 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("PUT /api/settings", s.handleSettingsSave)
 	s.mux.HandleFunc("POST /api/settings/test-synology", s.handleTestSynology)
 	s.mux.HandleFunc("POST /api/settings/test-weather", s.handleTestWeather)
+	s.mux.HandleFunc("POST /api/settings/test-calendar", s.handleTestCalendar)
+	s.mux.HandleFunc("POST /api/settings/home-entities", s.handleHomeEntities)
+	s.mux.HandleFunc("POST /api/home/activate", s.handleHomeActivate)
 	s.mux.HandleFunc("GET /settings", s.servePage("settings.html"))
 	s.mux.HandleFunc("GET /remote", s.servePage("remote.html"))
 	s.mux.HandleFunc("GET /remote/", s.servePage("remote.html"))
@@ -461,6 +467,96 @@ func (s *Server) handleTestSynology(w http.ResponseWriter, r *http.Request) {
 		names = append(names, l.Name)
 	}
 	writeJSON(w, map[string]any{"ok": true, "libraries": names})
+}
+
+// handleHomeEntities connects to Home Assistant and lists what can be shown
+// as a tile, for the settings page. An empty token means the stored one.
+func (s *Server) handleHomeEntities(w http.ResponseWriter, r *http.Request) {
+	if !s.pin.allow(w, r) {
+		return
+	}
+	var req struct {
+		URL   string `json:"url"`
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Token) == "" {
+		req.Token = s.cfg.Home.Token
+	}
+	if strings.TrimSpace(req.URL) == "" || req.Token == "" {
+		http.Error(w, "Enter the address and the access token first.", http.StatusUnprocessableEntity)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	entities, err := hass.New(req.URL, req.Token).All(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, map[string]any{"entities": entities})
+}
+
+// handleHomeActivate switches one of the configured Home Assistant tiles.
+// Only what was put on the app row can be switched from here.
+func (s *Server) handleHomeActivate(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if !s.cfg.Home.Enabled() || !slices.Contains(s.cfg.Home.Entities, req.ID) {
+		http.Error(w, "this is not one of the tiles", http.StatusNotFound)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	err := hass.New(s.cfg.Home.URL, s.cfg.Home.Token).Activate(ctx, req.ID)
+	switch {
+	case errors.Is(err, hass.ErrNoAction):
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	case err != nil:
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	// Show the new state without waiting for the next regular look; Home
+	// Assistant needs a moment before it reports it.
+	go func() {
+		time.Sleep(600 * time.Millisecond)
+		rctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		s.runner.Refresh(rctx, "home")
+	}()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleTestCalendar reads a calendar link, to confirm it before saving.
+func (s *Server) handleTestCalendar(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil || strings.TrimSpace(req.URL) == "" {
+		http.Error(w, "Enter the calendar's link first.", http.StatusUnprocessableEntity)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	days := s.cfg.Calendar.Days
+	if days <= 0 {
+		days = 14
+	}
+	n, err := calendar.New(calendar.Options{Days: days}).Count(ctx, req.URL)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "events": n, "days": days})
 }
 
 // handleTestWeather looks a place name up, to confirm it before saving.

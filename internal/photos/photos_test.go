@@ -366,7 +366,9 @@ func TestHidingAPhoto(t *testing.T) {
 
 	// It stays hidden after a restart and when the folders are read again.
 	again, wait2 := startService(t, Options{Source: syn, StatePath: state})
-	wait2("everything hidden", func(s Status) bool { return !s.Indexing && s.Hidden == 3 && s.Count == 0 && len(s.Selection.Folders) == 1 })
+	wait2("everything hidden", func(s Status) bool {
+		return !s.Indexing && s.Hidden == 3 && s.Count == 0 && len(s.Selection.Folders) == 1
+	})
 
 	if err := again.ShowHidden(); err != nil {
 		t.Fatal(err)

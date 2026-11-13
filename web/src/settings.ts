@@ -20,6 +20,19 @@ interface AppEntry {
   detail?: string;
 }
 
+/** A calendar link: one the Pi already has (key, host), or a new one (url). */
+interface CalendarLink {
+  key?: string;
+  url?: string;
+  host?: string;
+}
+
+interface HomeEntity {
+  id: string;
+  name: string;
+  text: string;
+}
+
 interface Preset {
   id: string;
   name: string;
@@ -42,6 +55,9 @@ interface Info {
     folderPath: string;
   };
   screen: { nightStart: string; nightEnd: string };
+  calendar: { links: CalendarLink[] };
+  home: { url: string; tokenSet: boolean; entities: string[] };
+  system: { autoUpdate: boolean };
   apps: AppEntry[];
   presets: Preset[];
   /** Programs installed on the Pi, as its application menu lists them. */
@@ -67,6 +83,10 @@ if (onTV) {
 
 let info: Info;
 let apps: AppEntry[] = [];
+let calendars: CalendarLink[] = [];
+let homeTiles: string[] = [];
+/** Names of Home Assistant's devices, once it has been asked. */
+let homeKnown: HomeEntity[] = [];
 let savedState = "";
 let busy = false;
 
@@ -134,6 +154,9 @@ function readForm() {
     // Night mode needs both times; "Off" in the first switches it off.
     screen: val("n-start") ? { nightStart: val("n-start"), nightEnd: val("n-end") || "07:00" } : { nightStart: "", nightEnd: "" },
     apps: apps.map(({ detail: _detail, missing: _missing, ...rest }) => rest),
+    calendar: { links: calendars.map((l) => (l.url ? { url: l.url } : { key: l.key })) },
+    home: { url: val("h-url").trim(), token: val("h-token").trim(), entities: homeTiles },
+    system: { autoUpdate: $<HTMLInputElement>("sys-auto").checked },
   };
 }
 
@@ -191,6 +214,16 @@ function fill(i: Info) {
   apps = i.apps.map((a) => ({ ...a }));
   renderApps();
 
+  calendars = i.calendar.links.map((l) => ({ ...l }));
+  renderCalendars();
+  $<HTMLInputElement>("h-url").value = i.home.url;
+  const token = $<HTMLInputElement>("h-token");
+  token.value = "";
+  token.placeholder = i.home.tokenSet ? "Saved. Leave empty to keep it" : "";
+  homeTiles = [...i.home.entities];
+  renderHomeTiles();
+  $<HTMLInputElement>("sys-auto").checked = i.system.autoUpdate;
+
   const kb = $("kb-problem");
   kb.hidden = !i.keyboardProblem;
   kb.textContent = i.keyboardProblem
@@ -201,6 +234,114 @@ function fill(i: Info) {
   savedState = JSON.stringify(readForm());
   refresh();
 }
+
+// --- Calendar and smart home ----------------------------------------------------------
+
+/** One row of a list: a text, a small second line, and a button to remove it. */
+function row(text: string, small: string, remove: () => void): HTMLLIElement {
+  const li = document.createElement("li");
+  const what = document.createElement("div");
+  what.className = "what";
+  what.textContent = text;
+  if (small) {
+    const s = document.createElement("small");
+    s.textContent = small;
+    what.append(s);
+  }
+  const b = document.createElement("button");
+  b.type = "button";
+  b.textContent = "✕";
+  b.title = "Remove";
+  b.setAttribute("aria-label", `Remove ${text}`);
+  b.addEventListener("click", () => {
+    remove();
+    refresh();
+  });
+  li.append(what, b);
+  return li;
+}
+
+function renderCalendars() {
+  $("cal-list").replaceChildren(
+    ...calendars.map((l, i) =>
+      row(l.host ?? hostOf(l.url ?? ""), l.url ? "Not saved yet" : "", () => {
+        calendars.splice(i, 1);
+        renderCalendars();
+      }),
+    ),
+  );
+}
+
+function hostOf(link: string): string {
+  try {
+    return new URL(link.replace(/^webcal:/i, "https:")).host;
+  } catch {
+    return link;
+  }
+}
+
+$("cal-test").addEventListener("click", async () => {
+  const out = $("cal-result");
+  setResult(out, "Reading the calendar…");
+  try {
+    const res = await send("POST", "/api/settings/test-calendar", { url: val("cal-url") });
+    if (!res.ok) return setResult(out, (await res.text()).trim(), "error");
+    const r: { events: number; days: number } = await res.json();
+    setResult(out, r.events === 1 ? `Works: 1 event in the next ${r.days} days.` : `Works: ${r.events} events in the next ${r.days} days.`, "ok");
+  } catch {
+    setResult(out, "The Pi did not answer.", "error");
+  }
+});
+
+$("cal-add").addEventListener("click", () => {
+  const link = val("cal-url").trim();
+  if (!/^(https?|webcal):\/\/\S+/i.test(link)) return setResult($("cal-result"), "Enter the calendar's link, starting with https:// or webcal://", "error");
+  calendars.push({ url: link });
+  $<HTMLInputElement>("cal-url").value = "";
+  setResult($("cal-result"), "");
+  renderCalendars();
+  refresh();
+});
+
+const homeName = (id: string) => homeKnown.find((e) => e.id === id);
+
+function renderHomeTiles() {
+  $("h-list").replaceChildren(
+    ...homeTiles.map((id, i) =>
+      row(homeName(id)?.name ?? id, homeName(id) ? id : "", () => {
+        homeTiles.splice(i, 1);
+        renderHomeTiles();
+      }),
+    ),
+  );
+  const pick = $<HTMLSelectElement>("h-pick");
+  const free = homeKnown.filter((e) => !homeTiles.includes(e.id));
+  pick.replaceChildren(...free.map((e) => new Option(e.text ? `${e.name} (${e.text})` : e.name, e.id)));
+  $("h-add").hidden = free.length === 0;
+}
+
+$("h-connect").addEventListener("click", async () => {
+  const out = $("h-result");
+  setResult(out, "Connecting to Home Assistant…");
+  try {
+    const res = await send("POST", "/api/settings/home-entities", { url: val("h-url").trim(), token: val("h-token").trim() });
+    if (!res.ok) return setResult(out, (await res.text()).trim(), "error");
+    homeKnown = (await res.json()).entities;
+    setResult(out, `Connected. ${homeKnown.length} devices and values can be shown.`, "ok");
+    renderHomeTiles();
+  } catch {
+    setResult(out, "The Pi did not answer.", "error");
+  }
+});
+
+$("h-add-btn").addEventListener("click", () => {
+  const id = val("h-pick");
+  if (!id || homeTiles.includes(id)) return;
+  if (homeTiles.length >= 16) return setResult($("h-result"), "The app row has room for 16 of these.", "error");
+  homeTiles.push(id);
+  renderHomeTiles();
+  refresh();
+});
 
 // --- Night hours and hidden photos ------------------------------------------------
 
@@ -452,7 +593,7 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
-for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "n-start", "n-end"]) {
+for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "n-start", "n-end", "h-url", "h-token", "sys-auto"]) {
   $(id).addEventListener("input", refresh);
   $(id).addEventListener("change", refresh);
 }

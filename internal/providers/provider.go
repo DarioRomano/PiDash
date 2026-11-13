@@ -62,6 +62,15 @@ func (r *Runner) Snapshot() []Entry {
 	return out
 }
 
+// Refresh polls one provider right away, for a change that should show at once.
+func (r *Runner) Refresh(ctx context.Context, name string) {
+	for _, p := range r.providers {
+		if p.Name() == name {
+			r.fetchOnce(ctx, p)
+		}
+	}
+}
+
 // Run polls all providers until ctx is cancelled.
 func (r *Runner) Run(ctx context.Context) {
 	var wg sync.WaitGroup
