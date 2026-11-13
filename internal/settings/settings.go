@@ -113,6 +113,8 @@ type Screen struct {
 	ClockSize     string `json:"clockSize,omitempty"`
 	View          string `json:"view,omitempty"`
 	Background    string `json:"background,omitempty"`
+	// Sounds switches the small sounds of the remote; absent leaves config.toml in charge.
+	Sounds *bool `json:"sounds,omitempty"`
 }
 
 // Port records a port fallback. It applies only while config.toml still asks
@@ -500,6 +502,9 @@ func apply(base config.Config, f File, installed []desktop.Entry) (config.Config
 				*choice.to = choice.from
 			}
 		}
+		if sc.Sounds != nil {
+			cfg.Display.Sounds = *sc.Sounds
+		}
 	}
 
 	if f.Apps != nil {
@@ -785,7 +790,8 @@ func (s *Store) View() View {
 				Quality: cfg.Photos.Synology.Quality},
 		},
 		Screen: Screen{NightStart: cfg.Display.NightStart, NightEnd: cfg.Display.NightEnd, Language: cfg.Display.Language,
-			ClockPosition: cfg.Display.ClockPosition, ClockSize: cfg.Display.ClockSize, View: cfg.Display.View, Background: cfg.Display.Background},
+			ClockPosition: cfg.Display.ClockPosition, ClockSize: cfg.Display.ClockSize, View: cfg.Display.View, Background: cfg.Display.Background,
+			Sounds: boolPtr(cfg.Display.Sounds)},
 		Calendar: Calendar{Links: []Link{}},
 		Home:     Home{URL: cfg.Home.URL, TokenSet: cfg.Home.Token != "", Entities: append([]string{}, cfg.Home.Entities...)},
 		System:   System{AutoUpdate: cfg.Update.Auto, Cooling: boolPtr(cfg.System.CoolAbove > 0)},

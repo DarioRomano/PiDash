@@ -1,9 +1,11 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"time"
 
+	"github.com/DarioRomano/PiDash/internal/bluetooth"
 	"github.com/DarioRomano/PiDash/internal/input"
 	"github.com/DarioRomano/PiDash/internal/logring"
 	"github.com/DarioRomano/PiDash/internal/update"
@@ -24,7 +26,9 @@ type statusReport struct {
 	// Sources are the things fetched regularly: weather, calendar, ….
 	Sources []sourceReport `json:"sources"`
 	Apps    appsReport     `json:"apps"`
-	Notices []string       `json:"notices"`
+	// Bluetooth lists the devices connected over Bluetooth right now.
+	Bluetooth []bluetooth.Device `json:"bluetooth"`
+	Notices   []string           `json:"notices"`
 	// Problems are the latest warnings and errors from the log, newest first.
 	Problems []logring.Line `json:"problems"`
 }
@@ -70,8 +74,17 @@ type appsReport struct {
 	Error   string `json:"error,omitempty"`
 }
 
-func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
-	rep := statusReport{Version: s.version, Started: s.started, Sources: []sourceReport{}, Notices: []string{}, Problems: []logring.Line{}}
+func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	rep := statusReport{Version: s.version, Started: s.started, Sources: []sourceReport{}, Notices: []string{}, Problems: []logring.Line{}, Bluetooth: []bluetooth.Device{}}
+	if s.bluetooth != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		for _, d := range s.bluetooth.Status(ctx).Devices {
+			if d.Connected {
+				rep.Bluetooth = append(rep.Bluetooth, d)
+			}
+		}
+		cancel()
+	}
 	if s.updater != nil {
 		st := s.updater.Status()
 		rep.Update = &st

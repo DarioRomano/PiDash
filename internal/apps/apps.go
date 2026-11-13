@@ -307,6 +307,15 @@ func (m *Manager) watch(ctx context.Context, app config.App, gen int) {
 	}
 }
 
+// RunningWebsite reports whether the open app is a website.
+func (m *Manager) RunningWebsite() bool {
+	m.mu.Lock()
+	id := m.running
+	m.mu.Unlock()
+	app, ok := m.find(id)
+	return ok && app.URL != ""
+}
+
 // CanFocus reports whether an app's window can be given the keyboard.
 func (m *Manager) CanFocus() bool { return m.Focus.Available() }
 

@@ -26,6 +26,9 @@ type Device struct {
 	// Signal is the strength with which a device nearby is received, in dBm
 	// (closer to zero is stronger); 0 when unknown.
 	Signal int `json:"signal,omitempty"`
+	// Battery is how full the device's battery is, in percent. Nil for a
+	// device that does not say, which many do not.
+	Battery *int `json:"battery,omitempty"`
 }
 
 // Status is what the settings page shows.

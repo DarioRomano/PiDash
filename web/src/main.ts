@@ -3,6 +3,7 @@ import { setLanguage, t } from "./i18n";
 import { Clock } from "./clock";
 import { Help } from "./help";
 import { StatusPanel } from "./status";
+import { play, setSounds } from "./sfx";
 import { Input } from "./input";
 import { Rail, type RailItem } from "./rail";
 import { Slideshow } from "./slideshow";
@@ -373,6 +374,13 @@ const rail = new Rail(
   },
 );
 
+// Each tile glows in the main colour of its icon.
+rail.tintOf = async (item) => {
+  if (!item.icon) return null;
+  const palette = await iconPalette(item.icon);
+  return palette?.[0] ? palette[0].map((v) => Math.round(v)).join(", ") : null;
+};
+
 // What the buttons do in the app row, under the tiles.
 function showRailHint() {
   const n = appsStatus.apps.length;
@@ -630,6 +638,7 @@ function applyConfig(cfg: ClientConfig) {
   const locale = d.locale || (d.language && d.language !== "en" ? d.language : "");
   clock.configure(d.clock_24h, locale);
   clock24h = d.clock_24h;
+  setSounds(d.sounds ?? true);
   stillBackground = d.background === "still";
   ambient.setStill(stillBackground || hot);
   stage.dataset.clock = d.clock_position || "bottom-left";
@@ -811,7 +820,10 @@ function stirAmbient(action: Action) {
   }
 }
 
-input.on((action) => {
+input.on((action, ev) => {
+  // A held direction runs along the app row. Everywhere else on the dashboard
+  // one press is one step: nobody wants to race through photos.
+  if (ev.repeat && !(rail.isOpen && (action === "left" || action === "right"))) return;
   // In night mode the first press only brings the dashboard back.
   if (wakeFromNight() && action !== "exit") return;
   railActivity();
@@ -820,50 +832,62 @@ input.on((action) => {
     exitToDesktop();
     return;
   }
-  if (help.handle(action)) return;
-  if (statusPanel.handle(action)) return;
+  if (help.handle(action)) return play("back");
+  if (statusPanel.handle(action)) {
+    if (!statusPanel.isOpen) play("back");
+    return;
+  }
   if (action === "settings") {
     openSettings();
     return;
   }
   if (action === "help") {
+    play("open");
     openHelp();
     return;
   }
   if (action === "weather") {
     // A direct shortcut: toggles the details from anywhere.
-    if (weather.isOpen) weather.close();
-    else if (weather.hasData) {
+    if (weather.isOpen) {
+      play("back");
+      weather.close();
+    } else if (weather.hasData) {
+      play("open");
       rail.close();
       weather.open();
     } else toast("Weather is not set up. Add a location under [weather] in the settings.", 6000);
     return;
   }
-  if (weather.handle(action)) return;
+  if (weather.handle(action)) {
+    play(weather.isOpen ? "move" : "back");
+    return;
+  }
   if (rail.handle(action)) return;
   switch (action) {
     case "select":
     case "menu":
+      play("open");
       rail.open();
       break;
     case "up":
+    case "down": {
       viewChosen = true;
-      density = Math.min(DENSITIES.length - 1, density + 1);
+      const to = Math.max(0, Math.min(DENSITIES.length - 1, density + (action === "up" ? 1 : -1)));
+      play(to === density ? "edge" : "move");
+      density = to;
       overlay.dataset.density = DENSITIES[density];
       break;
-    case "down":
-      viewChosen = true;
-      density = Math.max(0, density - 1);
-      overlay.dataset.density = DENSITIES[density];
-      break;
+    }
     case "home":
       density = 1;
       overlay.dataset.density = DENSITIES[density];
       break;
     case "left":
+      play("move");
       slideshow.previous();
       break;
     case "right":
+      play("move");
       slideshow.next();
       break;
     case "playpause":
@@ -1008,6 +1032,7 @@ connect("/events", {
     appsLoaded = true;
   },
   onPhotos,
+  onBattery: (n) => toast(t("{name} is running low: {n} % battery left.", { name: n.name, n: n.percent }), 12000),
   onTV: (st) => {
     tvAsleep = st.asleep;
     tvAvailable = !!st.available;

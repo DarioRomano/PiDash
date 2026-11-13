@@ -157,6 +157,9 @@ type Display struct {
 	// (default) drifts and reacts to the remote; "still" is painted once and
 	// costs the Pi no work.
 	Background string `toml:"background" json:"background"`
+	// Sounds plays a small sound when the remote moves the highlight or
+	// chooses something.
+	Sounds bool `toml:"sounds" json:"sounds"`
 	// Use 24-hour time.
 	Clock24h bool `toml:"clock_24h" json:"clock_24h"`
 	// Locale used for date formatting, e.g. "en-GB". Empty uses the browser default.
@@ -176,6 +179,9 @@ type Input struct {
 	// RemoteKeys maps extra Linux key names from the TV remote (KEY_RED, …) to
 	// dashboard actions, on top of the built-in ones for OK, Back and so on.
 	RemoteKeys map[string]string `toml:"remote_keys"`
+	// PadInWebsites makes a game controller press keyboard keys inside
+	// website apps (arrows, Enter, Escape), which know no controllers.
+	PadInWebsites bool `toml:"controller_in_websites"`
 }
 
 // Remote configures the phone remote.
@@ -380,8 +386,8 @@ func (d Duration) MarshalText() ([]byte, error) { return []byte(d.String()), nil
 func Default() Config {
 	return Config{
 		Server:  Server{Listen: ":8080"},
-		Display: Display{SafeArea: 0.03, DebugKeys: true, PixelShift: 4, AppRowTimeout: 30, Clock24h: true},
-		Input: Input{AppExitKeys: []string{}, AppExitHold: Duration{2 * time.Second}, Keys: map[string]string{
+		Display: Display{Sounds: true, SafeArea: 0.03, DebugKeys: true, PixelShift: 4, AppRowTimeout: 30, Clock24h: true},
+		Input: Input{PadInWebsites: true, AppExitKeys: []string{}, AppExitHold: Duration{2 * time.Second}, Keys: map[string]string{
 			"ArrowUp":        "up",
 			"ArrowDown":      "down",
 			"ArrowLeft":      "left",

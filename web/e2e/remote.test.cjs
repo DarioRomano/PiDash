@@ -353,7 +353,7 @@ test("settings on the TV: Bluetooth devices are found, paired and forgotten with
       assert.fail(`the highlight never reached ${what}; it is on "${await lit()}"`);
     };
 
-    assert.deepEqual(await rows("bt-list"), ["Living room speaker / Headphones or speaker · not connected / Connect / Forget", "Xbox Wireless Controller / Game controller · connected / Disconnect / Forget"]);
+    assert.deepEqual(await rows("bt-list"), ["Living room speaker / Headphones or speaker · not connected / Connect / Forget", "Xbox Wireless Controller / Game controller · connected · battery 80 % / Disconnect / Forget"]);
     assert.deepEqual(await rows("bt-found"), [], "nothing is listed as nearby before searching");
 
     // Down the page to the paired devices, and on to the buttons below them.
@@ -397,4 +397,151 @@ test("settings on the TV: Bluetooth devices are found, paired and forgotten with
   } finally {
     await own.stop();
   }
+});
+
+// --- Holding a direction -----------------------------------------------------------
+
+// What the backend sends while a direction is held down on the remote.
+async function held(page, base, action, times) {
+  for (let i = 0; i < times; i++) {
+    const res = await fetch(base + "/api/test/remote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, repeat: true }) });
+    assert.equal(res.status, 204);
+    await page.waitForTimeout(120);
+  }
+}
+
+test("a held direction runs along the app row, but does not race through photos", async () => {
+  const page = await dashboard();
+  const remote = remoteFor(page, pi.base);
+  const before = await photo(page);
+  await held(page, pi.base, "right", 3);
+  await page.waitForTimeout(600);
+  assert.equal(await photo(page), before, "holding Right on the dashboard must not flip through photos");
+  assert.equal(await view(page), "compact");
+  await held(page, pi.base, "up", 2);
+  assert.equal(await view(page), "compact", "holding Up changes nothing either");
+
+  await remote.press("select");
+  const start = await tile(page);
+  await remote.press("right"); // the press itself
+  await held(page, pi.base, "right", 3); // and three repeats while it is held
+  assert.equal(await tile(page), start + 4, "each repeat moves one tile further");
+  await held(page, pi.base, "left", 2);
+  assert.equal(await tile(page), start + 2);
+  assert.deepEqual(page.problems, []);
+  await page.context().close();
+});
+
+test("settings on the TV: a held direction keeps the highlight moving", async () => {
+  const page = await openPage(pi.base, "/settings?from=tv");
+  const remote = remoteFor(page, pi.base);
+  await page.waitForSelector(".tv-focus");
+  const seen = [await highlighted(page)];
+  await remote.press("down");
+  seen.push(await highlighted(page));
+  for (let i = 0; i < 3; i++) {
+    await held(page, pi.base, "down", 1);
+    seen.push(await highlighted(page));
+  }
+  assert.equal(new Set(seen).size, 5, `the highlight should have been on five different controls: ${seen}`);
+  // The keyboard's own repeats are left out once the backend sends them, so
+  // a held key does not move at two speeds at once.
+  const at = await highlighted(page);
+  await page.keyboard.down("ArrowDown");
+  await page.keyboard.down("ArrowDown"); // what a held key looks like to the page: the same key down again
+  await page.keyboard.down("ArrowDown");
+  await page.keyboard.up("ArrowDown");
+  await page.waitForTimeout(200);
+  const after = await highlighted(page);
+  await remote.press("up");
+  assert.equal(await highlighted(page), at, `three key-downs of one held key moved by one control only (it went from ${at} to ${after})`);
+  await page.context().close();
+});
+
+// --- Sounds ------------------------------------------------------------------------
+
+test("the remote is answered with small sounds, unless they are switched off", async () => {
+  const sounds = (page) => page.evaluate(() => window.pidashSounds.join(" "));
+  const page = await dashboard();
+  const remote = remoteFor(page, pi.base);
+  await page.evaluate(() => (window.pidashSounds = []));
+  for (const action of ["select", "right", "left", "left", "back", "down", "down"]) await remote.press(action);
+  // Open the row, move, move back, bump into its start, close; less detail, and no less than that.
+  assert.equal(await sounds(page), "open move move edge back move edge");
+  assert.deepEqual(page.problems, []);
+  await page.context().close();
+
+  const quiet = await startPiDash("sounds = false\n" + APPS);
+  try {
+    const page = await openPage(quiet.base);
+    await page.waitForFunction(() => document.getElementById("backdrop").classList.contains("has-photo"), null, { timeout: 20000 });
+    await page.waitForTimeout(2000);
+    await page.evaluate(() => (window.pidashSounds = []));
+    const remote = remoteFor(page, quiet.base);
+    for (const action of ["select", "right", "back"]) await remote.press(action);
+    assert.equal(await rowOpen(page), false, "the buttons still work");
+    assert.equal(await sounds(page), "", "no sounds with sounds = false");
+    await page.context().close();
+  } finally {
+    await quiet.stop();
+  }
+});
+
+// --- Sound output --------------------------------------------------------------------
+
+test("settings: the sound output is chosen, and its volume set, at once", async () => {
+  const own = await startPiDash(APPS);
+  try {
+    const page = await openPage(own.base, "/settings");
+    await page.waitForSelector("#snd-output option", { state: "attached" });
+    const outputs = async () => Object.fromEntries((await (await fetch(own.base + "/api/sound")).json()).outputs.map((o) => [o.id, o]));
+    assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll("#snd-output option")].map((o) => o.textContent)), ["TV (HDMI)", "Living room speaker"]);
+    assert.equal(await page.locator("#snd-level").innerText(), "100 %");
+
+    await page.selectOption("#snd-output", "speaker");
+    await page.waitForFunction(() => document.getElementById("snd-level").textContent === "40 %");
+    assert.equal((await outputs()).speaker.active, true, "the speaker is in use without pressing Save");
+
+    for (let i = 0; i < 3; i++) await page.click("#snd-up");
+    await page.click("#snd-down");
+    await page.waitForFunction(() => document.getElementById("snd-level").textContent === "50 %");
+    await page.waitForTimeout(300);
+    assert.equal((await outputs()).speaker.volume, 50);
+
+    await page.click("#snd-mute");
+    await page.waitForFunction(() => document.getElementById("snd-mute").textContent === "Sound on");
+    assert.equal((await outputs()).speaker.muted, true);
+    // Turning it up says "I want to hear something": that ends the muting.
+    await page.click("#snd-up");
+    await page.waitForFunction(() => document.getElementById("snd-level").textContent === "55 %");
+    await page.waitForTimeout(300);
+    const now = (await outputs()).speaker;
+    assert.deepEqual([now.muted, now.volume], [false, 55]);
+
+    await page.click("#snd-test");
+    await page.waitForFunction(() => /Did you hear it/.test(document.getElementById("snd-result").textContent));
+    assert.equal(await page.evaluate(() => document.getElementById("save").disabled), true, "nothing here waits for Save");
+    assert.deepEqual(page.problems, []);
+    await page.context().close();
+  } finally {
+    await own.stop();
+  }
+});
+
+// --- Batteries ----------------------------------------------------------------------
+
+test("a controller's battery is shown with the Bluetooth devices and on the status page", async () => {
+  const page = await openPage(pi.base, "/settings");
+  await page.waitForSelector("#bt-list li");
+  const rows = await page.evaluate(() => [...document.querySelectorAll("#bt-list li .what")].map((w) => w.innerText.replace(/\n+/g, " / ")));
+  assert.ok(rows.includes("Xbox Wireless Controller / Game controller · connected · battery 80 %"), `rows: ${rows}`);
+  assert.ok(rows.includes("Living room speaker / Headphones or speaker · not connected"), "a device that reports no battery shows none");
+  await page.context().close();
+
+  const status = await (await fetch(pi.base + "/api/status")).json();
+  assert.deepEqual(
+    status.bluetooth.map((d) => [d.name, d.battery]),
+    [["Xbox Wireless Controller", 80]],
+    "the status page lists what is connected",
+  );
 });

@@ -17,6 +17,8 @@ export interface DisplayConfig {
   view: string;
   /** "moving" or "still": the background shown without photos. */
   background: string;
+  /** Small sounds when the remote is used. */
+  sounds?: boolean;
   clock_24h: boolean;
   locale: string;
 }
@@ -49,6 +51,8 @@ export interface InputEvent {
   text?: string;
   /** key: the browser saw it; evdev: the backend read it from the TV remote. */
   source: "key" | "remote" | "pointer" | "evdev";
+  /** A direction sent again because its button is being held. */
+  repeat?: boolean;
 }
 
 export interface SystemState {

@@ -10,6 +10,8 @@ interface Device {
   paired: boolean;
   connected: boolean;
   signal?: number;
+  /** Charge in percent, for devices that report it. */
+  battery?: number;
 }
 interface Status {
   available: boolean;
@@ -88,6 +90,7 @@ export function startBluetooth(send: Send) {
     };
     const state = busy?.address === d.address ? busy.text : d.paired ? (d.connected ? "connected" : "not connected") : "nearby";
     small.append(part(KINDS[d.kind] ?? KINDS.other), " · ", part(state));
+    if (d.battery != null && d.connected) small.append(" · ", part("battery"), ` ${d.battery} %`);
     what.append(name, small);
     li.append(what);
     if (d.paired) {

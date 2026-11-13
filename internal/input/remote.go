@@ -43,6 +43,17 @@ type Remote struct {
 	// when it appears after start-up, and when its logo button is pressed:
 	// the two things people do to say "I want to play".
 	OnPadWake func(name string)
+	// OnRepeat delivers a direction again and again while its button is held
+	// on the dashboard, so that a long list can be run through. Nil means
+	// held buttons do nothing more.
+	OnRepeat func(action string)
+	// PadAsKeys reports whether the open app wants a game controller's
+	// buttons as keyboard keys: true for websites, which know arrows and
+	// Enter but no controllers. Games read the controller themselves.
+	PadAsKeys func() bool
+	// RepeatAfter and RepeatEvery set how a held direction repeats; zero
+	// means the usual 650 and 140 ms.
+	RepeatAfter, RepeatEvery time.Duration
 	// OnAppKey is called for every button pressed while an app is open, so
 	// that the app's window can be given the keyboard if it lost it.
 	OnAppKey func()
@@ -54,6 +65,10 @@ type Remote struct {
 
 	hold        *holdDetector
 	tapWarnOnce sync.Once
+
+	// A held direction, per device: stop ends its repeating.
+	repeatMu sync.Mutex
+	repeats  map[string]func()
 
 	// For the status page: what is being listened to and what was heard last.
 	seenMu  sync.Mutex
@@ -144,8 +159,12 @@ func (r *Remote) wanted() []uint16 {
 func (r *Remote) key(device string, code uint16, value int32) {
 	r.hold.event(device, code, value)
 	if value != 1 {
+		if value == 0 {
+			r.stopRepeat(device)
+		}
 		return
 	}
+	r.stopRepeat(device) // another button: the held one no longer counts
 	r.seenMu.Lock()
 	name, pad := r.devices[device], r.pads[device]
 	if name == "" {
@@ -156,12 +175,28 @@ func (r *Remote) key(device string, code uint16, value int32) {
 	if pad && code == btnMode && r.OnPadWake != nil {
 		r.OnPadWake(name)
 	}
+	r.press(code, pad, false)
+	// A direction that is held keeps going: on the dashboard, and from a
+	// controller inside a website. (A keyboard's or remote's own arrows
+	// repeat inside apps by themselves; they never pass through here.)
+	if isArrowAction(r.Actions[code]) || (pad && isArrow(padKeys[code])) {
+		r.startRepeat(device, func() { r.press(code, pad, true) })
+	}
+}
+
+// press acts on a button: once when it is pressed, and for a held direction
+// again each time it repeats.
+func (r *Remote) press(code uint16, pad, repeat bool) {
 	if r.AppRunning() {
-		if r.OnAppKey != nil {
+		if !repeat && r.OnAppKey != nil {
 			r.OnAppKey()
 		}
 		to, ok := appKeys[code]
-		if !ok || r.Tap == nil {
+		if pad {
+			to, ok = padKeys[code]
+			ok = ok && r.PadAsKeys != nil && r.PadAsKeys()
+		}
+		if !ok || r.Tap == nil || (repeat && !(pad && isArrow(to))) {
 			return
 		}
 		if err := r.Tap(to); err != nil {
@@ -171,12 +206,68 @@ func (r *Remote) key(device string, code uint16, value int32) {
 		}
 		return
 	}
-	if action, ok := r.Actions[code]; ok {
-		if pad && r.OnPadAction != nil {
-			r.OnPadAction(action)
-		} else {
-			r.OnAction(action)
+	action, ok := r.Actions[code]
+	switch {
+	case !ok:
+	case repeat:
+		if isArrowAction(action) && r.OnRepeat != nil {
+			r.OnRepeat(action)
 		}
+	case pad && r.OnPadAction != nil:
+		r.OnPadAction(action)
+	default:
+		r.OnAction(action)
+	}
+}
+
+// startRepeat calls fire again and again while a button of device is held:
+// first after RepeatAfter, then every RepeatEvery.
+//
+// The first wait is longer than it would need to be for a keyboard. Some TVs
+// never say that a button of their remote was let go; Linux then assumes so
+// 550 ms after the press. Repeating sooner than that would turn every single
+// press on such a TV into two.
+func (r *Remote) startRepeat(device string, fire func()) {
+	after, every := r.RepeatAfter, r.RepeatEvery
+	if after <= 0 {
+		after = 650 * time.Millisecond
+	}
+	if every <= 0 {
+		every = 140 * time.Millisecond
+	}
+	done := make(chan struct{})
+	var once sync.Once
+	stop := func() { once.Do(func() { close(done) }) }
+	r.repeatMu.Lock()
+	if r.repeats == nil {
+		r.repeats = map[string]func(){}
+	}
+	r.repeats[device] = stop
+	r.repeatMu.Unlock()
+	go func() {
+		wait := time.NewTimer(after)
+		defer wait.Stop()
+		// Nobody holds a button for half a minute; a release that was lost
+		// (a controller that went out of range) must not repeat for ever.
+		for i := 0; i < 200; i++ {
+			select {
+			case <-done:
+				return
+			case <-wait.C:
+			}
+			fire()
+			wait.Reset(every)
+		}
+	}()
+}
+
+func (r *Remote) stopRepeat(device string) {
+	r.repeatMu.Lock()
+	stop := r.repeats[device]
+	delete(r.repeats, device)
+	r.repeatMu.Unlock()
+	if stop != nil {
+		stop()
 	}
 }
 
@@ -247,6 +338,7 @@ func (r *Remote) Run(ctx context.Context) {
 				})
 				f.Close()
 				r.listening(p, "", false, false)
+				r.stopRepeat(p)
 				r.hold.forget(p)
 				mu.Lock()
 				delete(open, p)

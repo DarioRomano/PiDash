@@ -176,6 +176,17 @@ func TestAgainstBlueZ(t *testing.T) {
 		t.Errorf("a connected device is not shown as connected: %s", got)
 	}
 
+	// A controller that reports its battery has it shown; the speaker, which
+	// does not, has none.
+	pad := conn.Object(bluezService, "/org/bluez/hci0/dev_AA_BB_CC_00_00_01")
+	if err := pad.Call("org.freedesktop.DBus.Mock.AddProperties", 0, batteryIface, map[string]dbus.Variant{"Percentage": dbus.MakeVariant(uint8(35))}).Err; err != nil {
+		t.Fatal(err)
+	}
+	st = b.Status(ctx)
+	if st.Devices[0].Battery != nil || st.Devices[1].Battery == nil || *st.Devices[1].Battery != 35 {
+		t.Errorf("battery: speaker %v, controller %v; want none and 35", st.Devices[0].Battery, st.Devices[1].Battery)
+	}
+
 	// Forgetting.
 	if err := b.Forget(ctx, "AA:BB:CC:00:00:02"); err != nil {
 		t.Fatal(err)
@@ -244,5 +255,25 @@ func TestBlueZErrorsAreExplained(t *testing.T) {
 	}
 	if explain(nil) != nil {
 		t.Error("no error must stay no error")
+	}
+}
+
+func TestBatteriesKnownToLinuxItself(t *testing.T) {
+	dir := t.TempDir()
+	add := func(name, scope, capacity string) {
+		os.MkdirAll(dir+"/"+name, 0o755)
+		os.WriteFile(dir+"/"+name+"/scope", []byte(scope+"\n"), 0o644)
+		os.WriteFile(dir+"/"+name+"/capacity", []byte(capacity+"\n"), 0o644)
+	}
+	add("ps-controller-battery-a4:53:85:01:02:03", "Device", "62")
+	add("hid-AA:BB:CC:00:00:09-battery", "Device", "15")
+	add("BAT0", "System", "90")                           // the computer's own battery
+	add("hid-11:22:33:44:55:66-battery", "Device", "n/a") // a driver that does not know
+	got := kernelBatteries(dir)
+	if len(got) != 2 || got["a4:53:85:01:02:03"] != 62 || got["aa:bb:cc:00:00:09"] != 15 {
+		t.Errorf("batteries = %v", got)
+	}
+	if len(kernelBatteries(dir+"/missing")) != 0 {
+		t.Error("a system without this directory has no batteries, and no error")
 	}
 }

@@ -1,3 +1,4 @@
+import { play } from "./sfx";
 import type { Action } from "./types";
 
 export interface RailItem {
@@ -34,6 +35,11 @@ export class Rail {
   // along, OK puts it down, Back puts it back where it was.
   /** The movable tiles' ids as they were when one was picked up; null while none is. */
   private before: string[] | null = null;
+  /**
+   * Gives the colour of a tile's glow as "r, g, b", taken from its icon;
+   * null keeps the standard blue. Set once, before the first tiles are drawn.
+   */
+  tintOf: (item: RailItem) => Promise<string | null> = async () => null;
   /** Called when a tile is picked up or put down. */
   onMoving: (moving: boolean) => void = () => {};
   /** Called with the movable tiles' ids in their new order when one was put down elsewhere. */
@@ -56,7 +62,8 @@ export class Rail {
   }
 
   private pickUp() {
-    if (!this.items[this.focus]?.movable || this.movableIds().length < 2) return;
+    if (!this.items[this.focus]?.movable || this.movableIds().length < 2) return play("edge");
+    play("pick");
     this.before = this.movableIds();
     this.onMoving(true);
     this.updateFocus();
@@ -76,12 +83,14 @@ export class Rail {
       if (this.opened) this.render();
     } else this.updateFocus();
     this.onMoving(false);
+    if (this.opened) play(keep ? "drop" : "back");
     if (keep && changed) this.onReorder(now);
   }
 
   private carry(delta: number) {
     const to = this.focus + delta;
-    if (!this.items[to]?.movable) return; // the apps end here
+    if (!this.items[to]?.movable) return play("edge"); // the apps end here
+    play("move");
     [this.items[this.focus], this.items[to]] = [this.items[to], this.items[this.focus]];
     this.focus = to;
     this.render();
@@ -182,11 +191,13 @@ export class Rail {
         this.move(1);
         return true;
       case "select":
+        play("select");
         this.activate(this.focus);
         return true;
       case "back":
       case "menu":
       case "home":
+        play("back");
         this.close();
         return true;
       case "up":
@@ -196,6 +207,7 @@ export class Rail {
         return true; // nothing below the rail
       default:
         if (/^[1-9]$/.test(action)) {
+          play(this.items[Number(action) - 1] ? "select" : "edge");
           this.activate(Number(action) - 1);
           return true;
         }
@@ -205,7 +217,8 @@ export class Rail {
 
   private move(delta: number) {
     const next = Math.max(0, Math.min(this.items.length - 1, this.focus + delta));
-    if (next === this.focus) return;
+    if (next === this.focus) return play("edge");
+    play("move");
     this.focus = next;
     this.updateFocus();
   }
@@ -224,6 +237,11 @@ export class Rail {
         const tile = document.createElement("div");
         tile.className = "tile";
         tile.classList.toggle("running", !!item.running);
+        const glow = document.createElement("div");
+        glow.className = "tile-glow";
+        void this.tintOf(item).then((tint) => {
+          if (tint) tile.style.setProperty("--tint", tint);
+        });
 
         const art = document.createElement("div");
         art.className = "tile-art";
@@ -252,7 +270,7 @@ export class Rail {
         num.className = "tile-num";
         num.textContent = i < 9 ? String(i + 1) : "";
 
-        tile.append(num, art, label, sub);
+        tile.append(glow, num, art, label, sub);
         // Mouse and touch: hovering focuses a tile, clicking chooses it.
         tile.addEventListener("pointerenter", (e) => {
           if (e.pointerType !== "mouse" || this.focus === i || this.before) return;

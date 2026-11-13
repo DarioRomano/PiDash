@@ -34,6 +34,7 @@ import (
 	"github.com/DarioRomano/PiDash/internal/providers/weather"
 	"github.com/DarioRomano/PiDash/internal/radio"
 	"github.com/DarioRomano/PiDash/internal/settings"
+	"github.com/DarioRomano/PiDash/internal/sound"
 	"github.com/DarioRomano/PiDash/internal/tv"
 	"github.com/DarioRomano/PiDash/internal/update"
 )
@@ -52,6 +53,7 @@ type Server struct {
 	updater    *update.Service
 	remote     *input.Remote
 	bluetooth  bluetooth.Manager
+	sound      sound.Manager
 	problems   *logring.Ring
 	photoState string
 	pin        pinGuard
@@ -94,6 +96,8 @@ type Deps struct {
 	Problems *logring.Ring
 	// Bluetooth manages the Pi's Bluetooth devices; may be nil.
 	Bluetooth bluetooth.Manager
+	// Sound chooses the sound output and its volume; may be nil.
+	Sound sound.Manager
 	// Version is the PiDash version, shown on the phone remote.
 	Version string
 	// Notices are start-up problems to show on the TV.
@@ -124,18 +128,27 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("GET /api/config", s.handleConfig)
 	s.mux.HandleFunc("GET /api/state", s.handleState)
 	s.mux.HandleFunc("GET /api/status", s.handleStatus)
+	s.mux.HandleFunc("GET /api/sound", s.handleSound)
+	s.mux.HandleFunc("POST /api/sound/{action}", s.handleSoundAction)
 	s.mux.HandleFunc("GET /api/bluetooth", s.handleBluetooth)
 	s.mux.HandleFunc("POST /api/bluetooth/{action}", s.handleBluetoothAction)
 	s.mux.HandleFunc("POST /api/input", s.handleInput)
 	if d.TestHooks {
 		// For the end-to-end tests: a button press as if read from the TV remote.
 		s.mux.HandleFunc("POST /api/test/remote", func(w http.ResponseWriter, r *http.Request) {
-			var req inputRequest
+			var req struct {
+				Action string `json:"action"`
+				Repeat bool   `json:"repeat"`
+			}
 			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil || req.Action == "" {
 				http.Error(w, "bad request", http.StatusBadRequest)
 				return
 			}
-			s.RemoteAction(req.Action)
+			if req.Repeat {
+				s.RemoteRepeat(req.Action)
+			} else {
+				s.RemoteAction(req.Action)
+			}
 			w.WriteHeader(http.StatusNoContent)
 		})
 	}
@@ -178,7 +191,7 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("POST /api/settings/home-entities", s.handleHomeEntities)
 	s.mux.HandleFunc("POST /api/home/activate", s.handleHomeActivate)
 	s.updater = d.Updater
-	s.remote, s.problems, s.bluetooth = d.Remote, d.Problems, d.Bluetooth
+	s.remote, s.problems, s.bluetooth, s.sound = d.Remote, d.Problems, d.Bluetooth, d.Sound
 	s.mux.HandleFunc("GET /api/update", s.handleUpdate)
 	s.mux.HandleFunc("POST /api/update/check", s.handleUpdate)
 	s.mux.HandleFunc("POST /api/update/install", s.handleUpdateInstall)
@@ -203,6 +216,7 @@ func (s *Server) Run(ctx context.Context) error {
 	go s.runner.Run(ctx)
 	go s.apps.Run(ctx)
 	go s.tv.Run(ctx)
+	go s.watchBatteries(ctx, 2*time.Minute)
 	if s.photos != nil {
 		go s.photos.Run(ctx)
 	}
@@ -302,6 +316,8 @@ type inputEvent struct {
 	Action string `json:"action"`
 	Text   string `json:"text,omitempty"`
 	Source string `json:"source"`
+	// Repeat marks a direction sent again because its button is being held.
+	Repeat bool `json:"repeat,omitempty"`
 }
 
 // RemoteAction delivers a button press read directly from the TV remote to
@@ -309,6 +325,11 @@ type inputEvent struct {
 // press itself.
 func (s *Server) RemoteAction(action string) {
 	s.hub.broadcast("input", inputEvent{Action: action, Source: "evdev"})
+}
+
+// RemoteRepeat delivers a direction again while its button is held.
+func (s *Server) RemoteRepeat(action string) {
+	s.hub.broadcast("input", inputEvent{Action: action, Source: "evdev", Repeat: true})
 }
 
 func (s *Server) handleInput(w http.ResponseWriter, r *http.Request) {

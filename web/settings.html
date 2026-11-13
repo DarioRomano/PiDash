@@ -209,6 +209,7 @@
             <option value="still">Still picture, which keeps the Pi cooler</option>
           </select>
         </label>
+        <label class="check"><input id="d-sounds" type="checkbox" /><span>Small sounds when using the remote</span></label>
         <label class="check"><input id="sys-cool" type="checkbox" /><span>Pause movement while the Pi is hot</span></label>
         <p class="hint">The background stands still and photos stop moving until the Pi has cooled down.</p>
       </section>
@@ -259,6 +260,31 @@
           A program that needs its own command or options can be added in
           <code>~/.config/pidash/config.toml</code> on the Pi. It then shows up here to reorder or remove.
         </p>
+      </section>
+
+      <section class="card" id="snd-card">
+        <h2>Sound</h2>
+        <p class="hint">
+          Where the Pi's sound comes out, and how loud. Headphones and speakers are connected under Bluetooth below;
+          once connected they appear here.
+        </p>
+        <p id="snd-status" class="hint" hidden></p>
+        <div id="snd-body" class="add" hidden>
+          <label class="field">
+            <span>Sound comes out of</span>
+            <select id="snd-output"></select>
+          </label>
+          <div class="pair volume">
+            <button id="snd-down" type="button" class="secondary wide" aria-label="Quieter">−</button>
+            <output id="snd-level" data-no-translate></output>
+            <button id="snd-up" type="button" class="secondary wide" aria-label="Louder">+</button>
+          </div>
+          <div class="pair">
+            <button id="snd-mute" type="button" class="secondary wide">Mute</button>
+            <button id="snd-test" type="button" class="secondary wide">Play a test sound</button>
+          </div>
+        </div>
+        <p id="snd-result" class="result"></p>
       </section>
 
       <section class="card" id="bt-card">

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"io/fs"
@@ -124,5 +125,72 @@ func TestWithoutBluetoothThePageIsToldSo(t *testing.T) {
 	}
 	if code, _ := post(t, srv.URL+"/api/bluetooth/search", `{"on":true}`); code != 404 {
 		t.Errorf("searching without Bluetooth: %d", code)
+	}
+}
+
+func TestALowBatteryIsSaidOnce(t *testing.T) {
+	blue := bluetooth.NewMock()
+	cfg := config.Default()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	var static fs.FS = fstest.MapFS{"index.html": {Data: []byte("<html>dash</html>")}}
+	s := New(cfg, log, static, Deps{
+		Kiosk: kiosk.New("", true, log), Apps: apps.NewManager(nil, &apps.Mock{}, log),
+		Input: input.NewService(false, log), TV: tv.New(tv.Options{TV: &fakeTV{}, Log: log}), Bluetooth: blue,
+		NewRunner: func(publish func(providers.Entry)) *providers.Runner { return providers.NewRunner(log, publish) },
+	})
+	events := s.hub.subscribe()
+	defer s.hub.unsubscribe(events)
+	notices := func() []string {
+		var out []string
+		for {
+			select {
+			case m := <-events:
+				if m.name == "battery" {
+					out = append(out, string(m.data))
+				}
+			default:
+				return out
+			}
+		}
+	}
+	const pad = "AA:00:00:00:00:01"
+	told := map[string]bool{}
+	ctx := context.Background()
+
+	s.checkBatteries(ctx, told) // 80 %: nothing to say
+	if got := notices(); len(got) != 0 {
+		t.Fatalf("a full controller was reported: %v", got)
+	}
+	blue.SetBattery(pad, 12)
+	s.checkBatteries(ctx, told)
+	s.checkBatteries(ctx, told)
+	blue.SetBattery(pad, 9)
+	s.checkBatteries(ctx, told)
+	if got := notices(); len(got) != 1 || got[0] != `{"name":"Xbox Wireless Controller","percent":12}` {
+		t.Fatalf("notices = %v, want one for 12 %%", got)
+	}
+	// A little charge is not "charged": no new notice at 20 %, then low again.
+	blue.SetBattery(pad, 20)
+	s.checkBatteries(ctx, told)
+	blue.SetBattery(pad, 14)
+	s.checkBatteries(ctx, told)
+	if got := notices(); len(got) != 0 {
+		t.Errorf("said again without having been charged: %v", got)
+	}
+	// Charged and run down again: said again.
+	blue.SetBattery(pad, 90)
+	s.checkBatteries(ctx, told)
+	blue.SetBattery(pad, 10)
+	s.checkBatteries(ctx, told)
+	if got := notices(); len(got) != 1 {
+		t.Errorf("after charging and running low again: %v, want one notice", got)
+	}
+	// Switched off while low, and on again: said again.
+	blue.Disconnect(ctx, pad)
+	s.checkBatteries(ctx, told)
+	blue.Connect(ctx, pad)
+	s.checkBatteries(ctx, told)
+	if got := notices(); len(got) != 1 {
+		t.Errorf("after switching it off and on while low: %v, want one notice", got)
 	}
 }

@@ -31,6 +31,7 @@ import (
 	"github.com/DarioRomano/PiDash/internal/providers/weather"
 	"github.com/DarioRomano/PiDash/internal/server"
 	"github.com/DarioRomano/PiDash/internal/settings"
+	"github.com/DarioRomano/PiDash/internal/sound"
 	"github.com/DarioRomano/PiDash/internal/tv"
 	"github.com/DarioRomano/PiDash/internal/update"
 	"github.com/DarioRomano/PiDash/web"
@@ -257,6 +258,12 @@ func main() {
 		blue = real
 	}
 
+	// Where the sound goes, also chosen on the settings page.
+	var audio sound.Manager = sound.NewMock()
+	if !*mock {
+		audio = &sound.Pactl{}
+	}
+
 	// The TV remote, keyboards and game controllers, read below the desktop.
 	var srv *server.Server
 	var remote *input.Remote
@@ -279,6 +286,14 @@ func main() {
 			// A controller's buttons do not come through the TV, so they say
 			// nothing about whether it is on. While it is believed to be off
 			// they only make PiDash ask it.
+			// A held direction keeps moving through the app row and the lists
+			// of the settings pages.
+			OnRepeat: func(action string) {
+				if !tvService.Status().Asleep {
+					srv.RemoteRepeat(action)
+				}
+			},
+			PadAsKeys: func() bool { return cfg.Input.PadInWebsites && appManager.RunningWebsite() },
 			OnPadAction: func(action string) {
 				if tvService.Status().Asleep {
 					go tvService.Recheck(context.Background())
@@ -308,7 +323,7 @@ func main() {
 		Kiosk: kiosk.New(cfg.Kiosk.Unit, *mock, log), Apps: appManager, Photos: photoService,
 		Input: phoneInput, TV: tvService, Version: version, NewRunner: newRunner, Updater: updater, PhotoStatePath: photoStatePath(), TestHooks: *mock,
 		Notices: notices, URLFile: server.URLFile(), Settings: store, BaseListen: baseListen,
-		Remote: remote, Problems: problems, Bluetooth: blue,
+		Remote: remote, Problems: problems, Bluetooth: blue, Sound: audio,
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

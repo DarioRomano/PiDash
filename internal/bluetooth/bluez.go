@@ -17,6 +17,7 @@ const (
 	bluezService = "org.bluez"
 	adapterIface = "org.bluez.Adapter1"
 	deviceIface  = "org.bluez.Device1"
+	batteryIface = "org.bluez.Battery1"
 	propsIface   = "org.freedesktop.DBus.Properties"
 	// agentPath is where PiDash answers BlueZ's questions during pairing.
 	agentPath = dbus.ObjectPath("/org/pidash/agent")
@@ -96,6 +97,8 @@ type world struct {
 	adapter     dbus.ObjectPath
 	adapterVals object
 	devices     map[dbus.ObjectPath]object
+	// batteries holds the charge, in percent, of the devices that report it.
+	batteries map[dbus.ObjectPath]int
 }
 
 func (b *BlueZ) look(ctx context.Context) (*dbus.Conn, world, error) {
@@ -121,10 +124,13 @@ func (b *BlueZ) look(ctx context.Context) (*dbus.Conn, world, error) {
 	sort.Strings(adapters)
 	w.adapter = dbus.ObjectPath(adapters[0])
 	w.adapterVals = all[w.adapter][adapterIface]
-	w.devices = map[dbus.ObjectPath]object{}
+	w.devices, w.batteries = map[dbus.ObjectPath]object{}, map[dbus.ObjectPath]int{}
 	for path, ifaces := range all {
 		if vals, ok := ifaces[deviceIface]; ok && strings.HasPrefix(string(path), adapters[0]+"/") {
 			w.devices[path] = vals
+			if pct, ok := ifaces[batteryIface]["Percentage"].Value().(uint8); ok && pct <= 100 {
+				w.batteries[path] = int(pct)
+			}
 		}
 	}
 	return conn, w, nil
@@ -146,7 +152,8 @@ func (b *BlueZ) Status(ctx context.Context) Status {
 	st.Available = true
 	st.On = w.adapterVals.flag("Powered")
 	st.Searching = w.adapterVals.flag("Discovering")
-	for _, vals := range w.devices {
+	fromKernel := kernelBatteries(powerSupplies)
+	for path, vals := range w.devices {
 		d := Device{Address: vals.str("Address"), Name: vals.str("Alias"), Kind: kindOf(vals.str("Icon")),
 			Paired: vals.flag("Paired"), Connected: vals.flag("Connected")}
 		if d.Address == "" {
@@ -162,6 +169,11 @@ func (b *BlueZ) Status(ctx context.Context) Status {
 		}
 		if rssi, ok := vals["RSSI"].Value().(int16); ok && !d.Paired {
 			d.Signal = int(rssi)
+		}
+		if pct, ok := w.batteries[path]; ok && d.Connected {
+			d.Battery = &pct
+		} else if pct, ok := fromKernel[strings.ToLower(d.Address)]; ok && d.Connected {
+			d.Battery = &pct
 		}
 		st.Devices = append(st.Devices, d)
 	}

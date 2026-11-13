@@ -11,6 +11,7 @@ interface StatusReport {
   photos?: { source: string; count: number; indexing: boolean; hidden: number; error?: string };
   sources: { name: string; updatedAt: string; stale: boolean; error?: string }[];
   apps: { count: number; running?: string; error?: string };
+  bluetooth?: { name: string; kind: string; battery?: number }[];
   notices: string[];
   problems: { time: string; level: "warn" | "error"; text: string; count: number }[];
 }
@@ -171,6 +172,11 @@ export class StatusPanel {
       row(tv, "Last button", last ? `${last.key}${last.action ? ` (${last.action})` : ""} · ${last.device} · ${ago(Date.parse(last.at))}` : t("none yet: press one to try"));
       if (rem.keys) row(tv, "Buttons in apps", rem.keys, "warn");
       row(tv, "Keyboard for apps", rem.focus ? t("PiDash hands it to the app that is open") : t("the helper “wlrctl” is missing: run the installer again"), rem.focus ? "ok" : "warn");
+    }
+
+    for (const d of r?.bluetooth ?? []) {
+      const low = d.battery != null && d.battery <= 15;
+      row(tv, "Bluetooth", d.battery != null ? `${d.name} · ${t("battery")} ${d.battery} %` : d.name, low ? "warn" : "ok");
     }
 
     const content = section("Content");

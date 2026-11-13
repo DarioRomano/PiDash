@@ -1,6 +1,8 @@
 import { LANGUAGES, setLanguage, t } from "./i18n";
 import { ask, enterPIN, onTV, startTVNav } from "./tvnav";
 import { startBluetooth } from "./bluetooth";
+import { startSound } from "./sound";
+import { setSounds } from "./sfx";
 // The settings page: weather, background photos and apps. Made for a phone,
 // and equally usable on the TV with a mouse and keyboard.
 
@@ -63,7 +65,7 @@ interface Info {
     synology: { url: string; username: string; passwordSet: boolean; insecureTls: boolean; quality: string };
     folderPath: string;
   };
-  screen: { nightStart: string; nightEnd: string; language: string; clockPosition: string; clockSize: string; view: string; background: string };
+  screen: { nightStart: string; nightEnd: string; language: string; clockPosition: string; clockSize: string; view: string; background: string; sounds?: boolean };
   calendar: { links: CalendarLink[] };
   home: { url: string; tokenSet: boolean; entities: string[] };
   system: { autoUpdate: boolean; cooling?: boolean };
@@ -182,6 +184,7 @@ function readForm() {
       clockSize: val("d-size"),
       view: val("d-view"),
       background: val("d-background"),
+      sounds: $<HTMLInputElement>("d-sounds").checked,
     },
     apps: apps.map(({ detail: _detail, missing: _missing, ...rest }) => rest),
     calendar: { links: calendars.map((l) => (l.url ? { url: l.url } : { key: l.key })) },
@@ -250,6 +253,8 @@ function fill(i: Info) {
   $<HTMLSelectElement>("d-size").value = i.screen.clockSize || "large";
   $<HTMLSelectElement>("d-view").value = i.screen.view || "clock";
   $<HTMLSelectElement>("d-background").value = i.screen.background || "moving";
+  $<HTMLInputElement>("d-sounds").checked = i.screen.sounds ?? true;
+  setSounds(i.screen.sounds ?? true);
   fillTimes($<HTMLSelectElement>("n-start"), i.screen.nightStart, "Off");
   fillTimes($<HTMLSelectElement>("n-end"), i.screen.nightEnd || "07:00");
   void showHidden();
@@ -832,7 +837,7 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
-for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "n-start", "n-end", "h-url", "h-token", "sys-auto", "sys-cool", "l-pin", "d-language", "d-position", "d-size", "d-view", "d-background"]) {
+for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "n-start", "n-end", "h-url", "h-token", "sys-auto", "sys-cool", "l-pin", "d-language", "d-position", "d-size", "d-view", "d-background", "d-sounds"]) {
   $(id).addEventListener("input", refresh);
   $(id).addEventListener("change", refresh);
 }
@@ -845,6 +850,7 @@ async function load() {
   $("footer").hidden = false;
 }
 
+startSound();
 startBluetooth(send);
 
 // On the TV: Back leaves for the dashboard, after offering to save.

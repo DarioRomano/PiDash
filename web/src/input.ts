@@ -104,8 +104,12 @@ export class Input {
   /** Called for input events received from the backend: the phone remote, or
    *  a TV remote button the backend read itself. */
   fromRemote(ev: InputEvent) {
-    this.showDebug(`${ev.source === "evdev" ? "tv remote" : "phone"} → ${ev.action}`);
-    if (isAction(ev.action)) this.dispatch(ev.action, ev);
+    this.showDebug(`${ev.source === "evdev" ? "tv remote" : "phone"} → ${ev.action}${ev.repeat ? " (held)" : ""}`);
+    if (!isAction(ev.action)) return;
+    // A held button's repeats come from the backend only (the keyboard's own
+    // are ignored above), so there is no second report to pair them with.
+    if (ev.repeat) for (const l of this.listeners) l(ev.action, ev);
+    else this.dispatch(ev.action, ev);
   }
 
   private dispatch(action: Action, ev: InputEvent) {

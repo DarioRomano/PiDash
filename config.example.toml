@@ -18,6 +18,8 @@ safe_area = 0.03
 # Show the last raw key code and mapped action in the corner. Turn on while
 # mapping a new TV remote over CEC, off once everything works.
 debug_keys = true
+# Small sounds when the remote moves the highlight or chooses something.
+sounds = true
 # Nudge the UI by up to this many pixels every few minutes (OLED/plasma burn-in). 0 = off.
 pixel_shift = 4
 # Close the app row and return to the clock after this many seconds without a
@@ -251,6 +253,12 @@ app_exit_keys = []
 # How long to hold. If your TV does not report held buttons, add a key you do
 # not otherwise need above (a colour key, say) and set this to "0s".
 app_exit_hold = "2s"
+
+# Inside website apps (YouTube, Netflix, …) a game controller presses
+# keyboard keys: stick and direction pad the arrows, the bottom button Enter,
+# the right one Escape, Start play/pause. Switch this off if a website reacts
+# to the controller by itself and everything happens twice.
+controller_in_websites = true
 
 # Extra remote buttons for the dashboard, for example the colour keys.
 # Actions are the same as under [input.keys] below; "none" switches one off.

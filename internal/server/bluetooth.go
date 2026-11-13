@@ -73,3 +73,62 @@ func (s *Server) handleBluetoothAction(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, s.bluetooth.Status(ctx))
 }
+
+// lowBattery is the charge, in percent, at which the TV says that a
+// controller or headset wants charging; charged above batteryFine it may be
+// said again the next time.
+const (
+	lowBattery  = 15
+	batteryFine = 25
+)
+
+// batteryNotice is sent to the dashboard when a device runs low.
+type batteryNotice struct {
+	Name    string `json:"name"`
+	Percent int    `json:"percent"`
+}
+
+// watchBatteries tells the dashboard when a connected Bluetooth device runs
+// low, once per device until it has been charged or switched off.
+func (s *Server) watchBatteries(ctx context.Context, every time.Duration) {
+	if s.bluetooth == nil {
+		return
+	}
+	told := map[string]bool{}
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		s.checkBatteries(ctx, told)
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+func (s *Server) checkBatteries(ctx context.Context, told map[string]bool) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	seen := map[string]bool{}
+	for _, d := range s.bluetooth.Status(ctx).Devices {
+		if !d.Connected || d.Battery == nil {
+			continue
+		}
+		seen[d.Address] = true
+		switch {
+		case *d.Battery > batteryFine:
+			delete(told, d.Address)
+		case *d.Battery <= lowBattery && !told[d.Address]:
+			told[d.Address] = true
+			s.log.Info("a Bluetooth device is running low", "device", d.Name, "battery", *d.Battery)
+			s.hub.broadcast("battery", batteryNotice{Name: d.Name, Percent: *d.Battery})
+		}
+	}
+	// Switched off, or out of range: the next time it is back and low, say so again.
+	for address := range told {
+		if !seen[address] {
+			delete(told, address)
+		}
+	}
+}

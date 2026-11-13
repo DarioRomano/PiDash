@@ -2,6 +2,7 @@ package input
 
 import (
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -183,5 +184,121 @@ func TestSwitchingAControllerOnAsksForTheTV(t *testing.T) {
 	h.listening("/dev/input/event7", "", false, false)
 	if got := strings.Join(h.Devices(), "|"); got != "LG TV" {
 		t.Errorf("devices after the controller went = %s", got)
+	}
+}
+
+func TestAHeldDirectionRepeats(t *testing.T) {
+	h := newRemoteHarness(time.Hour)
+	h.RepeatAfter, h.RepeatEvery = 60*time.Millisecond, 20*time.Millisecond
+	var mu sync.Mutex
+	var repeats []string
+	h.OnRepeat = func(a string) { mu.Lock(); repeats = append(repeats, a); mu.Unlock() }
+	count := func() int { mu.Lock(); defer mu.Unlock(); return len(repeats) }
+
+	// A short press is one step, however the TV reports its release.
+	h.key("cec", keyRight, 1)
+	time.Sleep(30 * time.Millisecond)
+	h.key("cec", keyRight, 0)
+	time.Sleep(120 * time.Millisecond)
+	if actions, _, _ := h.snapshot(); strings.Join(actions, ",") != "right" || count() != 0 {
+		t.Fatalf("a short press: actions %v, %d repeats; want one step and no repeat", actions, count())
+	}
+
+	// Held, it keeps going until it is let go.
+	h.key("cec", keyDown, 1)
+	time.Sleep(200 * time.Millisecond)
+	h.key("cec", keyDown, 0)
+	n := count()
+	if n < 3 || n > 9 {
+		t.Errorf("held for 200 ms: %d repeats, want about 7", n)
+	}
+	time.Sleep(80 * time.Millisecond)
+	if count() != n {
+		t.Errorf("it went on repeating after the button was let go")
+	}
+	mu.Lock()
+	for _, a := range repeats {
+		if a != "down" {
+			t.Errorf("repeated %q, want down", a)
+		}
+	}
+	mu.Unlock()
+
+	// Only directions repeat: a held OK must not choose again and again.
+	h.key("cec", keyOK, 1)
+	time.Sleep(150 * time.Millisecond)
+	h.key("cec", keyOK, 0)
+	if count() != n {
+		t.Errorf("OK repeated")
+	}
+
+	// Pressing another button ends the repeating of the first, also when its
+	// release never arrives.
+	h.key("cec", keyLeft, 1)
+	time.Sleep(100 * time.Millisecond)
+	h.key("cec", keyOK, 1)
+	before := count()
+	time.Sleep(100 * time.Millisecond)
+	if count() != before {
+		t.Errorf("the direction kept repeating after another button was pressed")
+	}
+}
+
+func TestAControllerIsAKeyboardInsideAWebsite(t *testing.T) {
+	h := newRemoteHarness(time.Hour)
+	h.RepeatAfter, h.RepeatEvery = 60*time.Millisecond, 20*time.Millisecond
+	h.listening("/dev/input/event7", "Xbox Wireless Controller", true, true)
+	h.listening("/dev/input/event2", "LG TV", false, true)
+	h.appRunning = true
+	website := true
+	h.PadAsKeys = func() bool { return website }
+	pad := func(code uint16) {
+		h.key("/dev/input/event7", code, 1)
+		h.key("/dev/input/event7", code, 0)
+	}
+
+	// The direction pad, the stick (which arrives as arrows), and the buttons.
+	for _, b := range []uint16{btnDpadDown, keyRight, btnSouth, btnEast, btnStart, btnTL, 0x133} {
+		pad(b)
+	}
+	_, taps, _ := h.snapshot()
+	want := []uint16{keyDown, keyRight, keyEnter, keyEsc, keyPlayPause}
+	if len(taps) != len(want) {
+		t.Fatalf("keys pressed in the website = %v, want %v", taps, want)
+	}
+	for i := range want {
+		if taps[i] != want[i] {
+			t.Errorf("key %d = %d, want %d", i, taps[i], want[i])
+		}
+	}
+
+	// A held direction keeps scrolling.
+	h.key("/dev/input/event7", btnDpadRight, 1)
+	time.Sleep(160 * time.Millisecond)
+	h.key("/dev/input/event7", btnDpadRight, 0)
+	_, taps, _ = h.snapshot()
+	if extra := len(taps) - len(want); extra < 3 {
+		t.Errorf("a held direction pressed Right %d times, want several", extra)
+	}
+
+	// The remote's own arrows reach the website by themselves: nothing is
+	// added for them, held or not.
+	before := len(taps)
+	h.key("/dev/input/event2", keyDown, 1)
+	time.Sleep(120 * time.Millisecond)
+	h.key("/dev/input/event2", keyDown, 0)
+	if _, taps, _ = h.snapshot(); len(taps) != before {
+		t.Errorf("the remote's arrow was pressed a second time by PiDash: %v", taps[before:])
+	}
+
+	// In a game the controller is the game's.
+	website = false
+	pad(btnSouth)
+	pad(btnDpadDown)
+	if _, taps, _ = h.snapshot(); len(taps) != before {
+		t.Errorf("keys were pressed in a game: %v", taps[before:])
+	}
+	if actions, _, _ := h.snapshot(); len(actions) != 0 {
+		t.Errorf("the dashboard reacted while an app was open: %v", actions)
 	}
 }

@@ -361,6 +361,27 @@ ROWS = [
 ("the device is paired, but the Pi has nothing to use it with. For headphones and speakers the desktop's sound service must be running", "das Gerät ist gekoppelt, aber der Pi kann nichts damit anfangen. Für Kopfhörer und Lautsprecher muss der Audiodienst des Desktops laufen", "l’appareil est associé, mais le Pi n’a rien pour l’utiliser. Pour les casques et enceintes, le service audio du bureau doit être actif", "il dispositivo è associato, ma il Pi non ha nulla con cui usarlo. Per cuffie e altoparlanti deve essere attivo il servizio audio del desktop"),
 ("this Pi has no Bluetooth that PiDash can reach", "dieser Pi hat kein Bluetooth, das PiDash erreichen kann", "ce Pi n’a pas de Bluetooth que PiDash puisse atteindre", "questo Pi non ha un Bluetooth che PiDash possa raggiungere"),
 ("The PIN is needed to change this.", "Zum Ändern wird die PIN benötigt.", "Le code PIN est nécessaire pour modifier cela.", "Per modificarlo serve il PIN."),
+# --- sound, batteries, sounds of the remote
+("Sound", "Ton", "Son", "Audio"),
+("Where the Pi's sound comes out, and how loud. Headphones and speakers are connected under Bluetooth below; once connected they appear here.", "Wo der Ton des Pi herauskommt und wie laut. Kopfhörer und Lautsprecher werden unten unter Bluetooth verbunden; danach erscheinen sie hier.", "Par où sort le son du Pi, et à quel volume. Les casques et enceintes se connectent plus bas, sous Bluetooth ; une fois connectés, ils apparaissent ici.", "Da dove esce l’audio del Pi e a che volume. Cuffie e altoparlanti si collegano più sotto, in Bluetooth; una volta collegati compaiono qui."),
+("Sound comes out of", "Ton kommt aus", "Le son sort par", "L’audio esce da"),
+("Quieter", "Leiser", "Moins fort", "Più basso"),
+("Louder", "Lauter", "Plus fort", "Più alto"),
+("Mute", "Stumm", "Couper le son", "Silenzia"),
+("Sound on", "Ton an", "Remettre le son", "Riattiva l’audio"),
+("muted", "stumm", "muet", "silenziato"),
+("Play a test sound", "Testton abspielen", "Jouer un son de test", "Riproduci un suono di prova"),
+("Playing…", "Wird abgespielt…", "Lecture…", "Riproduzione…"),
+("Did you hear it? If not, another output is the right one.", "Gehört? Wenn nicht, ist ein anderer Ausgang der richtige.", "Vous l’avez entendu ? Sinon, c’est une autre sortie qu’il faut choisir.", "L’hai sentito? Se no, l’uscita giusta è un’altra."),
+("No sound output was found.", "Kein Tonausgang gefunden.", "Aucune sortie son n’a été trouvée.", "Non è stata trovata alcuna uscita audio."),
+("Sound cannot be set here.", "Der Ton lässt sich hier nicht einstellen.", "Le son ne peut pas être réglé ici.", "Qui l’audio non si può regolare."),
+("The tool for choosing the sound output is missing. In a terminal on the Pi: sudo apt install pulseaudio-utils", "Das Werkzeug zur Wahl des Tonausgangs fehlt. In einem Terminal auf dem Pi: sudo apt install pulseaudio-utils", "L’outil pour choisir la sortie son manque. Dans un terminal sur le Pi : sudo apt install pulseaudio-utils", "Manca lo strumento per scegliere l’uscita audio. In un terminale sul Pi: sudo apt install pulseaudio-utils"),
+("The sound service of this Pi does not answer.", "Der Tondienst dieses Pi antwortet nicht.", "Le service audio de ce Pi ne répond pas.", "Il servizio audio di questo Pi non risponde."),
+("the sound service of this Pi does not answer", "der Tondienst dieses Pi antwortet nicht", "le service audio de ce Pi ne répond pas", "il servizio audio di questo Pi non risponde"),
+("this output is not there any more", "diesen Ausgang gibt es nicht mehr", "cette sortie n’existe plus", "questa uscita non c’è più"),
+("battery", "Akku", "batterie", "batteria"),
+("{name} is running low: {n} % battery left.", "{name} ist fast leer: noch {n} % Akku.", "{name} est presque déchargé : il reste {n} % de batterie.", "{name} è quasi scarico: resta il {n} % di batteria."),
+("Small sounds when using the remote", "Leise Töne beim Bedienen mit der Fernbedienung", "Petits sons lors de l’utilisation de la télécommande", "Piccoli suoni quando si usa il telecomando"),
 ]
 
 def tidy(s): return re.sub(r"\s+", " ", s).strip()

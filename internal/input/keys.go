@@ -124,6 +124,25 @@ var appKeys = func() map[uint16]uint16 {
 	return m
 }()
 
+// padKeys are the keyboard keys a game controller presses inside a website:
+// a website knows nothing of controllers, but it knows arrows, Enter and
+// Escape. The stick and the direction pad arrive here as arrow keys already.
+var padKeys = map[uint16]uint16{
+	keyUp: keyUp, keyDown: keyDown, keyLeft: keyLeft, keyRight: keyRight,
+	btnDpadUp: keyUp, btnDpadDown: keyDown, btnDpadLeft: keyLeft, btnDpadRight: keyRight,
+	btnSouth: keyEnter, btnEast: keyEsc, btnStart: keyPlayPause,
+}
+
+// isArrow reports whether a key is one of the four arrows.
+func isArrow(code uint16) bool {
+	return code == keyUp || code == keyDown || code == keyLeft || code == keyRight
+}
+
+// isArrowAction reports whether a dashboard action is a direction.
+func isArrowAction(action string) bool {
+	return action == "up" || action == "down" || action == "left" || action == "right"
+}
+
 // keyNames are the keys that can be named in the config as app exit keys.
 // Colour and navigation keys are what TV remotes send over HDMI-CEC.
 var keyNames = map[string]uint16{

@@ -87,6 +87,11 @@ elif [ -e /dev/uinput ]; then
 else
   echo "virtual keyboard: /dev/uinput does not exist (sudo modprobe uinput)"
 fi
+if have pactl; then
+  echo "sound: pactl is installed (the settings page can choose the output and its volume)"
+else
+  echo "sound: pactl is not installed (sudo apt install pulseaudio-utils)"
+fi
 if have wlrctl; then
   echo "keyboard for open apps: wlrctl is installed (PiDash can hand the keyboard to an app's window)"
 else

@@ -286,30 +286,52 @@ html, body {
   transition: transform 0.3s ease;
 }
 
+/* A tile is a dark pane of glass: a little light along its top edge, and
+   behind its icon a glow in the icon's own colour, which comes forward when
+   the tile is selected. Only transform and opacity change, so the Pi moves
+   finished pictures around instead of painting new ones. */
 .tile {
+  --tint: 124, 196, 255; /* the glow's colour as r, g, b; set per tile from its icon */
   position: relative;
   flex: 0 0 260px;
   height: 230px;
-  border-radius: 22px;
-  border: 3px solid transparent;
-  background: rgba(22, 26, 38, 0.92);
+  border-radius: 30px;
+  border: 2px solid rgba(255, 255, 255, 0.07);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.075) 0%, rgba(255, 255, 255, 0) 46%),
+    rgba(19, 23, 34, 0.9);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.38);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  transition: transform 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
+  gap: 8px;
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.2s ease, background-color 0.2s ease;
 }
+/* The glow, and the pool of coloured light the selected tile casts below itself. */
+.tile-glow {
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: radial-gradient(85% 70% at 50% 32%, rgba(var(--tint), 0.42) 0%, rgba(var(--tint), 0.1) 48%, rgba(var(--tint), 0) 74%);
+  box-shadow: 0 26px 56px -14px rgba(var(--tint), 0.6);
+  opacity: 0.22;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+.tile > :not(.tile-glow) { position: relative; } /* the content lies on top of the glow */
+.tile > .tile-num { position: absolute; }
 .tile.focused {
-  transform: scale(1.08);
-  border-color: var(--fg);
-  background: rgba(38, 46, 68, 0.98);
+  transform: translateY(-10px) scale(1.09);
+  border-color: rgba(255, 255, 255, 0.94);
+  background-color: rgba(30, 36, 53, 0.97);
 }
+.tile.focused .tile-glow { opacity: 1; }
 /* A tile that was picked up to be moved: lifted off the row, with arrows. */
 .tile.moving {
-  transform: translateY(-34px) scale(1.08);
+  transform: translateY(-40px) scale(1.09);
   border-color: var(--accent, #7fb4ff);
-  box-shadow: 0 30px 50px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 34px 54px rgba(0, 0, 0, 0.55);
 }
 .tile.moving::before, .tile.moving::after {
   position: absolute;
@@ -322,8 +344,8 @@ html, body {
 .tile.moving::before { content: "◀"; left: 12px; }
 .tile.moving::after { content: "▶"; right: 12px; }
 .tile-art {
-  width: 96px;
-  height: 96px;
+  width: 104px;
+  height: 104px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -335,8 +357,9 @@ html, body {
 /* A long name takes a second line rather than being cut off. */
 .tile-label {
   max-width: 232px;
-  font-size: 28px;
-  font-weight: 500;
+  font-size: 27px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
   line-height: 1.14;
   text-align: center;
   display: -webkit-box;
@@ -348,13 +371,32 @@ html, body {
 .tile-sub { min-height: 22px; max-width: 232px; font-size: 19px; color: var(--fg-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile-sub:empty { display: none; }
 .tile.running .tile-sub { color: #6fd08c; }
+/* A small light in front of "Running". */
+.tile.running .tile-sub::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: #6fd08c;
+}
+/* The number that chooses the tile, on a small disc. */
 .tile-num {
   position: absolute;
-  left: 16px;
-  top: 12px;
-  font-size: 20px;
-  color: rgba(244, 245, 247, 0.38);
+  left: 14px;
+  top: 14px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 17px;
+  font-weight: 600;
+  color: rgba(244, 245, 247, 0.6);
+  background: rgba(255, 255, 255, 0.08);
 }
+.tile-num:empty { display: none; }
 
 #rail-hint {
   margin: 6px 14px 0;
@@ -494,7 +536,7 @@ html.pointer-active #toast { top: calc(var(--safe) + 92px); }
 #help {
   position: absolute;
   inset: 0;
-  padding: 70px 120px 44px;
+  padding: 54px 120px 40px;
   background: rgba(12, 14, 20, 0.95);
   display: flex;
   flex-direction: column;
@@ -504,7 +546,7 @@ html.pointer-active #toast { top: calc(var(--safe) + 92px); }
   pointer-events: none;
 }
 #help.open { opacity: 1; transform: translateY(0); pointer-events: auto; }
-#help h2 { font-size: 52px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 34px; }
+#help h2 { font-size: 50px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 22px; }
 #help h3 { font-size: 26px; font-weight: 500; color: var(--fg-dim); margin-bottom: 12px; }
 /* --- Status --------------------------------------------------------------------- */
 
@@ -568,19 +610,22 @@ html.pointer-active #toast { top: calc(var(--safe) + 92px); }
 .help-grid { flex: 1; display: grid; grid-template-columns: 1.15fr 1fr; gap: 90px; min-height: 0; }
 .help-row {
   display: grid;
-  grid-template-columns: 330px 1fr;
+  grid-template-columns: 300px 1fr;
   align-items: center;
   column-gap: 20px;
-  min-height: 56px;
+  /* Fourteen rows have to fit, some of them on two lines in German. */
+  min-height: 46px;
+  padding: 3px 0;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  font-size: 26px;
+  font-size: 23px;
+  line-height: 1.22;
 }
 .help-col h3 + .help-row { border-top: 0; }
 .help-keys { display: flex; flex-wrap: wrap; gap: 8px; }
 kbd {
   font: inherit;
-  font-size: 22px;
-  padding: 4px 12px;
+  font-size: 20px;
+  padding: 3px 11px;
   border-radius: 9px;
   background: rgba(255, 255, 255, 0.1);
   white-space: nowrap;

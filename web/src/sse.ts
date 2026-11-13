@@ -7,6 +7,8 @@ export interface SSEHandlers {
   onApps(status: AppsStatus): void;
   onPhotos(status: PhotosStatus): void;
   onTV(status: { asleep: boolean; available?: boolean; sleepAt?: string; sleepMinutes?: number }): void;
+  /** A controller or headset connected over Bluetooth is running low. */
+  onBattery(notice: { name: string; percent: number }): void;
   onStatus(connected: boolean): void;
 }
 
@@ -25,6 +27,7 @@ export function connect(url: string, h: SSEHandlers): EventSource {
   es.addEventListener("input", (e) => h.onInput(JSON.parse((e as MessageEvent).data)));
   es.addEventListener("apps", (e) => h.onApps(JSON.parse((e as MessageEvent).data)));
   es.addEventListener("photos", (e) => h.onPhotos(JSON.parse((e as MessageEvent).data)));
+  es.addEventListener("battery", (e) => h.onBattery(JSON.parse((e as MessageEvent).data)));
   es.addEventListener("tv", (e) => h.onTV(JSON.parse((e as MessageEvent).data)));
 
   return es;

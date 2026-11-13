@@ -112,6 +112,7 @@ What the installer does:
 | Launch an app | Press **OK** on the dashboard to open the app row, choose with ◀ ▶ and press OK. Or tap the app on the phone remote |
 | Move an app in the app row | Select it, press ▲, carry it with ◀ ▶, press **OK**. **Back** leaves it where it was |
 | See how PiDash is doing | Choose **Status** in the app row. See [Status page](#status-page) |
+| Choose where the sound comes out, and how loud | **Settings** in the app row, then **Sound**. See [Sound](#sound) |
 | Pair a Bluetooth controller, headphones or a speaker | **Settings** in the app row, then **Bluetooth**. See [Bluetooth](#bluetooth) |
 | Use a game controller | Plug it in or pair it. Switching it on also switches the TV on. See [Game controller](#game-controller) |
 | Get back from an app | **Hold Back for 2 seconds** on the TV remote, hold **Esc** on a keyboard, or tap **Back to dashboard** on the phone remote |
@@ -347,6 +348,17 @@ Under **Screen** on the settings page:
 - **Shown at start:** the clock with date and calendar, the same plus weather
   and the photo's caption, or nothing but the photo. Up and Down on the
   remote switch between these three at any time.
+- **Small sounds when using the remote:** a tick when the highlight moves, two
+  rising notes when something is chosen, a low note where there is nowhere
+  further to go. They are quiet, made by the page itself, and come out of
+  whatever [sound output](#sound) is chosen. `sounds = false` under
+  `[display]` does the same as the switch.
+
+**Holding a direction** on the remote or a controller keeps the highlight
+moving, along the app row and through the settings pages. It starts after
+two thirds of a second: some TVs never say that a button was let go, and
+anything quicker would turn each press on those into two. On the dashboard
+itself a held direction does nothing, so photos are not raced through.
 
 The translations live in one table, `scripts/translations.py`; running it
 writes the language files.
@@ -378,6 +390,23 @@ so. When the time is up, an app that is still playing is closed and the TV
 is switched to standby. The tile only appears when the TV can be switched
 over HDMI-CEC.
 
+### Sound
+
+**Settings → Sound** chooses where the Pi's sound comes out, and how loud:
+
+- **Sound comes out of** lists the outputs: the TV over HDMI (a Pi 5 lists
+  both of its HDMI sockets), and Bluetooth headphones or speakers once they
+  are connected under [Bluetooth](#bluetooth). Choosing one takes effect at
+  once, and what is playing moves over.
+- **−** and **+** change the volume of that output in steps of five percent;
+  **Mute** silences it. For the TV, leave this at 100 % and use the TV's own
+  volume buttons.
+- **Play a test sound** plays two notes on the chosen output, on the Pi, so it
+  also tells which output is which when the page is open on a phone.
+
+This uses `pactl`, the command-line tool of the Pi's sound service, which the
+installer adds if it is missing.
+
 ### Bluetooth
 
 **Settings → Bluetooth** manages the Pi's Bluetooth devices with the TV
@@ -394,8 +423,12 @@ remote, so pairing a controller does not need a mouse and the desktop:
 
 Controllers, headphones, speakers, mice and most keyboards pair this way. A
 device that insists on a code being typed is paired from the desktop's
-Bluetooth menu instead. Headphones and speakers are connected here, but which
-output the sound goes to is chosen in the desktop's volume menu.
+Bluetooth menu instead. Headphones and speakers are connected here; that the
+sound then comes out of them is chosen under [Sound](#sound).
+
+A connected device that reports its **battery** has it shown in its row and
+on the [status page](#status-page), and the TV says so once when it falls to
+15 %. Many controllers report it; some, and most speakers, do not.
 
 Things nearby that have no name (other people's phones, beacons) are left out
 of the list. With a [lock](#lock) set, changes ask for the PIN.
@@ -989,10 +1022,21 @@ setup:
 | Logo button | Back to the standard view. **Held for two seconds inside an app: closes it** |
 
 Buttons are named by where they sit, so on a Nintendo pad the bottom button
-is B. Inside an app PiDash leaves the controller to the app, apart from the
-logo button being held. To change what a button does, name it under
+is B. To change what a button does on the dashboard, name it under
 `[input.remote_keys]`, for example `BTN_NORTH = "weather"`; `evtest` shows the
 names.
+
+Inside an app it depends on the app:
+
+- **Websites** (YouTube, Netflix, Plex, …) know nothing of controllers, so
+  PiDash presses keys for it: stick and direction pad are the arrows, the
+  bottom button is Enter, the right one Escape, Start is play/pause. A held
+  direction keeps scrolling. If a website reacts to the controller by itself
+  and everything happens twice, set `controller_in_websites = false` under
+  `[input]`.
+- **Programs** (emulators, Steam Link, Moonlight) get the controller to
+  themselves.
+- Everywhere, **holding the logo button for two seconds** returns to PiDash.
 
 Pair a Bluetooth controller once under [Settings → Bluetooth](#bluetooth). It
 shows up under **Listening to** on the [status page](#status-page) when PiDash
@@ -1168,6 +1212,7 @@ internal/settings/   what the settings page saves, laid over config.toml
 internal/cec/        HDMI-CEC through cec-ctl: register with the TV, power on/off
 internal/tv/         daily TV power schedule
 internal/bluetooth/  Bluetooth devices: list, search, pair, connect, forget
+internal/sound/      sound output and volume, through pactl
 deploy/              the installer run on the Pi, uninstaller, systemd units, kiosk launcher
 install.sh           one-line installer and updater: downloads a release and runs deploy/install.sh
 scripts/dist.sh      builds the release packages

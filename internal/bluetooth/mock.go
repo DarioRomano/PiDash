@@ -21,7 +21,7 @@ type Mock struct {
 func NewMock() *Mock {
 	return &Mock{
 		devices: []Device{
-			{Address: "AA:00:00:00:00:01", Name: "Xbox Wireless Controller", Kind: "controller", Paired: true, Connected: true},
+			{Address: "AA:00:00:00:00:01", Name: "Xbox Wireless Controller", Kind: "controller", Paired: true, Connected: true, Battery: percent(80)},
 			{Address: "AA:00:00:00:00:02", Name: "Living room speaker", Kind: "audio", Paired: true},
 		},
 		nearby: []Device{
@@ -132,4 +132,15 @@ func (m *Mock) Forget(_ context.Context, address string) error {
 		}
 	}
 	return ErrUnknown
+}
+
+func percent(n int) *int { return &n }
+
+// SetBattery changes the charge a device reports; for tests.
+func (m *Mock) SetBattery(address string, pct int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if d := m.find(address); d != nil {
+		d.Battery = &pct
+	}
 }

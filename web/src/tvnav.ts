@@ -12,6 +12,8 @@
 //
 // A mouse and a real keyboard keep working as on any page.
 
+import { play } from "./sfx";
+
 export const onTV = new URLSearchParams(location.search).get("from") === "tv";
 
 type Dir = "up" | "down" | "left" | "right";
@@ -32,6 +34,8 @@ let layer: Layer | null = null;
 let current: HTMLElement | null = null;
 let options: Options;
 let started = false;
+/** True once the backend has reported a button it read itself. */
+let backendReads = false;
 
 export function startTVNav(opts: Options) {
   options = opts;
@@ -57,7 +61,11 @@ export function startTVNav(opts: Options) {
       }
       e.preventDefault();
       e.stopPropagation();
-      if (!e.repeat || press !== "select") dispatch(press, "key");
+      // A held button: on a Pi the backend sends the repeats, at a pace
+      // meant for a TV. The keyboard's own are only used where there is no
+      // such backend (development on a computer), and never for OK.
+      if (e.repeat && (backendReads || press === "select")) return;
+      dispatch(press, "key");
     },
     true,
   );
@@ -66,9 +74,17 @@ export function startTVNav(opts: Options) {
   // from the remote and passes them on.
   const events = new EventSource("/events");
   events.addEventListener("input", (e) => {
-    const ev = JSON.parse((e as MessageEvent).data) as { action: string; source: string };
+    const ev = JSON.parse((e as MessageEvent).data) as { action: string; source: string; repeat?: boolean };
     if (!["up", "down", "left", "right", "select", "back", "exit"].includes(ev.action)) return;
     const press = ev.action as Press;
+    if (ev.source === "evdev") backendReads = true;
+    if (ev.repeat) {
+      // In a text field the cursor repeats by itself while the browser has the keyboard.
+      if ((press === "left" || press === "right") && !layer && isText(document.activeElement) && document.hasFocus()) return;
+      if (layer) layer.handle(press);
+      else page(press);
+      return;
+    }
     // In a text field, Left and Right belong to the cursor as long as the
     // browser gets the keys itself. Only when it does not (its window has
     // lost the keyboard) are the backend's reports all there is to go by.
@@ -146,8 +162,11 @@ function dispatch(press: Press, source: string) {
     void fetch("/api/kiosk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "stop" }) });
     return;
   }
-  if (layer) layer.handle(press);
-  else page(press);
+  if (layer) {
+    // In the keyboard, a list or the PIN pad.
+    play(press === "select" ? "select" : press === "back" ? "back" : "move");
+    layer.handle(press);
+  } else page(press);
 }
 
 // --- Moving around the page --------------------------------------------------------
@@ -236,7 +255,10 @@ function nearest(from: DOMRect, dir: Dir, candidates: HTMLElement[]): HTMLElemen
 }
 
 function page(press: Press) {
-  if (press === "back") return options.onBack();
+  if (press === "back") {
+    play("back");
+    return options.onBack();
+  }
   if (press === "exit") return;
   const all = controls();
   if (!current || !usable(current)) {
@@ -245,7 +267,10 @@ function page(press: Press) {
   }
   const el = current;
 
-  if (press === "select") return activate(el);
+  if (press === "select") {
+    play("select");
+    return activate(el);
+  }
 
   // The bar at the bottom of the screen (Save) is where the page ends: it is
   // reached by going down from the last control, not from wherever it happens
@@ -259,9 +284,15 @@ function page(press: Press) {
     next = nearest(el.getBoundingClientRect(), press, others.filter((c) => !inBar(c)));
     if (!next && press === "down") next = all.find(inBar) ?? null;
   }
-  if (next) focus(next);
+  if (next) {
+    play("move");
+    focus(next);
+  }
   // A list with nothing beside it takes Left and Right as "previous" and "next".
-  else if ((press === "left" || press === "right") && el instanceof HTMLSelectElement) step(el, press === "right" ? 1 : -1);
+  else if ((press === "left" || press === "right") && el instanceof HTMLSelectElement) {
+    play("move");
+    step(el, press === "right" ? 1 : -1);
+  } else play("edge");
 }
 
 function step(sel: HTMLSelectElement, by: number) {
