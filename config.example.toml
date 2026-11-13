@@ -28,6 +28,25 @@ interval = "10s"
 # Set to "" to disable those controls.
 unit = "pidash-kiosk.service"
 
+# --- Weather ----------------------------------------------------------------
+# Current conditions in the corner of the screen, and a detail view with the
+# hourly and 7-day forecast: press OK, then OK again on the Weather tile.
+# Data comes from Open-Meteo.com; no account or key is needed.
+# Weather is off until you set a location (or coordinates).
+[weather]
+# Your town, e.g. "Zurich". Add a region or country to tell places with the
+# same name apart: "Portland, Maine". It is looked up once and remembered.
+location = ""
+# Or pin the exact spot instead (both are needed):
+# latitude = 47.3769
+# longitude = 8.5417
+# Label shown on the TV. Defaults to the name of the place that was found.
+# name = "Home"
+# "metric" = °C, km/h, mm.  "imperial" = °F, mph, inch.
+units = "metric"
+# How often the forecast is refreshed.
+interval = "15m"
+
 # --- Background photos ------------------------------------------------------
 # A slideshow behind the clock. Set `source`, fill in the matching section
 # below, restart the backend, then choose the folders on your phone:

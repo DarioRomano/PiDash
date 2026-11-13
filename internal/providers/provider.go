@@ -75,21 +75,37 @@ func (r *Runner) Run(ctx context.Context) {
 	wg.Wait()
 }
 
+// retryDelay is the first wait after a failed fetch; it doubles on every
+// further failure, up to the provider's normal interval.
+const retryDelay = 15 * time.Second
+
 func (r *Runner) loop(ctx context.Context, p Provider) {
-	t := time.NewTicker(p.Interval())
-	defer t.Stop()
+	failures := 0
 	for {
-		r.fetchOnce(ctx, p)
+		wait := p.Interval()
+		if r.fetchOnce(ctx, p) {
+			failures = 0
+		} else {
+			// Retry soon instead of waiting a whole interval. This matters most
+			// right after boot, when the backend starts before the network is up.
+			if d := retryDelay << min(failures, 10); d < wait {
+				wait = d
+			}
+			failures++
+		}
+		t := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
+			t.Stop()
 			return
 		case <-t.C:
 		}
 	}
 }
 
-func (r *Runner) fetchOnce(ctx context.Context, p Provider) {
-	fctx, cancel := context.WithTimeout(ctx, p.Interval())
+// fetchOnce polls the provider and publishes the result. It reports success.
+func (r *Runner) fetchOnce(ctx context.Context, p Provider) bool {
+	fctx, cancel := context.WithTimeout(ctx, min(p.Interval(), time.Minute))
 	defer cancel()
 
 	data, err := p.Fetch(fctx)
@@ -119,4 +135,5 @@ func (r *Runner) fetchOnce(ctx context.Context, p Provider) {
 	r.mu.Unlock()
 
 	r.publish(e)
+	return err == nil
 }

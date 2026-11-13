@@ -3,7 +3,8 @@ import { Input } from "./input";
 import { Rail, type RailItem } from "./rail";
 import { Slideshow } from "./slideshow";
 import { connect } from "./sse";
-import type { AppsStatus, ClientConfig, PhotoItem, PhotosStatus, StateEntry, SystemState } from "./types";
+import type { AppsStatus, ClientConfig, PhotoItem, PhotosStatus, StateEntry, SystemState, WeatherState } from "./types";
+import { WeatherView } from "./weather";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 
@@ -128,6 +129,14 @@ function updateSuspended() {
   slideshow.setSuspended(appsStatus.running !== "" || document.visibilityState !== "visible");
 }
 
+// --- Weather ------------------------------------------------------------------
+
+const WEATHER_ID = "__weather";
+const weatherEl = $("#weather");
+const weather = new WeatherView(weatherEl, $("#weather-panel"), (open) => stage.classList.toggle("panel-open", open));
+// With a mouse or touch screen, clicking the summary opens the details too.
+weatherEl.addEventListener("click", () => weather.open());
+
 // --- Panel rail and apps ------------------------------------------------------
 
 const EXIT_ID = "__desktop";
@@ -146,16 +155,19 @@ const rail = new Rail(
 );
 
 function railItems(): RailItem[] {
-  const items: RailItem[] = appsStatus.apps.map((a) => {
+  const items: RailItem[] = [];
+  const w = weather.tile;
+  if (w) items.push({ id: WEATHER_ID, label: "Weather", glyph: w.glyph, sub: w.sub });
+  for (const a of appsStatus.apps) {
     const running = appsStatus.running === a.id;
-    return {
+    items.push({
       id: a.id,
       label: a.name,
       icon: a.hasIcon ? `/api/apps/${encodeURIComponent(a.id)}/icon` : undefined,
       running,
       sub: running ? "Running · OK to stop" : "",
-    };
-  });
+    });
+  }
   items.push({ id: EXIT_ID, label: "Desktop", glyph: EXIT_GLYPH });
   return items;
 }
@@ -186,6 +198,11 @@ async function activateRailItem(item: RailItem) {
     exitToDesktop();
     return;
   }
+  if (item.id === WEATHER_ID) {
+    rail.close();
+    weather.open();
+    return;
+  }
   const stopping = appsStatus.running === item.id;
   toast(stopping ? `Closing ${item.label}…` : `Starting ${item.label}…`);
   try {
@@ -209,6 +226,7 @@ function applyConfig(cfg: ClientConfig) {
   const d = cfg.display;
   document.documentElement.style.setProperty("--safe", `${(d.safe_area * 100).toFixed(2)}%`);
   clock.configure(d.clock_24h, d.locale);
+  weather.configure(d.clock_24h, d.locale);
   dateLocale = d.locale || undefined;
   input.setKeyMap(cfg.keys);
   input.setDebugElement(d.debug_keys ? debug : null);
@@ -248,6 +266,10 @@ function onState(entry: StateEntry) {
     case "system":
       renderSystem(entry.data as SystemState | null);
       break;
+    case "weather":
+      weather.update(entry.data as WeatherState | null, entry.stale);
+      rail.setItems(railItems()); // the Weather tile shows the current conditions
+      break;
   }
 }
 
@@ -276,6 +298,7 @@ input.on((action) => {
     exitToDesktop();
     return;
   }
+  if (weather.handle(action)) return;
   if (rail.handle(action)) return;
   switch (action) {
     case "select":

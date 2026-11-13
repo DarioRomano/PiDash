@@ -113,7 +113,7 @@ like a key press. Bound to the LAN only.
 │   ├─ GET  /photos/{key}  one photo as a 1920x1080 JPEG, cached │
 │   ├─ /api/photos         status, folder tree, selection, list  │
 │   ├─ GET  /photos        folder picker page (phone)            │
-│   └─ providers: system, weather                     (planned)  │
+│   └─ providers: system, weather (Open-Meteo)                   │
 └────────────────────────────────────────────────────────────────┘
           ▲ phone on LAN  ▲ laptop: make deploy (ssh)
 ```
@@ -135,6 +135,31 @@ config.example.toml
 Makefile               dev / build / deploy / lint
 docs/PLAN.md           this file
 ```
+
+## Weather
+
+A provider like any other: polled on an interval, last good value kept and
+marked stale when a refresh fails. A failed fetch is retried after 15 seconds,
+doubling up to the normal interval, so the forecast appears soon after boot even
+though the backend starts before the network is up.
+
+- **Source**: Open-Meteo forecast API, no key. One request returns current
+  conditions, 24 hours and 7 days. A place name is resolved once through
+  Open-Meteo's geocoding API and remembered on disk; coordinates can be given
+  instead. Metric or imperial units are requested from the API, not converted.
+- **Times** are sent with the location's UTC offset and its IANA zone name, and
+  the browser formats them in that zone, so sunrise is right even if the Pi's
+  own time zone differs.
+- **Backend sends numbers and WMO weather codes only.** Icons and wording live in
+  the frontend: one small set of SVG icons composed from shared parts (sun,
+  moon, cloud, drops, flakes, bolt), with day and night variants.
+- **Ambient summary** (bottom right): icon, temperature, conditions, high/low;
+  the detailed overlay level adds place, feels-like and chance of rain.
+- **Detail panel**, opened from the Weather tile at the start of the app row:
+  a hero temperature, six stat tiles, a 12-column hourly strip, and the week as
+  aligned low-to-high range bars on one shared scale in a single hue, with a
+  marker for the current temperature. Every value is printed, because a TV has
+  no hover. While open it replaces the ambient layer and takes all keys.
 
 ## Background photos
 
@@ -273,9 +298,10 @@ PiDash is a guest on the existing desktop. It never changes how the Pi boots.
 3. **Background photos.** *(done)* Synology Photos and local-folder sources,
    folder picker on the phone, smart fill/fit rendering with disk cache,
    crossfading slideshow with previous/next/pause and captions.
-3b. **Weather.** Open-Meteo provider and overlay.
-4. **Resilience & schedule.** Reconnect handling, TV standby/wake via CEC.
-5. **Polish & docs.** Weather detail panel, system panel.
+4. **Weather.** *(done)* Open-Meteo provider with place-name lookup, summary on
+   the ambient screen, and a detail panel opened from the app row.
+5. **Resilience & schedule.** Reconnect handling, TV standby/wake via CEC.
+6. **Polish.** System panel, more panels (calendar, headlines).
 
 Known gaps in the launcher, candidates for a follow-up:
 

@@ -13,11 +13,11 @@ See [docs/PLAN.md](docs/PLAN.md) for the architecture and roadmap.
 ## Status
 
 Working today: fullscreen dashboard with a clock on top of the existing desktop,
-start/exit controls, a background photo slideshow from Synology Photos or a
-local folder with a folder picker on your phone, an app launcher (YouTube,
-Netflix, Synology Photos, Moonlight, Kodi, Steam Link, …),
-remote-control input mapping with on-screen key debugging, phone remote, system
-stats. Photos and weather are next.
+start/exit controls, weather with an hourly and 7-day detail view, a background
+photo slideshow from Synology Photos or a local folder with a folder picker on
+your phone, an app launcher (YouTube, Netflix, Synology Photos, Moonlight, Kodi,
+Steam Link, …), remote-control input mapping with on-screen key debugging, and
+a phone remote.
 
 ## Install on your Pi
 
@@ -66,6 +66,7 @@ What the installer does:
 | To… | Do this |
 |-----|---------|
 | Show the dashboard on the TV | Open **PiDash** from the desktop menu, tap **Show on TV** on the phone remote, or run `systemctl --user start pidash-kiosk` |
+| See the full forecast | Press **OK**, then **OK** again on the **Weather** tile. **Back** closes it |
 | Choose the background photos | Open `http://<pi-ip>:8080/photos`, or tap **Background photos** on the phone remote |
 | Flip through photos | ◀ ▶ on the dashboard. Play/pause holds the current photo. ▲ shows its folder and date |
 | Launch an app | Press **OK** on the dashboard to open the app row, choose with ◀ ▶ and press OK. Or tap the app on the phone remote |
@@ -80,6 +81,50 @@ The screen stays awake while the dashboard is showing; your normal screen
 blanking applies again once you exit. The layout scales to whatever resolution
 the desktop uses. For the smoothest result on a 4K TV, set the desktop to
 1920x1080 in *Preferences → Screen Configuration*.
+
+### Weather
+
+Set your town in `~/.config/pidash/config.toml` and restart the backend:
+
+```toml
+[weather]
+location = "Zurich"
+```
+
+The current temperature, conditions and today's high and low then appear in the
+bottom right corner of the screen. Pressing ▲ adds the place name, the "feels
+like" temperature and the chance of rain.
+
+For more, press **OK** to open the app row and **OK** again on the **Weather**
+tile, which is first in the row. The detail view shows:
+
+- the current temperature and conditions, with what it feels like
+- wind with direction and gusts, humidity, chance and amount of rain today,
+  UV index, sunrise and sunset
+- the next 24 hours in two-hour steps, with the chance of rain where it matters
+- the next seven days, each as a bar from its low to its high on one shared
+  scale, so warm and cold days are easy to compare. The dot on today's bar is
+  the temperature right now.
+
+**Back** or **OK** closes it. With a mouse, clicking the weather in the corner
+opens it too.
+
+Options:
+
+```toml
+[weather]
+location = "Portland, Maine"   # add a region or country for ambiguous names
+# latitude = 43.66             # or give exact coordinates instead
+# longitude = -70.26
+# name = "Home"                # label on the TV
+units = "metric"               # or "imperial" for °F, mph and inches
+interval = "15m"               # how often the forecast is refreshed
+```
+
+Weather data comes from [Open-Meteo](https://open-meteo.com), which is free for
+personal use and needs no account. If the internet is down, the last forecast
+stays on screen, and the detail view says when it was last updated. Times such
+as sunrise are shown in the local time of the place you configured.
 
 ### Background photos from Synology Photos
 
@@ -339,7 +384,7 @@ Hold Escape for two seconds to trigger "exit to desktop".
 cmd/pidash/          entry point
 internal/config/     TOML config, defaults, validation
 internal/server/     HTTP, SSE hub, input API, static files
-internal/providers/  provider interface + runner, system/ stats
+internal/providers/  provider interface + runner, system/ stats, weather/ (Open-Meteo)
 web/                 Vite + TypeScript frontend (dashboard + phone remote)
 internal/kiosk/      start/stop the fullscreen browser (systemd user unit)
 internal/apps/       app launcher (desktop and console modes)

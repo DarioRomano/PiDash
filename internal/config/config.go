@@ -21,6 +21,7 @@ type Config struct {
 	Kiosk   Kiosk   `toml:"kiosk"`
 	Apps    []App   `toml:"apps"`
 	Photos  Photos  `toml:"photos"`
+	Weather Weather `toml:"weather"`
 }
 
 // Server holds HTTP settings.
@@ -61,6 +62,43 @@ type Kiosk struct {
 	// Unit is the systemd user unit that runs the browser. Empty disables the
 	// "Show on TV" / "Exit to desktop" controls.
 	Unit string `toml:"unit"`
+}
+
+// Weather configures the forecast from Open-Meteo. It is on when a location
+// or coordinates are set.
+type Weather struct {
+	// Location is a place name, like "Zurich" or "Portland, Oregon".
+	Location string `toml:"location"`
+	// Latitude and Longitude pin the exact spot instead of a place name.
+	Latitude  *float64 `toml:"latitude"`
+	Longitude *float64 `toml:"longitude"`
+	// Name overrides the label shown on the TV.
+	Name string `toml:"name"`
+	// Units is "metric" (°C, km/h, mm) or "imperial" (°F, mph, inch).
+	Units    string   `toml:"units"`
+	Interval Duration `toml:"interval"`
+}
+
+// Enabled reports whether a place has been configured.
+func (w Weather) Enabled() bool {
+	return strings.TrimSpace(w.Location) != "" || (w.Latitude != nil && w.Longitude != nil)
+}
+
+func (w *Weather) validate() error {
+	w.Location = strings.TrimSpace(w.Location)
+	if (w.Latitude == nil) != (w.Longitude == nil) {
+		return fmt.Errorf("weather: set both latitude and longitude, or neither")
+	}
+	if w.Latitude != nil && (*w.Latitude < -90 || *w.Latitude > 90 || *w.Longitude < -180 || *w.Longitude > 180) {
+		return fmt.Errorf("weather: latitude must be between -90 and 90, longitude between -180 and 180")
+	}
+	if w.Units != "metric" && w.Units != "imperial" {
+		return fmt.Errorf("weather.units must be \"metric\" or \"imperial\", got %q", w.Units)
+	}
+	if w.Interval.Duration < 5*time.Minute {
+		return fmt.Errorf("weather.interval must be at least 5m")
+	}
+	return nil
 }
 
 // Photo sources for the background slideshow.
@@ -188,8 +226,9 @@ func Default() Config {
 			"Digit0":         "0", "Digit1": "1", "Digit2": "2", "Digit3": "3", "Digit4": "4",
 			"Digit5": "5", "Digit6": "6", "Digit7": "7", "Digit8": "8", "Digit9": "9",
 		}},
-		System: System{Enabled: true, Interval: Duration{10 * time.Second}},
-		Kiosk:  Kiosk{Unit: "pidash-kiosk.service"},
+		System:  System{Enabled: true, Interval: Duration{10 * time.Second}},
+		Kiosk:   Kiosk{Unit: "pidash-kiosk.service"},
+		Weather: Weather{Units: "metric", Interval: Duration{15 * time.Minute}},
 		Photos: Photos{
 			Interval: Duration{30 * time.Second},
 			Refresh:  Duration{6 * time.Hour},
@@ -288,6 +327,9 @@ func (c *Config) finish() error {
 		}
 	}
 	if err := c.Photos.validate(); err != nil {
+		return err
+	}
+	if err := c.Weather.validate(); err != nil {
 		return err
 	}
 	return c.validate()

@@ -100,7 +100,32 @@ html, body {
   letter-spacing: 0.005em;
 }
 
-#weather { margin-top: 36px; font-size: 40px; color: var(--fg-dim); }
+/* --- Weather summary (bottom right of the ambient screen) ------------------ */
+
+#weather {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  text-align: right;
+  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+}
+.w-now { display: flex; align-items: center; justify-content: flex-end; gap: 10px; line-height: 1; }
+.w-icon { width: 120px; height: 120px; }
+.w-icon svg { width: 100%; height: 100%; display: block; }
+.w-temp { font-size: 124px; font-weight: 600; letter-spacing: -0.03em; }
+.w-line { margin-top: 8px; font-size: 38px; color: var(--fg-dim); }
+.w-hilo { margin-left: 22px; color: var(--fg); }
+.w-extra {
+  height: 34px;
+  margin-top: 12px;
+  font-size: 26px;
+  color: var(--fg-dim);
+  white-space: pre;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+#overlay[data-density="detailed"] .w-extra { opacity: 1; }
 
 /* Photo caption: only in the "detailed" overlay. */
 #caption {
@@ -146,6 +171,9 @@ html, body {
 #overlay { will-change: transform, opacity; transition: opacity 0.4s ease, transform 0.35s ease; }
 #stage.rail-open #overlay { transform: translateY(-330px); }
 #stage.rail-open #sys { opacity: 0; }
+/* A full-screen panel replaces the ambient layer instead of sitting on top of it. */
+#stage.panel-open #overlay, #stage.panel-open #sys, #stage.panel-open #status { opacity: 0; }
+#status { transition: opacity 0.25s ease; }
 
 #rail {
   position: absolute;
@@ -221,6 +249,84 @@ html, body {
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6);
 }
 
+/* --- Weather detail panel --------------------------------------------------- */
+/* Hero figure, a row of stat tiles, an hourly strip and aligned range bars.
+   Every value is printed: a TV has no hover. One hue (the accent) carries the
+   data; text stays in the text colours. */
+
+#weather-panel {
+  --panel: #0c0e14;
+  position: absolute;
+  inset: 0;
+  padding: 64px 104px 44px;
+  background: rgba(12, 14, 20, 0.93);
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.25s ease, transform 0.3s ease;
+  pointer-events: none;
+}
+#weather-panel.open { opacity: 1; transform: translateY(0); pointer-events: auto; }
+#weather-panel svg { width: 100%; height: 100%; display: block; }
+
+.wp-grid { flex: 1; display: grid; grid-template-columns: 720px 1fr; gap: 88px; min-height: 0; }
+.wp-loc { font-size: 36px; color: var(--fg-dim); }
+.wp-hero { display: flex; align-items: center; gap: 18px; margin-top: 6px; line-height: 1; }
+.wp-icon { width: 190px; height: 190px; flex: 0 0 auto; }
+.wp-temp { font-size: 216px; font-weight: 600; letter-spacing: -0.04em; }
+.wp-cond { margin-top: 10px; font-size: 48px; font-weight: 500; }
+.wp-sub { margin-top: 10px; font-size: 30px; color: var(--fg-dim); white-space: pre; }
+
+.wp-tiles { margin-top: 60px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.wp-tile { padding: 24px 24px 20px; border-radius: 18px; background: rgba(255, 255, 255, 0.06); min-height: 172px; }
+.wp-label { font-size: 23px; color: var(--fg-dim); }
+.wp-value { margin-top: 8px; font-size: 46px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.1; }
+.wp-value small { font-size: 24px; font-weight: 500; color: var(--fg-dim); margin-left: 4px; letter-spacing: 0; }
+.wp-note { margin-top: 6px; font-size: 21px; color: var(--fg-dim); }
+
+.wp-right h3 { font-size: 26px; font-weight: 500; color: var(--fg-dim); margin-bottom: 14px; }
+.wp-right h3 + .wp-hours { margin-bottom: 52px; }
+.wp-legend { margin-left: 14px; font-size: 21px; opacity: 0.75; }
+
+.wp-hours { display: grid; grid-template-columns: repeat(12, 1fr); padding: 24px 8px 18px; border-radius: 18px; background: rgba(255, 255, 255, 0.06); }
+.wp-hour { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.wp-htime { font-size: 22px; color: var(--fg-dim); }
+.wp-hicon { width: 56px; height: 56px; }
+.wp-htemp { font-size: 32px; font-weight: 600; }
+.wp-hpop { height: 26px; font-size: 21px; color: var(--fg-dim); }
+
+.wp-days { display: flex; flex-direction: column; }
+.wp-day {
+  display: grid;
+  grid-template-columns: 210px 52px 84px 76px 1fr 76px;
+  align-items: center;
+  column-gap: 14px;
+  height: 68px;
+  font-size: 30px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.wp-day:first-child { border-top: 0; }
+.wp-dicon { width: 48px; height: 48px; }
+.wp-dpop { font-size: 22px; color: var(--fg-dim); text-align: right; }
+.wp-dmin { text-align: right; color: var(--fg-dim); }
+.wp-dmax { text-align: left; font-weight: 600; }
+/* The track is a dark step of the same blue as the range, so the bar reads as one scale. */
+.wp-track { position: relative; height: 8px; border-radius: 4px; background: #1c3147; }
+.wp-range { position: absolute; top: 0; bottom: 0; min-width: 8px; border-radius: 4px; background: var(--accent); }
+.wp-marker {
+  position: absolute;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+  background: var(--fg);
+  box-shadow: 0 0 0 3px var(--panel);
+}
+
+.wp-foot { display: flex; justify-content: space-between; margin-top: 18px; font-size: 21px; color: var(--fg-dim); white-space: pre; }
+
 #toast {
   position: absolute;
   left: 50%;
@@ -240,11 +346,11 @@ html, body {
 
 #sys {
   position: absolute;
-  right: var(--safe);
-  bottom: var(--safe);
+  left: var(--safe);
+  top: var(--safe);
   font-size: 22px;
   color: var(--fg-dim);
-  text-align: right;
+  text-align: left;
   line-height: 1.4;
   transition: opacity 0.25s ease;
 }

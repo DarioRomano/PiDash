@@ -19,6 +19,7 @@ import (
 	"github.com/DarioRomano/PiDash/internal/photos"
 	"github.com/DarioRomano/PiDash/internal/providers"
 	"github.com/DarioRomano/PiDash/internal/providers/system"
+	"github.com/DarioRomano/PiDash/internal/providers/weather"
 	"github.com/DarioRomano/PiDash/internal/server"
 	"github.com/DarioRomano/PiDash/web"
 )
@@ -79,6 +80,19 @@ func main() {
 		var ps []providers.Provider
 		if cfg.System.Enabled {
 			ps = append(ps, system.New(cfg.System.Interval.Duration))
+		}
+		switch w := cfg.Weather; {
+		case w.Enabled():
+			statePath := ""
+			if dir, err := apps.DataDir(); err == nil {
+				statePath = filepath.Join(dir, "weather-location.json")
+			}
+			ps = append(ps, weather.New(weather.Options{
+				Location: w.Location, Latitude: w.Latitude, Longitude: w.Longitude, Name: w.Name,
+				Units: w.Units, Interval: w.Interval.Duration, StatePath: statePath,
+			}))
+		case *mock:
+			ps = append(ps, weather.Mock{})
 		}
 		return providers.NewRunner(log, publish, ps...)
 	}

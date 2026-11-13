@@ -82,6 +82,39 @@ export interface PhotoItem {
   v: string;
 }
 
+export interface WeatherDay {
+  date: string;
+  code: number;
+  max: number;
+  min: number;
+  precipitationProbability: number;
+  precipitationSum: number;
+  sunrise: string;
+  sunset: string;
+  uvIndexMax: number;
+  windSpeedMax: number;
+}
+
+export interface WeatherState {
+  location: string;
+  timezone: string;
+  units: { temperature: string; wind: string; precipitation: string };
+  current: {
+    time: string;
+    temperature: number;
+    feelsLike: number;
+    humidity: number;
+    windSpeed: number;
+    windGusts: number;
+    windDirection: number;
+    precipitation: number;
+    code: number;
+    isDay: boolean;
+  };
+  hourly: { time: string; temperature: number; precipitationProbability: number; precipitation: number; code: number; isDay: boolean }[];
+  daily: WeatherDay[];
+}
+
 /** The complete remote-control vocabulary. Everything else is ignored. */
 export type Action =
   | "up" | "down" | "left" | "right"

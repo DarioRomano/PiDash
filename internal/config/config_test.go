@@ -74,6 +74,10 @@ func TestInvalidConfigsAreRejected(t *testing.T) {
 		"synology quality":   "[photos]\nsource = \"synology\"\n[photos.synology]\nurl = \"http://nas:5000\"\nusername = \"a\"\npassword = \"b\"\nquality = \"best\"\n",
 		"relative folder":    "[photos]\nsource = \"folder\"\n[photos.folder]\npath = \"Pictures\"\n",
 		"interval too short": "[photos]\ninterval = \"1s\"\n",
+		"latitude only":      "[weather]\nlatitude = 47.3\n",
+		"latitude range":     "[weather]\nlatitude = 147.3\nlongitude = 8.5\n",
+		"weather units":      "[weather]\nlocation = \"Zurich\"\nunits = \"kelvin\"\n",
+		"weather interval":   "[weather]\nlocation = \"Zurich\"\ninterval = \"10s\"\n",
 		"duplicate id":       "[[apps]]\nid = \"a\"\ncommand = \"x\"\n[[apps]]\nid = \"a\"\ncommand = \"y\"\n",
 	}
 	for name, body := range cases {
@@ -162,5 +166,20 @@ quality = "preview"
 
 	if _, err := load(t, "[photos]\nsource = \"folder\"\n[photos.folder]\npath = \"/srv/photos\"\n"); err != nil {
 		t.Errorf("folder source: %v", err)
+	}
+}
+
+func TestWeatherSettings(t *testing.T) {
+	cfg, _ := Load("")
+	if cfg.Weather.Enabled() || cfg.Weather.Units != "metric" || cfg.Weather.Interval.Duration.Minutes() != 15 {
+		t.Errorf("defaults = %+v", cfg.Weather)
+	}
+	cfg, err := load(t, "[weather]\nlocation = \" Zurich \"\n")
+	if err != nil || !cfg.Weather.Enabled() || cfg.Weather.Location != "Zurich" {
+		t.Errorf("by name: %+v, err %v", cfg.Weather, err)
+	}
+	cfg, err = load(t, "[weather]\nlatitude = 0.0\nlongitude = 0.0\nunits = \"imperial\"\nname = \"Null Island\"\n")
+	if err != nil || !cfg.Weather.Enabled() || *cfg.Weather.Latitude != 0 {
+		t.Errorf("by coordinates (0,0 is a valid place): %+v, err %v", cfg.Weather, err)
 	}
 }
