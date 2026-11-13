@@ -563,6 +563,7 @@ function applyConfig(cfg: ClientConfig) {
   const locale = d.locale || (d.language && d.language !== "en" ? d.language : "");
   clock.configure(d.clock_24h, locale);
   clock24h = d.clock_24h;
+  ambient.setStill(d.background === "still");
   stage.dataset.clock = d.clock_position || "bottom-left";
   stage.dataset.clockSize = d.clock_size || "large";
   if (!viewChosen) {

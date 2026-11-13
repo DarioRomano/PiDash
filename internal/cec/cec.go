@@ -37,6 +37,11 @@ type Controller struct {
 	// OSDName is how the Pi appears in the TV's input list.
 	OSDName string
 
+	// OnTVStandby is called when the TV announces that it is switching off,
+	// OnTVActive when it shows a sign of being on. Set before Follow starts.
+	OnTVStandby func()
+	OnTVActive  func()
+
 	// active is true while the TV shows the Pi's input, as far as PiDash knows.
 	active atomic.Bool
 }

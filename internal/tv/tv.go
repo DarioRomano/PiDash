@@ -65,8 +65,8 @@ type Options struct {
 type Status struct {
 	// Available is false when the TV cannot be controlled (no CEC).
 	Available bool `json:"available"`
-	// Asleep is true while the TV is in standby because PiDash put it there.
-	// The dashboard stops loading photos meanwhile.
+	// Asleep is true while the TV is in standby, whoever put it there. The
+	// dashboard stops drawing and loading photos meanwhile.
 	Asleep bool   `json:"asleep"`
 	Off    string `json:"off,omitempty"`
 	On     string `json:"on,omitempty"`
@@ -89,6 +89,10 @@ type Service struct {
 	standbyAt  time.Time // when we last sent the TV to standby; zero if we did not
 	asleep     bool
 	onChange   func(Status)
+	// lastPoll is when the TV was last asked whether it is on; heardStandby
+	// when it last announced that it is switching off.
+	lastPoll     time.Time
+	heardStandby time.Time
 	// sleepAt is when the sleep timer switches the TV off; zero when not set.
 	sleepAt      time.Time
 	sleepMinutes int
@@ -204,29 +208,79 @@ func (s *Service) Step(ctx context.Context, now time.Time) {
 		return
 	}
 
-	// After we sent the TV to standby, follow what it reports, so the
-	// dashboard wakes up again when someone switches the TV on by hand.
-	if !standbyAt.IsZero() {
-		power, _ := s.opt.TV.PowerStatus(ctx)
-		s.mu.Lock()
-		was := s.asleep
-		switch {
-		case power == cec.PowerStandby:
-			s.asleep = true
-		case now.Sub(standbyAt) < settle:
-			// Still shutting down; keep the current assumption.
-		default:
-			// On again, or a TV that does not report: stop assuming it is off.
-			s.asleep = false
-			s.standbyAt = time.Time{}
-		}
-		changed := was != s.asleep
-		st, fn := s.statusLocked(), s.onChange
-		s.mu.Unlock()
-		if changed {
-			fn(st)
-		}
+	// Follow what the TV reports about itself. The dashboard rests while the
+	// TV is off, however it was switched off, and carries on when it is back.
+	// Right after sending it to standby this is checked on every step,
+	// otherwise once a minute.
+	s.mu.Lock()
+	due := !standbyAt.IsZero() || now.Sub(s.lastPoll) >= pollEvery
+	if due {
+		s.lastPoll = now
 	}
+	s.mu.Unlock()
+	if !due || !s.opt.TV.Available() {
+		return
+	}
+	power, _ := s.opt.TV.PowerStatus(ctx)
+	s.mu.Lock()
+	was := s.asleep
+	switch {
+	case power == cec.PowerStandby:
+		s.asleep = true
+	case power == cec.PowerOn:
+		s.asleep, s.standbyAt = false, time.Time{}
+	case standbyAt.IsZero():
+		// A TV that does not say: believe what was last heard from it.
+	case now.Sub(standbyAt) < settle:
+		// Still shutting down; keep the current assumption.
+	default:
+		// We switched it off, but it does not report: stop assuming it is off.
+		s.asleep, s.standbyAt = false, time.Time{}
+	}
+	changed := was != s.asleep
+	st, fn := s.statusLocked(), s.onChange
+	s.mu.Unlock()
+	if changed {
+		s.opt.Log.Info("tv power changed", "asleep", st.Asleep)
+		fn(st)
+	}
+}
+
+// pollEvery is how often the TV is asked whether it is on.
+const pollEvery = time.Minute
+
+// quiet is how long after a "going to standby" signs of life from the TV are
+// ignored: it still talks while it shuts down.
+const quiet = 8 * time.Second
+
+// NoteStandby records that the TV announced it is switching off, which TVs
+// do when switched off with their own remote.
+func (s *Service) NoteStandby() {
+	s.mu.Lock()
+	was := s.asleep
+	s.asleep, s.heardStandby = true, time.Now()
+	st, fn := s.statusLocked(), s.onChange
+	s.mu.Unlock()
+	if !was {
+		s.opt.Log.Info("the TV announced standby; resting")
+		fn(st)
+	}
+}
+
+// NoteAwake records a sign that the TV is on: it spoke on the HDMI
+// connection, or someone pressed a button.
+func (s *Service) NoteAwake() {
+	s.mu.Lock()
+	now := time.Now()
+	if !s.asleep || now.Sub(s.heardStandby) < quiet || (!s.standbyAt.IsZero() && now.Sub(s.standbyAt) < quiet) {
+		s.mu.Unlock()
+		return
+	}
+	s.asleep, s.standbyAt = false, time.Time{}
+	st, fn := s.statusLocked(), s.onChange
+	s.mu.Unlock()
+	s.opt.Log.Info("the TV is on again; carrying on")
+	fn(st)
 }
 
 // SetSleep starts the sleep timer: the TV is switched off in that many

@@ -136,6 +136,11 @@ func (c *Controller) follow(ctx context.Context, dev string, log *slog.Logger) e
 		}
 		data := msg.Msg[:msg.Len]
 		log.Debug("cec received", "device", dev, "msg", describe(data))
+		if standby, active := tvSignal(data); standby && c.OnTVStandby != nil {
+			c.OnTVStandby()
+		} else if active && c.OnTVActive != nil {
+			c.OnTVActive()
+		}
 		out, note := r.handle(data)
 		for _, reply := range out {
 			tx := cecMsg{Len: uint32(len(reply))}

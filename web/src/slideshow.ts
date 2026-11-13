@@ -4,6 +4,12 @@ const FADE_MS = 1700; // a little longer than the CSS opacity transition
 const PLAYLIST_SIZE = 200;
 const VIDEO_MAX_MS = 45_000; // a video clip is shown for at most this long
 const VIDEO_WAIT_MS = 20_000; // and given this long to start
+/**
+ * How often a moving photo is redrawn, per second. The movement is so slow
+ * that this many steps cannot be told from a continuous glide (each is well
+ * under a pixel), while the screen is redrawn a quarter as often as it would be.
+ */
+const MOTION_STEPS_PER_SECOND = 15;
 const FILL_ZOOM = 1.14; // how far a photo that fills the screen is zoomed at most
 
 /** One end of a photo's movement: its zoom, and its shift as a fraction of its size. */
@@ -90,6 +96,17 @@ export class Slideshow {
   setSuspended(suspended: boolean) {
     if (suspended === this.suspended) return;
     this.suspended = suspended;
+    // Nobody is looking: a photo's movement and a clip stop where they are,
+    // so nothing has to be redrawn, and carry on afterwards.
+    const shown = this.current;
+    if (shown instanceof HTMLVideoElement) {
+      if (suspended) shown.pause();
+      else void shown.play().catch(() => {});
+    }
+    for (const a of shown?.getAnimations() ?? []) {
+      if (suspended) a.pause();
+      else if (a.playState === "paused") a.play();
+    }
     if (suspended) clearTimeout(this.timer);
     else this.schedule();
   }
@@ -307,11 +324,12 @@ export class Slideshow {
       [from, to] = kind === 0 ? [wide, close] : [close, wide];
     }
     const css = (p: Pose) => `translate(${(p.x * 100).toFixed(3)}%, ${(p.y * 100).toFixed(3)}%) scale(${p.zoom.toFixed(4)})`;
+    // Until the next photo has fully covered this one.
+    const duration = this.intervalMs + FADE_MS;
     img.animate([{ transform: css(from) }, { transform: css(to) }], {
-      // Until the next photo has fully covered this one.
-      duration: this.intervalMs + FADE_MS,
-      // Starts and ends gently; both ends are hidden in the crossfade anyway.
-      easing: "cubic-bezier(0.4, 0, 0.6, 1)",
+      duration,
+      // In small steps rather than on every frame: see MOTION_STEPS_PER_SECOND.
+      easing: `steps(${Math.max(1, Math.round((duration / 1000) * MOTION_STEPS_PER_SECOND))}, end)`,
       fill: "both",
     });
   }

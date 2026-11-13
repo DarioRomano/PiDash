@@ -100,3 +100,21 @@ func TestNothingIsSentBeforeThePiIsOnTheBus(t *testing.T) {
 	r.phys = physInvalid
 	expect(t, "no TV connection", answers(t, r, 0x0f, 0x86, 0xff, 0xff))
 }
+
+func TestWhatTheTVSaysAboutItsPower(t *testing.T) {
+	for name, c := range map[string]struct {
+		msg             []byte
+		standby, active bool
+	}{
+		"standby to everyone":      {[]byte{0x0f, 0x36}, true, false},
+		"standby to the Pi":        {[]byte{0x04, 0x36}, true, false},
+		"the TV selects an input":  {[]byte{0x0f, 0x86, 0x10, 0x00}, false, true},
+		"a button of its remote":   {[]byte{0x04, 0x44, 0x00}, false, true},
+		"another player's standby": {[]byte{0x8f, 0x36}, false, false},
+		"a bare poll":              {[]byte{0x04}, false, false},
+	} {
+		if standby, active := tvSignal(c.msg); standby != c.standby || active != c.active {
+			t.Errorf("%s: standby %v, active %v; want %v, %v", name, standby, active, c.standby, c.active)
+		}
+	}
+}

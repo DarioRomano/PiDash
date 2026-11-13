@@ -86,7 +86,7 @@ type Manager struct {
 
 // NewManager returns a launcher for the configured apps.
 func NewManager(apps []config.App, backend Backend, log *slog.Logger) *Manager {
-	return &Manager{apps: apps, backend: backend, log: log, poll: time.Second, icons: map[string]Icon{}, onChange: func(Status) {}}
+	return &Manager{apps: apps, backend: backend, log: log, poll: 2 * time.Second, icons: map[string]Icon{}, onChange: func(Status) {}}
 }
 
 // ResolveIcons looks up the tile icon of every app once, at startup.

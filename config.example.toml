@@ -34,6 +34,9 @@ clock_size = "large"
 # and the photo's caption) or "photo" (nothing but the photo). Up and Down on
 # the remote switch between them.
 view = "clock"
+# The background shown while there is no photo: "moving" drifts slowly and
+# reacts to the remote; "still" is painted once, which keeps the Pi cooler.
+background = "moving"
 # Night mode: between these times the TV shows only a dim clock on black. Any
 # button brings the dashboard back for a minute. Leave both empty for none.
 night_start = ""

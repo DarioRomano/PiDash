@@ -74,7 +74,9 @@ export class Rail {
     this.items = items;
     const idx = items.findIndex((i) => i.id === focusedId);
     this.focus = idx >= 0 ? idx : Math.min(this.focus, Math.max(0, items.length - 1));
-    this.render();
+    // The tiles change often (the weather, a timer counting down). While the
+    // row is closed nobody sees them, so they are only built when it opens.
+    if (this.opened) this.render();
   }
 
   /** Handles an action while open. Returns true when the action was consumed. */

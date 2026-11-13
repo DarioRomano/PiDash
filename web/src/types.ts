@@ -15,6 +15,8 @@ export interface DisplayConfig {
   clock_position: string;
   clock_size: string;
   view: string;
+  /** "moving" or "still": the background shown without photos. */
+  background: string;
   clock_24h: boolean;
   locale: string;
 }

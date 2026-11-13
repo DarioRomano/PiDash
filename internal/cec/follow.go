@@ -122,6 +122,19 @@ func (r *responder) handle(msg []byte) (out [][]byte, note string) {
 	return reply(opFeatureAbort, op, abortUnknown), ""
 }
 
+// tvSignal reads what a message says about the TV's power: standby when the
+// TV announces it is switching off, active for anything else it sends, since
+// a TV in standby is silent.
+func tvSignal(msg []byte) (standby, active bool) {
+	if len(msg) < 2 || msg[0]>>4 != 0 {
+		return false, false // a bare poll, or not from the TV
+	}
+	if msg[1] == opStandby {
+		return true, false
+	}
+	return false, true
+}
+
 func describe(msg []byte) string {
 	if len(msg) < 2 {
 		return fmt.Sprintf("poll %x", msg)

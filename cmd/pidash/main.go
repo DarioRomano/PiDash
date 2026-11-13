@@ -198,6 +198,9 @@ func main() {
 		*c.dst = &clock
 	}
 	tvService := tv.New(tvOpts)
+	// What the TV says over HDMI tells whether anyone can see the dashboard.
+	cecControl.OnTVStandby = tvService.NoteStandby
+	cecControl.OnTVActive = tvService.NoteAwake
 
 	// The phone as mouse and keyboard, and the TV remote's long-press exit.
 	phoneInput := input.NewService(cfg.Remote.MouseKeyboard, log)
@@ -249,7 +252,10 @@ func main() {
 		remote := &input.Remote{
 			Actions: remoteActions, ExitKeys: exitKeys, Hold: cfg.Input.AppExitHold.Duration, Log: log,
 			AppRunning: func() bool { return appManager.Status().Running != "" },
-			OnAction:   srv.RemoteAction,
+			OnAction: func(action string) {
+				tvService.NoteAwake() // a button of its remote: the TV is on
+				srv.RemoteAction(action)
+			},
 			OnAppExit: func() {
 				log.Info("Back held on the remote: closing the app")
 				if err := appManager.Stop(context.Background()); err != nil {

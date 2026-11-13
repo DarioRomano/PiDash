@@ -153,6 +153,10 @@ type Display struct {
 	// "details" (also the weather and the photo's caption) or "photo" (only
 	// the photo). Up and Down switch between them at any time.
 	View string `toml:"view" json:"view"`
+	// Background is how the background without photos behaves: "moving"
+	// (default) drifts and reacts to the remote; "still" is painted once and
+	// costs the Pi no work.
+	Background string `toml:"background" json:"background"`
 	// Use 24-hour time.
 	Clock24h bool `toml:"clock_24h" json:"clock_24h"`
 	// Locale used for date formatting, e.g. "en-GB". Empty uses the browser default.
@@ -589,6 +593,7 @@ func (c Config) validate() error {
 		{"clock_position", &c.Display.ClockPosition, []string{"bottom-left", "bottom-right", "top-left", "top-right"}},
 		{"clock_size", &c.Display.ClockSize, []string{"large", "medium", "small"}},
 		{"view", &c.Display.View, []string{"clock", "details", "photo"}},
+		{"background", &c.Display.Background, []string{"moving", "still"}},
 	} {
 		if *choice.value != "" && !slices.Contains(choice.of, *choice.value) {
 			return fmt.Errorf("display.%s must be one of %s, got %q", choice.name, strings.Join(choice.of, ", "), *choice.value)

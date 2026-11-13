@@ -103,6 +103,7 @@ type Screen struct {
 	ClockPosition string `json:"clockPosition,omitempty"`
 	ClockSize     string `json:"clockSize,omitempty"`
 	View          string `json:"view,omitempty"`
+	Background    string `json:"background,omitempty"`
 }
 
 // Port records a port fallback. It applies only while config.toml still asks
@@ -382,7 +383,7 @@ func apply(base config.Config, f File, installed []desktop.Entry) (config.Config
 			to   *string
 		}{
 			{sc.Language, &cfg.Display.Language}, {sc.ClockPosition, &cfg.Display.ClockPosition},
-			{sc.ClockSize, &cfg.Display.ClockSize}, {sc.View, &cfg.Display.View},
+			{sc.ClockSize, &cfg.Display.ClockSize}, {sc.View, &cfg.Display.View}, {sc.Background, &cfg.Display.Background},
 		} {
 			if choice.from != "" {
 				*choice.to = choice.from
@@ -574,7 +575,7 @@ func (s *Store) View() View {
 				Quality: cfg.Photos.Synology.Quality},
 		},
 		Screen: Screen{NightStart: cfg.Display.NightStart, NightEnd: cfg.Display.NightEnd, Language: cfg.Display.Language,
-			ClockPosition: cfg.Display.ClockPosition, ClockSize: cfg.Display.ClockSize, View: cfg.Display.View},
+			ClockPosition: cfg.Display.ClockPosition, ClockSize: cfg.Display.ClockSize, View: cfg.Display.View, Background: cfg.Display.Background},
 		Calendar: Calendar{Links: []Link{}},
 		Home:     Home{URL: cfg.Home.URL, TokenSet: cfg.Home.Token != "", Entities: append([]string{}, cfg.Home.Entities...)},
 		System:   System{AutoUpdate: cfg.Update.Auto},

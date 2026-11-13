@@ -62,7 +62,7 @@ interface Info {
     synology: { url: string; username: string; passwordSet: boolean; insecureTls: boolean; quality: string };
     folderPath: string;
   };
-  screen: { nightStart: string; nightEnd: string; language: string; clockPosition: string; clockSize: string; view: string };
+  screen: { nightStart: string; nightEnd: string; language: string; clockPosition: string; clockSize: string; view: string; background: string };
   calendar: { links: CalendarLink[] };
   home: { url: string; tokenSet: boolean; entities: string[] };
   system: { autoUpdate: boolean };
@@ -179,6 +179,7 @@ function readForm() {
       clockPosition: val("d-position"),
       clockSize: val("d-size"),
       view: val("d-view"),
+      background: val("d-background"),
     },
     apps: apps.map(({ detail: _detail, missing: _missing, ...rest }) => rest),
     calendar: { links: calendars.map((l) => (l.url ? { url: l.url } : { key: l.key })) },
@@ -246,6 +247,7 @@ function fill(i: Info) {
   $<HTMLSelectElement>("d-position").value = i.screen.clockPosition || "bottom-left";
   $<HTMLSelectElement>("d-size").value = i.screen.clockSize || "large";
   $<HTMLSelectElement>("d-view").value = i.screen.view || "clock";
+  $<HTMLSelectElement>("d-background").value = i.screen.background || "moving";
   fillTimes($<HTMLSelectElement>("n-start"), i.screen.nightStart, "Off");
   fillTimes($<HTMLSelectElement>("n-end"), i.screen.nightEnd || "07:00");
   void showHidden();
@@ -804,7 +806,7 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
-for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "n-start", "n-end", "h-url", "h-token", "sys-auto", "l-pin", "d-language", "d-position", "d-size", "d-view"]) {
+for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "n-start", "n-end", "h-url", "h-token", "sys-auto", "l-pin", "d-language", "d-position", "d-size", "d-view", "d-background"]) {
   $(id).addEventListener("input", refresh);
   $(id).addEventListener("change", refresh);
 }

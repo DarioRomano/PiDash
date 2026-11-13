@@ -390,6 +390,34 @@ and the hidden photos. **Load a backup file** puts it back, on this Pi or
 another one. The file contains the passwords and links stored on the Pi, so
 keep it to yourself.
 
+### Keeping the Pi cool
+
+A picture that stands still costs the Pi nothing; anything that moves makes
+it redraw the screen again and again, and at 4K that is what warms it. PiDash
+therefore redraws no more often than the eye can tell: moving photos 15 times
+a second, the drifting background 12 times, a reaction to a button 30 times.
+
+It also stops drawing when nobody can see it:
+
+- **While the TV is off.** PiDash hears the TV announce that it is switching
+  off, and asks it once a minute whether it is on, both over HDMI-CEC. While
+  it is off, photos stop changing and moving, the background stands still and
+  the radio stops. A button press, or the TV reporting that it is on again,
+  brings everything back. This needs a TV that tells the truth about its
+  power state; most do.
+- **While an app is open**, and during [night mode](#night-mode).
+
+If the Pi still runs warm (check with `vcgencmd measure_temp`), these settings
+make the largest difference, most effective first:
+
+1. **Movement: None** for the photos (Settings, Background photos).
+2. **Background without photos: Still picture** (Settings, Screen).
+3. No video clips in the slideshow: decoding video is the heaviest work of all.
+4. A longer time per photo: every new photo is prepared once on the Pi.
+
+A case with a fan or a large heat sink is worth having for a Pi 5 that drives
+a 4K screen all day.
+
 ### Night mode
 
 Between two times of day, set on the settings page under **Night**, the TV
@@ -411,6 +439,10 @@ the screen.
 - **They take the colours of the selected app.** With the app row open, the
   ribbons turn to the colours of the selected icon: red for YouTube, the
   icon's own mix for anything else.
+- **They can stand still.** Under **Screen** on the settings page,
+  **Background without photos** can be set to a still picture. It keeps its
+  look and still takes the colours of the selected app, but is painted once
+  instead of continuously, which keeps the Pi cooler.
 - **They are sharp without costing much.** The ribbons are drawn at half the
   screen's resolution: 1080p on a 4K screen, which keeps their edges crisp at
   a quarter of the work. If the Pi cannot keep up, the picture steps down to

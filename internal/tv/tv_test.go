@@ -2,6 +2,7 @@ package tv
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"testing"
@@ -222,5 +223,61 @@ func TestSleepTimer(t *testing.T) {
 	s.Step(context.Background(), start.Add(3*time.Hour))
 	if fake.standbys != 1 {
 		t.Errorf("a cancelled timer switched the TV off")
+	}
+}
+
+func TestTheDashboardRestsWhileTheTVIsOff(t *testing.T) {
+	fake := &fakeTV{power: cec.PowerOn}
+	var seen []bool
+	s := New(Options{TV: fake, Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	s.OnChange(func(st Status) { seen = append(seen, st.Asleep) })
+	start := time.Now()
+	s.Step(context.Background(), start)
+	if s.Status().Asleep {
+		t.Fatal("asleep although the TV reports that it is on")
+	}
+
+	// Switched off with the TV's own remote: found out within a minute.
+	fake.power = cec.PowerStandby
+	s.Step(context.Background(), start.Add(30*time.Second)) // too soon to ask again
+	if s.Status().Asleep {
+		t.Error("the TV was asked more often than once a minute")
+	}
+	s.Step(context.Background(), start.Add(61*time.Second))
+	if !s.Status().Asleep {
+		t.Fatal("still drawing a minute after the TV went to standby")
+	}
+	// And switched on again.
+	fake.power = cec.PowerOn
+	s.Step(context.Background(), start.Add(122*time.Second))
+	if s.Status().Asleep {
+		t.Fatal("still resting after the TV came back on")
+	}
+
+	// A TV that announces standby is believed at once...
+	s.NoteStandby()
+	if !s.Status().Asleep {
+		t.Fatal("the TV's announcement was ignored")
+	}
+	// ...its chatter while shutting down is not taken for being on again...
+	s.NoteAwake()
+	if !s.Status().Asleep {
+		t.Error("woken by the TV's last words")
+	}
+	// ...but a sign of life later is, even from a TV that never answers questions.
+	fake.silent = true
+	s.mu.Lock()
+	s.heardStandby = time.Now().Add(-time.Minute)
+	s.mu.Unlock()
+	s.Step(context.Background(), start.Add(200*time.Second))
+	if !s.Status().Asleep {
+		t.Error("a TV that does not answer was assumed to be on")
+	}
+	s.NoteAwake()
+	if s.Status().Asleep {
+		t.Error("a button press did not wake the dashboard")
+	}
+	if got, want := fmt.Sprint(seen), "[true false true false]"; got != want {
+		t.Errorf("changes reported = %s, want %s", got, want)
 	}
 }

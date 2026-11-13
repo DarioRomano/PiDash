@@ -30,7 +30,13 @@ const GLOW_H = 90;
 /** Step down a size when pictures arrive slower than this on average, in milliseconds. */
 const TOO_SLOW_MS = 48;
 const JUDGE_AFTER = 60; // pictures per verdict
-const CALM_FRAME_MS = 33; // about 30 pictures a second while only drifting
+// The drift is slow enough that 12 pictures a second look continuous; a
+// reaction to a key press gets 30. Every picture costs the Pi work, and with
+// it heat, so no more are drawn than can be seen.
+const CALM_FRAME_MS = 83;
+const STIRRED_FRAME_MS = 33;
+/** How fast the shapes drift by themselves; 1 was the original, livelier pace. */
+const DRIFT = 0.5;
 const SETTLE_S = 0.6; // how quickly colours follow a new palette
 const LINGER_MS = 2200; // keep painting while a photo fades in on top
 const TILT = -0.2; // the ribbons run slightly uphill, in radians
@@ -77,7 +83,8 @@ export class Ambient {
   private last = 0;
   private clock = Math.random() * 600; // seconds; a different sky after every start
   private lingerTimer = 0;
-  private still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  private reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  private still = this.reducedMotion;
 
   // What input has set in motion. Everything here settles back to rest.
   private flow = 0; // how far the ribbons have been pushed along, in radians
@@ -136,6 +143,20 @@ export class Ambient {
       this.finest = this.size + 1;
       this.resize(this.finest);
     }
+  }
+
+  /**
+   * A still background is painted once and then left alone, apart from
+   * changing colour with the selected app: it costs the Pi nothing.
+   */
+  setStill(still: boolean) {
+    this.still = still || this.reducedMotion;
+    if (this.still) {
+      this.flowSpeed = this.swaySpeed = this.swell = 0;
+      this.sway = this.lift;
+      this.lean = [...this.leanTarget];
+    }
+    this.start();
   }
 
   /** Colours to move towards; null returns to the default. */
@@ -209,8 +230,9 @@ export class Ambient {
 
   private frame = (now: number) => {
     this.raf = 0;
-    // Drifting needs few pictures; a reaction to a key press gets every one.
-    if (this.last && !this.stirred && now - this.last < CALM_FRAME_MS) {
+    // Drifting needs few pictures; a reaction to a key press gets more.
+    // (A millisecond of slack, or a frame that arrives just early is skipped.)
+    if (this.last && now - this.last < (this.stirred ? STIRRED_FRAME_MS : CALM_FRAME_MS) - 1) {
       this.raf = requestAnimationFrame(this.frame);
       return;
     }
@@ -229,7 +251,7 @@ export class Ambient {
       }
     }
 
-    if (!this.still) this.clock += dt;
+    if (!this.still) this.clock += dt * DRIFT;
     // A push along the ribbons glides to a stop.
     this.flow += this.flowSpeed * dt;
     this.flowSpeed *= Math.exp(-dt / 0.7);

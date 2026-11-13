@@ -187,6 +187,8 @@ ROWS = [
 ("Shown at start", "Beim Start angezeigt", "Affiché au démarrage", "Mostrato all’avvio"), ("Clock, date and calendar", "Uhr, Datum und Kalender", "Horloge, date et agenda", "Orologio, data e calendario"),
 ("Also the weather and the photo's caption", "Zusätzlich das Wetter und die Bildunterschrift", "Aussi la météo et la légende de la photo", "Anche il meteo e la didascalia della foto"), ("Only the photo", "Nur das Foto", "Seulement la photo", "Solo la foto"),
 ("Up and Down on the remote switch between these three at any time.", "Auf und Ab auf der Fernbedienung wechseln jederzeit zwischen diesen dreien.", "Haut et Bas sur la télécommande passent de l’un à l’autre à tout moment.", "Su e Giù sul telecomando passano da una all’altra in qualsiasi momento."),
+("Background without photos", "Hintergrund ohne Fotos", "Arrière-plan sans photos", "Sfondo senza foto"), ("Moving shapes", "Bewegte Formen", "Formes en mouvement", "Forme in movimento"),
+("Still picture, which keeps the Pi cooler", "Stehendes Bild, das den Pi kühler hält", "Image fixe, qui garde le Pi plus frais", "Immagine fissa, che tiene il Pi più fresco"),
 ("Night", "Nacht", "Nuit", "Notte"),
 ("Between these times the TV shows only a dim clock on black. Any button brings the dashboard back for a minute.", "Zwischen diesen Zeiten zeigt der Fernseher nur eine gedimmte Uhr auf Schwarz. Jede Taste holt die Anzeige für eine Minute zurück.", "Entre ces heures, la TV n’affiche qu’une horloge atténuée sur fond noir. N’importe quelle touche ramène l’affichage pendant une minute.", "Tra questi orari la TV mostra solo un orologio attenuato su sfondo nero. Qualsiasi tasto riporta la schermata per un minuto."),
 ("From", "Von", "De", "Dalle"), ("Until", "Bis", "À", "Alle"),
