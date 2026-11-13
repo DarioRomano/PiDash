@@ -697,6 +697,10 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	h.Set("Connection", "keep-alive")
 	h.Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
+	// After the backend restarts (saved settings, an update) pages should be
+	// back in touch within a second, not the browser's default three: until
+	// then the TV remote's OK and Back do not reach them.
+	fmt.Fprint(w, "retry: 800\n\n")
 
 	ch := s.hub.subscribe()
 	defer s.hub.unsubscribe(ch)

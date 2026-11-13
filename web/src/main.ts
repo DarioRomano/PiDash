@@ -132,8 +132,7 @@ function onPhotos(st: PhotosStatus) {
   // First run: a source is configured but no folders have been chosen yet.
   if (st.enabled && !st.indexing && st.count === 0 && st.selection.folders.length === 0 && !st.error && !photosHintShown) {
     photosHintShown = true;
-    const where = lanAddress ? `http://${lanAddress}:${location.port || "80"}/photos` : "the phone remote";
-    toast(`Choose the folders for the background photos: open ${where}`, 15000);
+    toast("Choose the photos for the background: press OK, open Settings, then Background photos.", 15000);
   }
 }
 
@@ -169,50 +168,15 @@ function openHelp() {
 }
 
 // --- Settings -------------------------------------------------------------------
-// Settings need typing, so the TV points to the phone, and offers to open the
-// page right here for those with a mouse and keyboard on the Pi.
+// The settings page opens right on the TV, where it is driven with the remote.
 
 const SETTINGS_ID = "__settings";
 const GEAR_GLYPH =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
   '<circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.8 1.8M16.7 16.7l1.8 1.8M18.5 5.5l-1.8 1.8M7.3 16.7l-1.8 1.8"/></svg>';
-const settingsPanel = $("#settings-panel");
-let settingsOpen = false;
 
-function openSettingsPanel() {
-  rail.close();
-  const address = lanAddress ? `http://${lanAddress}:${location.port || "80"}/settings` : "the PiDash address followed by /settings";
-  const h = document.createElement("h2");
-  h.textContent = "Settings";
-  const p1 = document.createElement("p");
-  p1.textContent = "Weather, background photos and apps are set up on your phone or computer. Open:";
-  const url = document.createElement("p");
-  url.className = "sheet-url";
-  url.textContent = address;
-  const p2 = document.createElement("p");
-  p2.textContent = "With a mouse and keyboard connected to the Pi, press OK or click to open the settings right here.";
-  const foot = document.createElement("footer");
-  foot.className = "help-foot";
-  foot.textContent = "OK or click: open here  ·  Back: close";
-  settingsPanel.replaceChildren(h, p1, url, p2, foot);
-  settingsOpen = true;
-  settingsPanel.classList.add("open");
-  stage.classList.add("panel-open");
-}
-
-function closeSettingsPanel() {
-  if (!settingsOpen) return;
-  settingsOpen = false;
-  settingsPanel.classList.remove("open");
-  stage.classList.toggle("panel-open", weather.isOpen || help.isOpen);
-}
-
-/** While the panel is open, OK opens the page here; anything else closes it. */
-function handleSettingsPanel(action: Action): boolean {
-  if (!settingsOpen) return false;
-  if (action === "select") location.href = "/settings?from=tv";
-  else closeSettingsPanel();
-  return true;
+function openSettings() {
+  location.href = "/settings?from=tv";
 }
 
 // --- Panel rail and apps ------------------------------------------------------
@@ -316,7 +280,7 @@ async function activateRailItem(item: RailItem) {
     return;
   }
   if (item.id === SETTINGS_ID) {
-    openSettingsPanel();
+    openSettings();
     return;
   }
   const stopping = appsStatus.running === item.id;
@@ -459,9 +423,8 @@ input.on((action) => {
     return;
   }
   if (help.handle(action)) return;
-  if (handleSettingsPanel(action)) return;
   if (action === "settings") {
-    openSettingsPanel();
+    openSettings();
     return;
   }
   if (action === "help") {
@@ -597,10 +560,6 @@ window.addEventListener("pointerdown", pointerActive);
 // whatever is open.
 stage.addEventListener("click", (e) => {
   if (help.isOpen) return help.close();
-  if (settingsOpen) {
-    location.href = "/settings?from=tv";
-    return;
-  }
   if (weather.isOpen) return weather.close();
   if ((e.target as Element).closest("#hud")) return;
   if (rail.isOpen) rail.close();
@@ -619,7 +578,7 @@ window.addEventListener(
   "wheel",
   (e) => {
     e.preventDefault();
-    if (help.isOpen || weather.isOpen || settingsOpen) return;
+    if (help.isOpen || weather.isOpen) return;
     const now = performance.now();
     if (now - lastWheel < (rail.isOpen ? 110 : 450)) return;
     const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;

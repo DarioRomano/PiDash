@@ -1,3 +1,4 @@
+@import "./tv.css";
 :root {
   --bg: #0b0d12; --panel: #151925; --line: #232a3b; --fg: #f4f5f7; --dim: #8b93a7;
   --accent: #7cc4ff; --ok: #6fd08c; --bad: #f2a0a3;

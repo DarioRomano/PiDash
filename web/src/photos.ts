@@ -1,5 +1,6 @@
 // Picker for the folders and albums of the background slideshow. Opened from the
 // phone remote and from the settings page.
+import { ask, onTV, startTVNav } from "./tvnav";
 import type { PhotoFolder, PhotoSelection, PhotosStatus } from "./types";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -234,6 +235,24 @@ async function start() {
   // Live progress while the Pi reads the chosen folders.
   const events = new EventSource("/events");
   events.addEventListener("photos", (e) => showStatus(JSON.parse((e as MessageEvent).data)));
+}
+
+// On the TV: Back returns to the settings, after offering to save.
+if (onTV) {
+  document.querySelector<HTMLAnchorElement>(".back")!.href = "/settings?from=tv";
+  startTVNav({
+    onBack: async () => {
+      if (!saveBtn.disabled) {
+        const save = await ask("Use the chosen photos?", "Use them", "Leave without saving");
+        if (save === null) return;
+        if (save) {
+          saveBtn.click();
+          return;
+        }
+      }
+      location.href = "/settings?from=tv";
+    },
+  });
 }
 
 void start();

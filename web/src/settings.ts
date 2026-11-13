@@ -1,4 +1,4 @@
-export {};
+import { ask, onTV, startTVNav } from "./tvnav";
 // The settings page: weather, background photos and apps. Made for a phone,
 // and equally usable on the TV with a mouse and keyboard.
 
@@ -52,11 +52,12 @@ const statusEl = $("status");
 const saveBtn = $<HTMLButtonElement>("save");
 const summary = $("summary");
 
-const fromTV = new URLSearchParams(location.search).get("from") === "tv";
-if (fromTV) {
+if (onTV) {
   const back = $<HTMLAnchorElement>("back");
   back.href = "/";
   back.setAttribute("aria-label", "Back to the dashboard");
+  $<HTMLAnchorElement>("p-folders").href = "/photos?from=tv";
+  $("tv-help").hidden = false;
 }
 
 let info: Info;
@@ -401,6 +402,23 @@ async function load() {
   fill(await res.json());
   $("main").hidden = false;
   $("footer").hidden = false;
+}
+
+// On the TV: Back leaves for the dashboard, after offering to save.
+if (onTV) {
+  startTVNav({
+    onBack: async () => {
+      if (!saveBtn.disabled) {
+        const save = await ask("Save the changes?", "Save", "Leave without saving");
+        if (save === null) return;
+        if (save) {
+          saveBtn.click();
+          return; // stay to see whether it worked; Back again leaves
+        }
+      }
+      location.href = "/";
+    },
+  });
 }
 
 load()

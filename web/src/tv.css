@@ -1,0 +1,37 @@
+/* The settings pages on the TV, driven with the remote (see tvnav.ts). */
+html.tv, html.tv body { cursor: none; }
+html.tv body { max-width: 860px; padding-top: 28px; }
+html.tv .tv-focus { outline: 3px solid var(--accent) !important; outline-offset: 2px; box-shadow: 0 0 0 7px rgba(124, 196, 255, 0.18); }
+html.tv input[type="checkbox"].tv-focus { outline-offset: 4px; }
+html.tv .field input:focus, html.tv .field select:focus { outline: none; }
+.tv-help { margin: -6px 0 16px; }
+
+.tv-layer {
+  position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); z-index: 50;
+  width: min(860px, 100%); background: #10141f; border: 1px solid var(--line); border-bottom: 0;
+  border-radius: 20px 20px 0 0; padding: 18px 20px 22px; box-shadow: 0 -18px 60px rgba(0, 0, 0, 0.6);
+}
+.tv-chooser h2 { margin: 0 0 12px; font-size: 17px; font-weight: 600; color: var(--fg); text-transform: none; letter-spacing: 0; }
+.tv-list { max-height: 46vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 8px; margin: -8px; }
+.tv-row { padding: 13px 16px; border-radius: 12px; background: #1a2030; font-size: 16px; cursor: pointer; }
+.tv-foot { margin-top: 14px; font-size: 13px; color: var(--dim); }
+
+.tv-kb-label { font-size: 13px; color: var(--dim); }
+.tv-kb-value {
+  margin: 6px 0 14px; padding: 12px 14px; border-radius: 12px; background: #0b0d12; border: 1px solid var(--line);
+  font-size: 18px; min-height: 48px; overflow-wrap: anywhere;
+}
+.tv-kb-value.empty { color: var(--dim); }
+.tv-keys { display: flex; flex-direction: column; gap: 7px; }
+.tv-key-row { display: flex; gap: 7px; justify-content: center; }
+.tv-key {
+  flex: 1 1 0; min-width: 0; height: 50px; border-radius: 11px; background: #1f2536; display: grid; place-items: center;
+  font-size: 19px; cursor: pointer; user-select: none;
+}
+.tv-key.wide { flex-grow: 1.6; font-size: 15px; }
+.tv-key.wider { flex-grow: 3.4; font-size: 15px; }
+.tv-key.done { background: #2b5f8f; }
+.tv-layer .tv-focus { outline: 3px solid var(--accent); outline-offset: 1px; background: #2c3650; }
+.tv-layer .tv-key.done.tv-focus { background: #3878b4; }
+/* The remote's Back button does this; a control for it would only be in the way. */
+html.tv .back { display: none; }
