@@ -16,6 +16,10 @@
       </div>
       <div id="scrim" aria-hidden="true"></div>
 
+      <!-- Everything that is drawn on top of the photo. This part is nudged
+           by a few pixels now and then (see pixel_shift); the photo and its
+           darkening above stay put, so no edge of the screen is ever bare. -->
+      <div id="ui">
       <main id="overlay" data-density="compact">
         <section id="clock">
           <div id="time"><span id="hm">--:--</span><span id="ampm"></span></div>
@@ -52,6 +56,7 @@
       <div id="toast" role="status"></div>
 
       <div id="exit-hint" role="status">Keep holding to exit to the desktop…</div>
+      </div>
     </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/DarioRomano/PiDash/internal/apps"
+	"github.com/DarioRomano/PiDash/internal/bluetooth"
 	"github.com/DarioRomano/PiDash/internal/config"
 	"github.com/DarioRomano/PiDash/internal/hass"
 	"github.com/DarioRomano/PiDash/internal/input"
@@ -50,6 +51,7 @@ type Server struct {
 	tv         *tv.Service
 	updater    *update.Service
 	remote     *input.Remote
+	bluetooth  bluetooth.Manager
 	problems   *logring.Ring
 	photoState string
 	pin        pinGuard
@@ -90,6 +92,8 @@ type Deps struct {
 	// the status page.
 	Remote   *input.Remote
 	Problems *logring.Ring
+	// Bluetooth manages the Pi's Bluetooth devices; may be nil.
+	Bluetooth bluetooth.Manager
 	// Version is the PiDash version, shown on the phone remote.
 	Version string
 	// Notices are start-up problems to show on the TV.
@@ -120,6 +124,8 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("GET /api/config", s.handleConfig)
 	s.mux.HandleFunc("GET /api/state", s.handleState)
 	s.mux.HandleFunc("GET /api/status", s.handleStatus)
+	s.mux.HandleFunc("GET /api/bluetooth", s.handleBluetooth)
+	s.mux.HandleFunc("POST /api/bluetooth/{action}", s.handleBluetoothAction)
 	s.mux.HandleFunc("POST /api/input", s.handleInput)
 	if d.TestHooks {
 		// For the end-to-end tests: a button press as if read from the TV remote.
@@ -172,7 +178,7 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("POST /api/settings/home-entities", s.handleHomeEntities)
 	s.mux.HandleFunc("POST /api/home/activate", s.handleHomeActivate)
 	s.updater = d.Updater
-	s.remote, s.problems = d.Remote, d.Problems
+	s.remote, s.problems, s.bluetooth = d.Remote, d.Problems, d.Bluetooth
 	s.mux.HandleFunc("GET /api/update", s.handleUpdate)
 	s.mux.HandleFunc("POST /api/update/check", s.handleUpdate)
 	s.mux.HandleFunc("POST /api/update/install", s.handleUpdateInstall)

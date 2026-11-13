@@ -31,9 +31,11 @@ const CONTROLS = "a[href], button, input, select";
 let layer: Layer | null = null;
 let current: HTMLElement | null = null;
 let options: Options;
+let started = false;
 
 export function startTVNav(opts: Options) {
   options = opts;
+  started = true;
   const html = document.documentElement;
   html.classList.add("tv");
   // The pages are laid out for a narrow screen; enlarge them to couch size.
@@ -154,6 +156,15 @@ function isText(el: EventTarget | null): el is HTMLInputElement {
   return el instanceof HTMLInputElement && !["checkbox", "radio", "button", "submit", "range"].includes(el.type);
 }
 
+/**
+ * Moves the highlight to a control. For a page that has just replaced the
+ * control that had it: called right away, it keeps the highlight from
+ * jumping to the top of the page.
+ */
+export function highlight(el: HTMLElement | null) {
+  if (started && el && usable(el)) focus(el);
+}
+
 function usable(el: HTMLElement): boolean {
   return el.isConnected && el.getClientRects().length > 0 && !(el as HTMLButtonElement).disabled && !el.closest("[data-tv-layer]");
 }
@@ -186,19 +197,34 @@ function focus(el: HTMLElement | null) {
 function nearest(from: DOMRect, dir: Dir, candidates: HTMLElement[]): HTMLElement | null {
   const cx = from.left + from.width / 2;
   const cy = from.top + from.height / 2;
+
+  if (dir === "down" || dir === "up") {
+    // The pages are one column of rows. Up and Down go to the next row and,
+    // within it, to the control closest sideways. A row is never jumped
+    // over, however far to the side its only button sits: a list's buttons
+    // are at its right edge, and the field below it spans the whole width.
+    const on = candidates
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        const gap = dir === "down" ? r.top - from.bottom : from.top - r.bottom;
+        // Overlapping sideways counts as straight above or below.
+        const aside = r.right < from.left || r.left > from.right ? Math.abs(r.left + r.width / 2 - cx) : 0;
+        return { el, r, gap, aside };
+      })
+      .filter((c) => c.gap >= -2);
+    if (on.length === 0) return null;
+    const first = on.reduce((a, b) => (b.gap < a.gap ? b : a));
+    // Everything level with the closest control is in its row.
+    const row = on.filter((c) => (dir === "down" ? c.r.top < first.r.bottom - 2 : c.r.bottom > first.r.top + 2));
+    return row.reduce((a, b) => (b.aside < a.aside || (b.aside === a.aside && b.gap < a.gap) ? b : a)).el;
+  }
+
   let best: HTMLElement | null = null;
   let bestScore = Infinity;
   for (const el of candidates) {
     const r = el.getBoundingClientRect();
-    let gap: number, aside: number;
-    if (dir === "down" || dir === "up") {
-      gap = dir === "down" ? r.top - from.bottom : from.top - r.bottom;
-      // Overlapping sideways counts as straight above or below.
-      aside = r.right < from.left || r.left > from.right ? Math.abs(r.left + r.width / 2 - cx) : 0;
-    } else {
-      gap = dir === "right" ? r.left - from.right : from.left - r.right;
-      aside = r.bottom < from.top || r.top > from.bottom ? Math.abs(r.top + r.height / 2 - cy) * 4 : 0;
-    }
+    const gap = dir === "right" ? r.left - from.right : from.left - r.right;
+    const aside = r.bottom < from.top || r.top > from.bottom ? Math.abs(r.top + r.height / 2 - cy) * 4 : 0;
     if (gap < -2) continue;
     const score = gap + aside * 0.6;
     if (score < bestScore) {

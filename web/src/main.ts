@@ -14,6 +14,8 @@ const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)
 
 const fit = $("#fit");
 const stage = $("#stage");
+/** The part of the stage drawn over the photo; see pixel_shift. */
+const ui = $("#ui");
 const exitHint = $("#exit-hint");
 const toastEl = $("#toast");
 const railHint = $("#rail-hint");
@@ -291,7 +293,7 @@ radio.preload = "none";
 const radioLabel = document.createElement("div");
 radioLabel.id = "radio";
 radioLabel.hidden = true;
-stage.appendChild(radioLabel);
+ui.appendChild(radioLabel);
 
 function showRadio() {
   const st = radioStations[radioPlaying];
@@ -656,11 +658,16 @@ function applyConfig(cfg: ClientConfig) {
   sysBadge.hidden = !d.debug_keys;
 }
 
+// Pages that cover the screen reach this far past its edges (see #help in
+// the styles, which allows a little more).
+const MAX_PIXEL_SHIFT = 20;
+
 function startPixelShift(max: number) {
   clearInterval(pixelShiftTimer);
   stage.style.setProperty("--shift-x", "0px");
   stage.style.setProperty("--shift-y", "0px");
   if (max <= 0) return;
+  max = Math.min(max, MAX_PIXEL_SHIFT);
   pixelShiftTimer = window.setInterval(() => {
     const x = Math.round((Math.random() * 2 - 1) * max);
     const y = Math.round((Math.random() * 2 - 1) * max);
@@ -726,7 +733,7 @@ const staleProviders = new Set<string>();
 const sysBadge = document.createElement("div");
 sysBadge.id = "sys";
 sysBadge.hidden = true;
-stage.appendChild(sysBadge);
+ui.appendChild(sysBadge);
 
 function onState(entry: StateEntry) {
   if (entry.stale) staleProviders.add(entry.provider);

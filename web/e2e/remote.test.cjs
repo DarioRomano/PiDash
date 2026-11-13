@@ -297,3 +297,104 @@ test("settings: emulators are offered, with how to install one that is missing",
   assert.deepEqual(page.problems, []);
   await page.context().close();
 });
+
+// --- The picture reaches every edge ----------------------------------------------
+
+test("burn-in protection moves texts and tiles, never the photo or its darkening", async () => {
+  // A zoomed photo reaches past the screen's edge. If the darkening on top of
+  // it moved with the texts, a lighter strip of photo would show at the edge.
+  const page = await dashboard();
+  const box = (id) =>
+    page.evaluate((id) => {
+      const r = document.getElementById(id).getBoundingClientRect();
+      return [r.left, r.top, r.right, r.bottom].map((v) => Math.round(v * 100) / 100);
+    }, id);
+  const clockBefore = await box("clock");
+  await page.evaluate(() => {
+    const stage = document.getElementById("stage");
+    stage.style.setProperty("--shift-x", "4px");
+    stage.style.setProperty("--shift-y", "-3px");
+  });
+  await page.waitForTimeout(1600); // the move takes 1.2 s
+  const screen = [0, 0, 1920, 1080];
+  assert.deepEqual(await box("backdrop"), screen, "the photo layer still covers the whole screen");
+  assert.deepEqual(await box("scrim"), screen, "the darkening still covers the whole screen");
+  const clockAfter = await box("clock");
+  assert.deepEqual([clockAfter[0] - clockBefore[0], clockAfter[1] - clockBefore[1]], [4, -3], "the clock did move");
+  // Pages that cover the screen move too, so their background reaches past their edges.
+  for (const id of ["help", "status-panel", "weather-panel"]) {
+    const spread = await page.evaluate((id) => getComputedStyle(document.getElementById(id)).boxShadow, id);
+    assert.match(spread, /\b2[0-9]px$/, `${id} needs a background that reaches past the screen's edge, got "${spread}"`);
+  }
+  await page.context().close();
+});
+
+// --- Bluetooth -------------------------------------------------------------------
+
+test("settings on the TV: Bluetooth devices are found, paired and forgotten with the remote", async () => {
+  // A Pi of its own: the devices it ends up with must not matter to other tests.
+  const own = await startPiDash(APPS);
+  try {
+    const page = await openPage(own.base, "/settings?from=tv");
+    const remote = remoteFor(page, own.base);
+    await page.waitForSelector("#bt-list li");
+    // What the highlight is on: "<button>@<device>".
+    const lit = () =>
+      page.evaluate(() => {
+        const e = document.querySelector(".tv-focus");
+        return e ? `${e.id || e.dataset.role}@${e.closest("li")?.dataset.address ?? ""}` : "";
+      });
+    const rows = (list) => page.evaluate((list) => [...document.querySelectorAll(`#${list} li`)].map((li) => li.innerText.replace(/\n+/g, " / ")), list);
+    const until = async (press, reached, what) => {
+      for (let i = 0; i < 90; i++) {
+        if (reached(await lit())) return;
+        await remote.press(press);
+      }
+      assert.fail(`the highlight never reached ${what}; it is on "${await lit()}"`);
+    };
+
+    assert.deepEqual(await rows("bt-list"), ["Living room speaker / Headphones or speaker · not connected / Connect / Forget", "Xbox Wireless Controller / Game controller · connected / Disconnect / Forget"]);
+    assert.deepEqual(await rows("bt-found"), [], "nothing is listed as nearby before searching");
+
+    // Down the page to the paired devices, and on to the buttons below them.
+    await until("down", (l) => l.includes("@AA:"), "a paired device");
+    await until("down", (l) => l.startsWith("bt-"), "the buttons under the devices");
+    if ((await lit()).startsWith("bt-power")) await remote.press("left");
+    assert.equal(await lit(), "bt-search@");
+    await remote.press("select");
+    await page.waitForFunction(() => document.querySelectorAll("#bt-found li").length === 2);
+    assert.equal(await page.locator("#bt-search").innerText(), "Stop looking");
+
+    // The found devices are the next rows down, although their buttons sit
+    // at the far right: no row is jumped over.
+    await remote.press("down");
+    assert.equal(await lit(), "toggle@AA:00:00:00:00:03", "Down from the search button goes to the first device found");
+    await remote.press("select");
+    await page.waitForFunction(() => /is paired/.test(document.getElementById("bt-result").textContent));
+    assert.ok((await rows("bt-list")).includes("8BitDo Pro 2 / Game controller · connected / Disconnect / Forget"), `paired devices: ${await rows("bt-list")}`);
+    assert.deepEqual(await rows("bt-found"), ["Keyboard K380 / Keyboard · nearby / Pair"]);
+    // The row moved to the other list; the highlight went with it instead of
+    // jumping to the top of the page.
+    assert.equal(await lit(), "toggle@AA:00:00:00:00:03", "the highlight stays with the device that was paired");
+
+    await remote.press("right");
+    assert.equal(await lit(), "forget@AA:00:00:00:00:03");
+    await remote.press("select");
+    await page.waitForFunction(() => /was forgotten/.test(document.getElementById("bt-result").textContent));
+    assert.equal((await rows("bt-list")).length, 2, "the device is gone from the paired ones");
+    assert.equal(await lit(), "toggle@AA:00:00:00:00:03", "the highlight is still on that device, now among those nearby");
+
+    // Switching Bluetooth off empties the lists and leaves a way back on.
+    await until("up", (l) => l.startsWith("bt-"), "the buttons");
+    if ((await lit()).startsWith("bt-search")) await remote.press("right");
+    await remote.press("select");
+    await page.waitForFunction(() => document.getElementById("bt-power").textContent === "Switch Bluetooth on");
+    assert.deepEqual(await rows("bt-list"), []);
+    assert.equal(await lit(), "bt-power@", "the highlight stays on the switch");
+    assert.equal(await page.locator("#bt-status").innerText(), "Bluetooth is switched off.");
+    assert.deepEqual(page.problems, []);
+    await page.context().close();
+  } finally {
+    await own.stop();
+  }
+});

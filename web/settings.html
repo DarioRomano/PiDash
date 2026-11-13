@@ -261,6 +261,28 @@
         </p>
       </section>
 
+      <section class="card" id="bt-card">
+        <h2>Bluetooth</h2>
+        <p class="hint">
+          Game controllers, headphones, speakers and keyboards. A device paired here connects by itself when it is
+          switched on.
+        </p>
+        <p id="bt-status" class="hint" hidden></p>
+        <ul id="bt-list" class="rows"></ul>
+        <p id="bt-none" class="hint" hidden>No devices are paired yet.</p>
+        <div class="pair">
+          <button id="bt-search" type="button" class="secondary wide" hidden>Look for new devices</button>
+          <button id="bt-power" type="button" class="secondary wide" hidden>Switch Bluetooth off</button>
+        </div>
+        <p id="bt-how" class="hint" hidden>
+          Put the new device into pairing mode first: on most controllers, hold the pairing button until the light
+          flashes quickly. The search stops by itself after a minute.
+        </p>
+        <p id="bt-found-title" class="hint" hidden>Found nearby:</p>
+        <ul id="bt-found" class="rows"></ul>
+        <p id="bt-result" class="result"></p>
+      </section>
+
       <section class="card">
         <h2>Lock</h2>
         <p class="hint">With a PIN, settings can be looked at but not changed without it.</p>

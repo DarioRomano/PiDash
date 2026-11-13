@@ -112,6 +112,7 @@ What the installer does:
 | Launch an app | Press **OK** on the dashboard to open the app row, choose with ◀ ▶ and press OK. Or tap the app on the phone remote |
 | Move an app in the app row | Select it, press ▲, carry it with ◀ ▶, press **OK**. **Back** leaves it where it was |
 | See how PiDash is doing | Choose **Status** in the app row. See [Status page](#status-page) |
+| Pair a Bluetooth controller, headphones or a speaker | **Settings** in the app row, then **Bluetooth**. See [Bluetooth](#bluetooth) |
 | Use a game controller | Plug it in or pair it. Switching it on also switches the TV on. See [Game controller](#game-controller) |
 | Get back from an app | **Hold Back for 2 seconds** on the TV remote, hold **Esc** on a keyboard, or tap **Back to dashboard** on the phone remote |
 | Use the phone as mouse and keyboard | Switch it on once (see [Phone as mouse and keyboard](#phone-as-mouse-and-keyboard)), then use the touchpad on the phone remote |
@@ -376,6 +377,28 @@ again; the tile shows the time left. A minute before the end the screen says
 so. When the time is up, an app that is still playing is closed and the TV
 is switched to standby. The tile only appears when the TV can be switched
 over HDMI-CEC.
+
+### Bluetooth
+
+**Settings → Bluetooth** manages the Pi's Bluetooth devices with the TV
+remote, so pairing a controller does not need a mouse and the desktop:
+
+- The devices the Pi knows are listed with **Connect** / **Disconnect** and
+  **Forget**.
+- **Look for new devices** searches for a minute. Put the new device into
+  pairing mode first (on most controllers: hold the pairing button until the
+  light flashes quickly), then press **Pair** on its row.
+- A paired device is trusted, so from then on it connects by itself when it is
+  switched on. For a controller that also [switches the TV on](#game-controller).
+- **Switch Bluetooth off** switches the Pi's Bluetooth off entirely.
+
+Controllers, headphones, speakers, mice and most keyboards pair this way. A
+device that insists on a code being typed is paired from the desktop's
+Bluetooth menu instead. Headphones and speakers are connected here, but which
+output the sound goes to is chosen in the desktop's volume menu.
+
+Things nearby that have no name (other people's phones, beacons) are left out
+of the list. With a [lock](#lock) set, changes ask for the PIN.
 
 ### Lock
 
@@ -971,9 +994,9 @@ logo button being held. To change what a button does, name it under
 `[input.remote_keys]`, for example `BTN_NORTH = "weather"`; `evtest` shows the
 names.
 
-Pair a Bluetooth controller once from the desktop's Bluetooth menu. It shows
-up under **Listening to** on the [status page](#status-page) when PiDash has
-found it.
+Pair a Bluetooth controller once under [Settings → Bluetooth](#bluetooth). It
+shows up under **Listening to** on the [status page](#status-page) when PiDash
+has found it.
 
 **Switching the controller on switches the TV on**, the way a games console
 does. A Bluetooth controller switches itself off when left alone; when it is
@@ -1144,6 +1167,7 @@ internal/input/      TV remote handling (key map, passing buttons on to apps, ho
 internal/settings/   what the settings page saves, laid over config.toml
 internal/cec/        HDMI-CEC through cec-ctl: register with the TV, power on/off
 internal/tv/         daily TV power schedule
+internal/bluetooth/  Bluetooth devices: list, search, pair, connect, forget
 deploy/              the installer run on the Pi, uninstaller, systemd units, kiosk launcher
 install.sh           one-line installer and updater: downloads a release and runs deploy/install.sh
 scripts/dist.sh      builds the release packages

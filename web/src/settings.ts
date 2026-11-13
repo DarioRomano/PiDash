@@ -1,5 +1,6 @@
 import { LANGUAGES, setLanguage, t } from "./i18n";
 import { ask, enterPIN, onTV, startTVNav } from "./tvnav";
+import { startBluetooth } from "./bluetooth";
 // The settings page: weather, background photos and apps. Made for a phone,
 // and equally usable on the TV with a mouse and keyboard.
 
@@ -843,6 +844,8 @@ async function load() {
   $("main").hidden = false;
   $("footer").hidden = false;
 }
+
+startBluetooth(send);
 
 // On the TV: Back leaves for the dashboard, after offering to save.
 if (onTV) {

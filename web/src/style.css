@@ -41,10 +41,22 @@ html, body {
 #stage {
   position: absolute;
   inset: 0;
+}
+/* The clock, texts and tiles move a few pixels every few minutes so nothing
+   burns into the screen. Only they move: a photo that is zoomed in reaches
+   past the screen's edge, and if the darkening on top of it moved away it
+   would leave a lighter strip there. */
+#ui {
+  position: absolute;
+  inset: 0;
   transform: translate(var(--shift-x, 0px), var(--shift-y, 0px));
   transition: transform 1.2s ease-in-out;
   will-change: transform;
 }
+/* Pages that cover the screen move with the rest, so their background
+   reaches a little past their edges. */
+#help, #status-panel { box-shadow: 0 0 0 24px rgba(12, 14, 20, 0.95); }
+#weather-panel { box-shadow: 0 0 0 24px rgba(12, 14, 20, 0.93); }
 
 #backdrop {
   position: absolute;

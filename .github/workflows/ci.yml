@@ -30,6 +30,10 @@ jobs:
       - name: Lint
         run: make lint
 
+      # A stand-in for the Bluetooth service, for the tests of internal/bluetooth.
+      - name: Install the Bluetooth stand-in
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dbus-daemon python3-dbusmock
+
       - name: Test
         run: go test -race ./...
 

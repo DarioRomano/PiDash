@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/DarioRomano/PiDash/internal/apps"
+	"github.com/DarioRomano/PiDash/internal/bluetooth"
 	"github.com/DarioRomano/PiDash/internal/cec"
 	"github.com/DarioRomano/PiDash/internal/config"
 	"github.com/DarioRomano/PiDash/internal/hass"
@@ -248,6 +249,14 @@ func main() {
 		Busy: func() bool { return appManager.Status().Running != "" },
 	})
 
+	// Bluetooth devices, managed from the settings page.
+	var blue bluetooth.Manager = bluetooth.NewMock()
+	if !*mock {
+		real := bluetooth.New(log)
+		defer real.Close()
+		blue = real
+	}
+
 	// The TV remote, keyboards and game controllers, read below the desktop.
 	var srv *server.Server
 	var remote *input.Remote
@@ -299,7 +308,7 @@ func main() {
 		Kiosk: kiosk.New(cfg.Kiosk.Unit, *mock, log), Apps: appManager, Photos: photoService,
 		Input: phoneInput, TV: tvService, Version: version, NewRunner: newRunner, Updater: updater, PhotoStatePath: photoStatePath(), TestHooks: *mock,
 		Notices: notices, URLFile: server.URLFile(), Settings: store, BaseListen: baseListen,
-		Remote: remote, Problems: problems,
+		Remote: remote, Problems: problems, Bluetooth: blue,
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
