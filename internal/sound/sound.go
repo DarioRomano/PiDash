@@ -7,18 +7,21 @@
 package sound
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -34,7 +37,13 @@ type Output struct {
 	// Volume is in percent; 100 is full.
 	Volume int  `json:"volume"`
 	Muted  bool `json:"muted"`
+	// Unplugged marks an output with nothing connected to it, such as the
+	// second HDMI socket of a Pi with one TV.
+	Unplugged bool `json:"unplugged,omitempty"`
 }
+
+// Usable reports whether sound sent to the output can be heard.
+func (o Output) Usable() bool { return !o.Unplugged }
 
 // Status is what the settings page shows.
 type Status struct {
@@ -55,6 +64,9 @@ type Manager interface {
 	SetMuted(ctx context.Context, id string, muted bool) error
 	// Test plays a short sound on an output.
 	Test(ctx context.Context, id string) error
+	// Watch calls changed whenever an output appears, disappears or is
+	// chosen, until ctx ends.
+	Watch(ctx context.Context, changed func())
 }
 
 // ErrUnknown is returned for an output that is not there (any more).
@@ -64,6 +76,9 @@ var ErrUnknown = errors.New("this output is not there any more")
 type Pactl struct {
 	// Run executes a tool and returns what it printed; nil means the real one.
 	Run func(ctx context.Context, name string, args ...string) ([]byte, error)
+	// Subscribe starts the stream of the sound service's events, one per
+	// line; nil means "pactl subscribe".
+	Subscribe func(ctx context.Context) (io.ReadCloser, error)
 }
 
 func (p *Pactl) run(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -91,6 +106,23 @@ type sink struct {
 		Percent string `json:"value_percent"`
 	} `json:"volume"`
 	Properties map[string]string `json:"properties"`
+	ActivePort string            `json:"active_port"`
+	Ports      []struct {
+		Name         string `json:"name"`
+		Availability string `json:"availability"`
+	} `json:"ports"`
+}
+
+// unplugged reports whether the socket the output uses has nothing in it.
+// Outputs without sockets (Bluetooth), and sockets that cannot tell, count
+// as plugged in.
+func (s sink) unplugged() bool {
+	for _, p := range s.Ports {
+		if p.Name == s.ActivePort || len(s.Ports) == 1 {
+			return p.Availability == "not available"
+		}
+	}
+	return false
 }
 
 func (s sink) volume() int {
@@ -161,7 +193,7 @@ func (p *Pactl) Status(ctx context.Context) Status {
 	st.Available = true
 	names := map[string]int{}
 	for _, s := range sinks {
-		o := Output{ID: s.Name, Name: strings.TrimSpace(s.Description), Kind: s.kind(), Active: s.Name == def, Volume: s.volume(), Muted: s.Mute}
+		o := Output{ID: s.Name, Name: strings.TrimSpace(s.Description), Kind: s.kind(), Active: s.Name == def, Volume: s.volume(), Muted: s.Mute, Unplugged: s.unplugged()}
 		if o.Name == "" {
 			o.Name = s.Name
 		}
@@ -264,6 +296,75 @@ func (p *Pactl) Test(ctx context.Context, id string) error {
 		return fmt.Errorf("could not play the test sound: %w", err)
 	}
 	return nil
+}
+
+// Watch implements Manager. It listens to the sound service's own stream of
+// events, so a change is noticed the moment it happens and nothing has to
+// be asked again and again.
+func (p *Pactl) Watch(ctx context.Context, changed func()) {
+	subscribe := p.Subscribe
+	if subscribe == nil {
+		subscribe = func(ctx context.Context) (io.ReadCloser, error) {
+			cmd := exec.CommandContext(ctx, "pactl", "subscribe")
+			out, err := cmd.StdoutPipe()
+			if err != nil {
+				return nil, err
+			}
+			if err := cmd.Start(); err != nil {
+				return nil, err
+			}
+			go cmd.Wait()
+			return out, nil
+		}
+	}
+	// Connecting headphones is a burst of events; changed is called once
+	// when it is over.
+	var timer *time.Timer
+	var mu sync.Mutex
+	soon := func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if timer != nil {
+			timer.Stop()
+		}
+		timer = time.AfterFunc(400*time.Millisecond, changed)
+	}
+	for ctx.Err() == nil {
+		if stream, err := subscribe(ctx); err == nil {
+			lines := bufio.NewScanner(stream)
+			for lines.Scan() {
+				if outputEvent(lines.Text()) {
+					soon()
+				}
+			}
+			stream.Close()
+			// The service went away, or was restarted: what it offers may
+			// have changed meanwhile.
+			soon()
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(5 * time.Second):
+		}
+	}
+	mu.Lock()
+	if timer != nil {
+		timer.Stop()
+	}
+	mu.Unlock()
+}
+
+// outputEvent reports whether a line of "pactl subscribe" is about the
+// outputs: one appeared, disappeared or changed, or another became the one
+// in use. Lines look like "Event 'new' on sink #57". What is playing
+// ("sink-input") comes and goes all the time and is of no interest.
+func outputEvent(line string) bool {
+	_, what, ok := strings.Cut(line, " on ")
+	if !ok {
+		return false
+	}
+	kind, _, _ := strings.Cut(strings.TrimSpace(what), " ")
+	return kind == "sink" || kind == "server" || kind == "card"
 }
 
 // Chime returns a short two-note sound as a WAV file: enough to hear which

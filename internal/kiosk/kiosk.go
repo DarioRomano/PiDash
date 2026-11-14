@@ -57,6 +57,9 @@ func (c *Controller) Start(ctx context.Context) error { return c.run(ctx, "start
 // Stop closes the dashboard and returns to the desktop.
 func (c *Controller) Stop(ctx context.Context) error { return c.run(ctx, "stop", false) }
 
+// Restart closes the browser and opens it again.
+func (c *Controller) Restart(ctx context.Context) error { return c.run(ctx, "restart", true) }
+
 func (c *Controller) run(ctx context.Context, verb string, active bool) error {
 	if !c.Available() {
 		return ErrUnavailable

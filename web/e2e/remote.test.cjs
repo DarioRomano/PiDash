@@ -545,3 +545,122 @@ test("a controller's battery is shown with the Bluetooth devices and on the stat
     "the status page lists what is connected",
   );
 });
+
+// --- Headphones ----------------------------------------------------------------------
+
+test("the sound follows headphones, and the Sound tile moves it by hand", async () => {
+  const own = await startPiDash(APPS);
+  try {
+    const headphones = async (connected) => {
+      const res = await fetch(own.base + "/api/test/headphones", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ connected }) });
+      assert.equal(res.status, 204);
+    };
+    const inUse = async () => (await (await fetch(own.base + "/api/sound")).json()).outputs.find((o) => o.active)?.name;
+    await headphones(false); // the evening starts with the TV alone
+    const page = await openPage(own.base);
+    await page.waitForFunction(() => document.getElementById("backdrop").classList.contains("has-photo"), null, { timeout: 20000 });
+    await page.waitForTimeout(2000);
+    const remote = remoteFor(page, own.base);
+    await remote.press("select");
+    assert.ok(!(await tiles(page)).includes("Sound"), "with one output there is nothing to choose, and no Sound tile");
+
+    // Headphones are switched on: the sound goes there by itself, and the tile appears.
+    await headphones(true);
+    await page.waitForFunction(() => [...document.querySelectorAll(".tile")].some((t) => t.querySelector(".tile-label").textContent === "Sound"));
+    assert.equal(await inUse(), "Living room speaker");
+    const sub = () => page.evaluate(() => [...document.querySelectorAll(".tile")].find((t) => t.querySelector(".tile-label").textContent === "Sound")?.querySelector(".tile-sub").textContent);
+    assert.equal(await sub(), "Living room speaker", "the tile says where the sound is");
+
+    // OK on the tile moves it to the TV, although the headphones are still on.
+    await focusTile(page, remote, "Sound");
+    await remote.press("select");
+    await page.waitForFunction(() => /Sound now comes out of TV/.test(document.getElementById("toast").textContent));
+    assert.equal(await inUse(), "TV (HDMI)");
+    assert.equal(await sub(), "TV (HDMI)");
+    assert.equal(await rowOpen(page), true, "the app row stays open");
+    // And back again.
+    await remote.press("select");
+    await page.waitForFunction(() => /Sound now comes out of Living room speaker/.test(document.getElementById("toast").textContent));
+    assert.equal(await inUse(), "Living room speaker");
+
+    // Headphones off: the sound is on the TV again and the tile is gone.
+    await headphones(false);
+    await page.waitForFunction(() => ![...document.querySelectorAll(".tile .tile-label")].some((l) => l.textContent === "Sound"));
+    assert.equal(await inUse(), "TV (HDMI)");
+    assert.deepEqual(page.problems, []);
+    await page.context().close();
+  } finally {
+    await own.stop();
+  }
+});
+
+// --- A new version -----------------------------------------------------------------
+
+test("a new version is pointed out on the Settings tile, and said once", async () => {
+  const page = await openPage(pi.base, "/healthz"); // any page of this address, to set things up before the dashboard loads
+  let available = true;
+  await page.route("**/api/update", (route) =>
+    route.fulfill({ json: { current: "v1.0.0", latest: "v9.9.9", available, auto: false, possible: true, installing: false } }),
+  );
+  await page.evaluate(() => localStorage.removeItem("pidash-update-told"));
+  await page.goto(pi.base + "/");
+  await page.waitForFunction(() => document.getElementById("backdrop").classList.contains("has-photo"), null, { timeout: 20000 });
+  await page.waitForTimeout(2000);
+  const remote = remoteFor(page, pi.base);
+  const toast = () => page.evaluate(() => (document.getElementById("toast").classList.contains("visible") ? document.getElementById("toast").textContent : ""));
+  const settingsSub = () => page.evaluate(() => [...document.querySelectorAll(".tile")].find((t) => t.querySelector(".tile-label").textContent === "Settings")?.querySelector(".tile-sub").textContent);
+
+  assert.equal(await toast(), "", "nothing is said while nobody is using the TV");
+  await remote.press("select");
+  assert.match(await toast(), /PiDash v9\.9\.9 is available\. Install it under Settings, Updates\./);
+  assert.equal(await settingsSub(), "Update available");
+  assert.equal(await tile(page), 0, "the row still opens on its first tile");
+
+  // Said once: opening the row again, or loading the page again, does not repeat it.
+  await remote.press("back");
+  await page.evaluate(() => document.getElementById("toast").classList.remove("visible"));
+  await remote.press("select");
+  assert.equal(await toast(), "");
+  assert.equal(await settingsSub(), "Update available", "the tile keeps saying it");
+  await page.reload();
+  await page.waitForTimeout(1500);
+  await remote.press("select");
+  assert.equal(await toast(), "");
+
+  // With automatic updates on there is nothing to point out.
+  available = false;
+  await page.reload();
+  await page.waitForTimeout(1500);
+  await remote.press("select");
+  assert.equal(await settingsSub(), "");
+  assert.deepEqual(page.problems, []);
+  await page.context().close();
+});
+
+// --- Still alive ---------------------------------------------------------------------
+
+test("the dashboard and the settings on the TV report in, so a frozen page can be noticed", async () => {
+  for (const where of ["/", "/settings?from=tv"]) {
+    const page = await openPage(pi.base, "/healthz");
+    let reports = 0;
+    await page.route("**/api/alive", (route) => {
+      reports++;
+      return route.fulfill({ status: 204 });
+    });
+    await page.goto(pi.base + where);
+    await page.waitForTimeout(1200);
+    assert.equal(reports, 1, `${where} reports in when it loads`);
+    await page.context().close();
+  }
+  // The settings page on a phone is not the TV: it stays quiet.
+  const phone = await openPage(pi.base, "/healthz");
+  let reports = 0;
+  await phone.route("**/api/alive", (route) => {
+    reports++;
+    return route.fulfill({ status: 204 });
+  });
+  await phone.goto(pi.base + "/settings");
+  await phone.waitForTimeout(1200);
+  assert.equal(reports, 0);
+  await phone.context().close();
+});

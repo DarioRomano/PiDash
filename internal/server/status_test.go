@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"io/fs"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/DarioRomano/PiDash/internal/apps"
 	"github.com/DarioRomano/PiDash/internal/config"
@@ -89,5 +91,59 @@ func TestStatusReportWithoutTheOptionalParts(t *testing.T) {
 		if _, ok := rep[list].([]any); !ok {
 			t.Errorf("%s should be a list, also when empty: %v", list, rep[list])
 		}
+	}
+}
+
+type countingBrowser struct{ restarts int }
+
+func (c *countingBrowser) Active(context.Context) bool { return true }
+func (c *countingBrowser) Restart(context.Context) error {
+	c.restarts++
+	return nil
+}
+
+func TestOnlyTheBrowserOnThePiKeepsTheWatchdogQuiet(t *testing.T) {
+	cfg := config.Default()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	browser := &countingBrowser{}
+	now := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	dog := &kiosk.Watchdog{Browser: browser, Log: log, Now: func() time.Time { return now }}
+	var static fs.FS = fstest.MapFS{"index.html": {Data: []byte("<html>dash</html>")}}
+	s := New(cfg, log, static, Deps{
+		Kiosk: kiosk.New("", true, log), Apps: apps.NewManager(nil, &apps.Mock{}, log),
+		Input: input.NewService(false, log), TV: tv.New(tv.Options{TV: &fakeTV{}, Log: log}), Watchdog: dog,
+		NewRunner: func(publish func(providers.Entry)) *providers.Runner { return providers.NewRunner(log, publish) },
+	})
+	alive := func(from string) {
+		req := httptest.NewRequest("POST", "/api/alive", nil)
+		req.RemoteAddr = from
+		rec := httptest.NewRecorder()
+		s.mux.ServeHTTP(rec, req)
+		if rec.Code != 204 {
+			t.Fatalf("alive from %s: %d", from, rec.Code)
+		}
+	}
+	ctx := context.Background()
+	dog.Check(ctx)
+	alive("127.0.0.1:40000") // the dashboard on the TV has loaded
+
+	// A phone that has the dashboard open says nothing about the TV.
+	now = now.Add(2 * time.Minute)
+	alive("192.168.1.50:51234")
+	now = now.Add(2 * time.Minute)
+	if !dog.Check(ctx) || browser.restarts != 1 {
+		t.Fatalf("reports from a phone kept the watchdog quiet: %d restarts", browser.restarts)
+	}
+	// The browser on the Pi itself does, over either kind of address.
+	for _, from := range []string{"127.0.0.1:40000", "[::1]:40000"} {
+		now = now.Add(2 * time.Minute)
+		alive(from)
+		now = now.Add(2 * time.Minute)
+		if dog.Check(ctx) {
+			t.Errorf("a report from %s did not count", from)
+		}
+	}
+	if browser.restarts != 1 {
+		t.Errorf("restarts = %d, want 1", browser.restarts)
 	}
 }

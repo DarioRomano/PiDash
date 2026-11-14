@@ -41,19 +41,24 @@ import (
 
 // Server is the PiDash HTTP server.
 type Server struct {
-	cfg        config.Config
-	log        *slog.Logger
-	hub        *hub
-	runner     *providers.Runner
-	kiosk      *kiosk.Controller
-	apps       *apps.Manager
-	photos     *photos.Service // nil when no photo source is configured
-	input      *input.Service
-	tv         *tv.Service
-	updater    *update.Service
-	remote     *input.Remote
-	bluetooth  bluetooth.Manager
-	sound      sound.Manager
+	cfg       config.Config
+	log       *slog.Logger
+	hub       *hub
+	runner    *providers.Runner
+	kiosk     *kiosk.Controller
+	apps      *apps.Manager
+	photos    *photos.Service // nil when no photo source is configured
+	input     *input.Service
+	tv        *tv.Service
+	updater   *update.Service
+	remote    *input.Remote
+	bluetooth bluetooth.Manager
+	sound     sound.Manager
+	watchdog  *kiosk.Watchdog
+	// lastSound is what the dashboard was last told about the sound outputs,
+	// for pages that connect later.
+	soundMu    sync.Mutex
+	lastSound  *sound.Status
 	problems   *logring.Ring
 	photoState string
 	pin        pinGuard
@@ -98,6 +103,8 @@ type Deps struct {
 	Bluetooth bluetooth.Manager
 	// Sound chooses the sound output and its volume; may be nil.
 	Sound sound.Manager
+	// Watchdog is told when the dashboard on the TV reports in; may be nil.
+	Watchdog *kiosk.Watchdog
 	// Version is the PiDash version, shown on the phone remote.
 	Version string
 	// Notices are start-up problems to show on the TV.
@@ -128,6 +135,7 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("GET /api/config", s.handleConfig)
 	s.mux.HandleFunc("GET /api/state", s.handleState)
 	s.mux.HandleFunc("GET /api/status", s.handleStatus)
+	s.mux.HandleFunc("POST /api/alive", s.handleAlive)
 	s.mux.HandleFunc("GET /api/sound", s.handleSound)
 	s.mux.HandleFunc("POST /api/sound/{action}", s.handleSoundAction)
 	s.mux.HandleFunc("GET /api/bluetooth", s.handleBluetooth)
@@ -148,6 +156,25 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 				s.RemoteRepeat(req.Action)
 			} else {
 				s.RemoteAction(req.Action)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		})
+	}
+	if d.TestHooks {
+		// Headphones being switched on and off, for the end-to-end tests.
+		s.mux.HandleFunc("POST /api/test/headphones", func(w http.ResponseWriter, r *http.Request) {
+			var req struct {
+				Connected bool `json:"connected"`
+			}
+			mock, ok := s.sound.(*sound.Mock)
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil || !ok {
+				http.Error(w, "bad request", http.StatusBadRequest)
+				return
+			}
+			if req.Connected {
+				mock.Connect(sound.Speaker)
+			} else {
+				mock.Disconnect(sound.Speaker.ID)
 			}
 			w.WriteHeader(http.StatusNoContent)
 		})
@@ -191,7 +218,7 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("POST /api/settings/home-entities", s.handleHomeEntities)
 	s.mux.HandleFunc("POST /api/home/activate", s.handleHomeActivate)
 	s.updater = d.Updater
-	s.remote, s.problems, s.bluetooth, s.sound = d.Remote, d.Problems, d.Bluetooth, d.Sound
+	s.remote, s.problems, s.bluetooth, s.sound, s.watchdog = d.Remote, d.Problems, d.Bluetooth, d.Sound, d.Watchdog
 	s.mux.HandleFunc("GET /api/update", s.handleUpdate)
 	s.mux.HandleFunc("POST /api/update/check", s.handleUpdate)
 	s.mux.HandleFunc("POST /api/update/install", s.handleUpdateInstall)
@@ -217,6 +244,7 @@ func (s *Server) Run(ctx context.Context) error {
 	go s.apps.Run(ctx)
 	go s.tv.Run(ctx)
 	go s.watchBatteries(ctx, 2*time.Minute)
+	go s.followSound(ctx)
 	if s.photos != nil {
 		go s.photos.Run(ctx)
 	}
@@ -318,6 +346,20 @@ type inputEvent struct {
 	Source string `json:"source"`
 	// Repeat marks a direction sent again because its button is being held.
 	Repeat bool `json:"repeat,omitempty"`
+}
+
+// handleAlive is the dashboard on the TV saying that it is still running,
+// which it does every few seconds. Only the browser on the Pi itself counts:
+// a phone that has the dashboard open says nothing about the TV.
+func (s *Server) handleAlive(w http.ResponseWriter, r *http.Request) {
+	if s.watchdog != nil {
+		if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+			if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+				s.watchdog.Beat()
+			}
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // RemoteAction delivers a button press read directly from the TV remote to
@@ -1153,6 +1195,14 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := send("tv", s.tv.Status()); err != nil {
 		return
+	}
+	s.soundMu.Lock()
+	outputs := s.lastSound
+	s.soundMu.Unlock()
+	if outputs != nil {
+		if err := send("sound", outputs); err != nil {
+			return
+		}
 	}
 
 	ping := time.NewTicker(15 * time.Second)

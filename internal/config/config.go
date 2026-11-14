@@ -25,6 +25,7 @@ type Config struct {
 	Weather Weather `toml:"weather"`
 	Remote  Remote  `toml:"remote"`
 	TV      TV      `toml:"tv"`
+	Sound   Sound   `toml:"sound"`
 	// Calendar shows the next events from calendars published as links.
 	Calendar Calendar `toml:"calendar"`
 	// Home shows and switches devices of a Home Assistant installation.
@@ -196,6 +197,14 @@ type Remote struct {
 }
 
 // TV is the daily schedule for switching the TV off and on over HDMI-CEC.
+// Sound configures where the Pi's sound goes.
+type Sound struct {
+	// FollowBluetooth moves the sound to Bluetooth headphones or a speaker
+	// when they connect, and back when they disconnect.
+	FollowBluetooth bool `toml:"follow_bluetooth"`
+}
+
+// TV configures the daily power schedule over HDMI-CEC.
 type TV struct {
 	// Off and On are times of day like "23:30"; empty means "do not".
 	Off string `toml:"off"`
@@ -222,6 +231,9 @@ type Kiosk struct {
 	// Unit is the systemd user unit that runs the browser. Empty disables the
 	// "Show on TV" / "Exit to desktop" controls.
 	Unit string `toml:"unit"`
+	// Watchdog restarts the browser when the dashboard in it has stopped
+	// answering for a few minutes.
+	Watchdog bool `toml:"watchdog"`
 }
 
 // Weather configures the forecast from Open-Meteo. It is on when a location
@@ -418,8 +430,9 @@ func Default() Config {
 			"Digit5": "5", "Digit6": "6", "Digit7": "7", "Digit8": "8", "Digit9": "9",
 		}},
 		System:   System{Enabled: true, Interval: Duration{10 * time.Second}, CoolAbove: 75},
-		Kiosk:    Kiosk{Unit: "pidash-kiosk.service"},
+		Kiosk:    Kiosk{Unit: "pidash-kiosk.service", Watchdog: true},
 		TV:       TV{WakeOnController: true},
+		Sound:    Sound{FollowBluetooth: true},
 		Weather:  Weather{Units: "metric", Interval: Duration{15 * time.Minute}},
 		Calendar: Calendar{Days: 14},
 		Photos: Photos{

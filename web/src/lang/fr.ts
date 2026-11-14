@@ -474,5 +474,10 @@ const list: Record<string, string> = {
   "battery": "batterie",
   "{name} is running low: {n} % battery left.": "{name} est presque déchargé : il reste {n} % de batterie.",
   "Small sounds when using the remote": "Petits sons lors de l’utilisation de la télécommande",
+  "Switch to headphones or a speaker when they connect, and back when they disconnect": "Passer au casque ou à l’enceinte dès qu’ils se connectent, et revenir quand ils se déconnectent",
+  "Sound now comes out of {name}.": "Le son sort maintenant par {name}.",
+  "nothing plugged in": "rien de branché",
+  "Update available": "Mise à jour disponible",
+  "PiDash {version} is available. Install it under Settings, Updates.": "PiDash {version} est disponible. Installez-le dans Réglages, Mises à jour.",
 };
 export default list;

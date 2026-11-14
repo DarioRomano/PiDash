@@ -47,6 +47,13 @@ clock_24h = true
 # BCP 47 locale for the date, e.g. "en-GB", "it-IT". Empty = browser default.
 locale = ""
 
+# --- Sound ----------------------------------------------------------------------
+# The output and its volume are chosen under Settings, Sound.
+[sound]
+# Move the sound to Bluetooth headphones or a speaker when they connect, and
+# back to where it was when they disconnect.
+follow_bluetooth = true
+
 [system]
 enabled = true
 interval = "10s"
@@ -60,6 +67,10 @@ cool_above = 75
 # "Exit to desktop" on the phone remote and hold-Back-to-exit on the TV remote.
 # Set to "" to disable those controls.
 unit = "pidash-kiosk.service"
+# The dashboard reports to PiDash every 20 seconds that it is alive. If it has
+# not for three minutes while it should be showing, its page has frozen or
+# crashed, and the browser is started again. At most three times an hour.
+watchdog = true
 
 # --- TV power schedule --------------------------------------------------------
 # Switch the TV off at night and on in the morning, over HDMI-CEC. Leave a time

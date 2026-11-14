@@ -371,6 +371,7 @@ html, body {
 .tile-sub { min-height: 22px; max-width: 232px; font-size: 19px; color: var(--fg-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile-sub:empty { display: none; }
 .tile.running .tile-sub { color: #6fd08c; }
+.tile.notice .tile-sub { color: var(--accent); }
 /* A small light in front of "Running". */
 .tile.running .tile-sub::before {
   content: "";

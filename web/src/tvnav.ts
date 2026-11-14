@@ -13,6 +13,7 @@
 // A mouse and a real keyboard keep working as on any page.
 
 import { play } from "./sfx";
+import { reportAlive } from "./alive";
 
 export const onTV = new URLSearchParams(location.search).get("from") === "tv";
 
@@ -40,6 +41,8 @@ let backendReads = false;
 export function startTVNav(opts: Options) {
   options = opts;
   started = true;
+  // On the TV this page stands in for the dashboard: it reports in like it.
+  reportAlive();
   const html = document.documentElement;
   html.classList.add("tv");
   // The pages are laid out for a narrow screen; enlarge them to couch size.

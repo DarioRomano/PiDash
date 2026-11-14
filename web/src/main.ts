@@ -4,6 +4,9 @@ import { Clock } from "./clock";
 import { Help } from "./help";
 import { StatusPanel } from "./status";
 import { play, setSounds } from "./sfx";
+import { reportAlive } from "./alive";
+
+reportAlive();
 import { Input } from "./input";
 import { Rail, type RailItem } from "./rail";
 import { Slideshow } from "./slideshow";
@@ -336,6 +339,44 @@ radio.addEventListener("pause", showRadio);
 radio.addEventListener("playing", showRadio);
 
 const SLEEP_ID = "__sleep";
+// --- Where the sound goes -------------------------------------------------------
+// A tile that moves the sound to the next output: from the TV to the
+// headphones and back, without a trip into the settings. It is there when
+// there is a choice to make.
+
+const SOUND_ID = "__sound";
+const SOUND_GLYPH = svg('<path d="M4 9.500h3.500L12 5.500v13l-4.500-4H4z"/><path d="M15.500 9a4.200 4.200 0 0 1 0 6M18 6.500a7.800 7.800 0 0 1 0 11"/>');
+interface SoundOutput {
+  id: string;
+  name: string;
+  active: boolean;
+  unplugged?: boolean;
+}
+let soundOutputs: SoundOutput[] = [];
+
+function onSound(st: { available: boolean; outputs: SoundOutput[] }) {
+  const usable = st.available ? st.outputs.filter((o) => !o.unplugged) : [];
+  if (JSON.stringify(usable) === JSON.stringify(soundOutputs)) return;
+  soundOutputs = usable;
+  rail.setItems(railItems());
+}
+
+async function nextSoundOutput() {
+  const at = soundOutputs.findIndex((o) => o.active);
+  const next = soundOutputs[(at + 1) % soundOutputs.length];
+  if (!next) return;
+  try {
+    const res = await postJSON("/api/sound/use", { id: next.id });
+    if (!res.ok) return toast((await res.text()).trim(), 6000);
+    onSound(await res.json());
+    toast(t("Sound now comes out of {name}.", { name: next.name }), 4000);
+    // Heard from where the sound now is.
+    window.setTimeout(() => play("select"), 350);
+  } catch {
+    toast("The PiDash backend is not reachable.", 5000);
+  }
+}
+
 const SLEEP_GLYPH = svg('<path d="M20 14.500A8 8 0 0 1 9.500 4a8 8 0 1 0 10.500 10.500z"/>');
 let tvAvailable = false;
 let sleepAt = 0; // when the TV will be switched off, in milliseconds; 0 when not set
@@ -371,8 +412,46 @@ const rail = new Rail(
     stage.classList.toggle("rail-open", open);
     ambient.setLifted(open);
     railActivity();
+    if (open) tellAboutUpdate();
   },
 );
+
+// --- A new version ------------------------------------------------------------------
+// When updates are not installed automatically, a new version is pointed out
+// where someone will see it: on the Settings tile, and once in words the
+// first time the app row is opened after it appeared. Not at the moment it is
+// found, which is as likely to be three in the morning.
+
+const UPDATE_TOLD_KEY = "pidash-update-told";
+let newVersion = "";
+
+async function lookForUpdate() {
+  try {
+    const res = await fetch("/api/update", { cache: "no-store" });
+    if (!res.ok) return;
+    const st = (await res.json()) as { latest?: string; available: boolean; auto: boolean; installing: boolean };
+    const found = st.available && !st.auto && !st.installing ? (st.latest ?? "") : "";
+    if (found === newVersion) return;
+    newVersion = found;
+    rail.setItems(railItems());
+  } catch {
+    /* the next look may work */
+  }
+}
+
+function tellAboutUpdate() {
+  if (!newVersion) return;
+  try {
+    if (localStorage.getItem(UPDATE_TOLD_KEY) === newVersion) return;
+    localStorage.setItem(UPDATE_TOLD_KEY, newVersion);
+  } catch {
+    return; // without a memory it would be said every time
+  }
+  toast(t("PiDash {version} is available. Install it under Settings, Updates.", { version: newVersion }), 10000);
+}
+
+void lookForUpdate();
+window.setInterval(() => void lookForUpdate(), 60 * 60 * 1000);
 
 // Each tile glows in the main colour of its icon.
 rail.tintOf = async (item) => {
@@ -489,8 +568,11 @@ function railItems(): RailItem[] {
       items.push({ id: HIDE_ID + keys[0], label: "Hide this photo", glyph: HIDE_GLYPH });
     }
   }
+  if (soundOutputs.length > 1) {
+    items.push({ id: SOUND_ID, label: "Sound", glyph: SOUND_GLYPH, sub: soundOutputs.find((o) => o.active)?.name ?? "" });
+  }
   items.push({ id: STATUS_ID, label: "Status", glyph: STATUS_GLYPH });
-  items.push({ id: SETTINGS_ID, label: "Settings", glyph: GEAR_GLYPH });
+  items.push({ id: SETTINGS_ID, label: "Settings", glyph: GEAR_GLYPH, sub: newVersion ? "Update available" : undefined, notice: !!newVersion });
   items.push({ id: EXIT_ID, label: "Desktop", glyph: EXIT_GLYPH });
   return items;
 }
@@ -526,6 +608,10 @@ async function activateRailItem(item: RailItem) {
   }
   if (item.id === SETTINGS_ID) {
     openSettings();
+    return;
+  }
+  if (item.id === SOUND_ID) {
+    void nextSoundOutput();
     return;
   }
   if (item.id === STATUS_ID) {
@@ -1032,6 +1118,7 @@ connect("/events", {
     appsLoaded = true;
   },
   onPhotos,
+  onSound,
   onBattery: (n) => toast(t("{name} is running low: {n} % battery left.", { name: n.name, n: n.percent }), 12000),
   onTV: (st) => {
     tvAsleep = st.asleep;

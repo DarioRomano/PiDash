@@ -644,3 +644,24 @@ func TestEmulatorsAreOfferedAndStartFullscreen(t *testing.T) {
 		t.Errorf("commands belong to the Pi, not to settings.json: %s", data)
 	}
 }
+
+func TestSoundFollowingSwitch(t *testing.T) {
+	s, _ := open(t)
+	if v := s.View(); v.System.SoundFollows == nil || !*v.System.SoundFollows {
+		t.Fatalf("the sound follows headphones unless switched off: %+v", v.System)
+	}
+	off := false
+	if err := s.Save(Update{System: &System{SoundFollows: &off}}); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _ := s.Effective(); cfg.Sound.FollowBluetooth {
+		t.Error("still following after it was switched off")
+	}
+	// Settings saved by a version without the switch leave it as config.toml has it.
+	if err := s.Save(Update{System: &System{AutoUpdate: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _ := s.Effective(); !cfg.Sound.FollowBluetooth {
+		t.Error("an absent switch should leave the default in place")
+	}
+}

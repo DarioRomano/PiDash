@@ -68,7 +68,7 @@ interface Info {
   screen: { nightStart: string; nightEnd: string; language: string; clockPosition: string; clockSize: string; view: string; background: string; sounds?: boolean };
   calendar: { links: CalendarLink[] };
   home: { url: string; tokenSet: boolean; entities: string[] };
-  system: { autoUpdate: boolean; cooling?: boolean };
+  system: { autoUpdate: boolean; cooling?: boolean; soundFollows?: boolean };
   lock: { set: boolean };
   radio: Station[];
   apps: AppEntry[];
@@ -189,7 +189,11 @@ function readForm() {
     apps: apps.map(({ detail: _detail, missing: _missing, ...rest }) => rest),
     calendar: { links: calendars.map((l) => (l.url ? { url: l.url } : { key: l.key })) },
     home: { url: val("h-url").trim(), token: val("h-token").trim(), entities: homeTiles },
-    system: { autoUpdate: $<HTMLInputElement>("sys-auto").checked, cooling: $<HTMLInputElement>("sys-cool").checked },
+    system: {
+      autoUpdate: $<HTMLInputElement>("sys-auto").checked,
+      cooling: $<HTMLInputElement>("sys-cool").checked,
+      soundFollows: $<HTMLInputElement>("snd-follow").checked,
+    },
     // Empty leaves the PIN as it is.
     lock: { pin: val("l-pin").trim(), remove: removeLock },
     radio: stations.map(({ name, url }) => ({ name, url })),
@@ -272,6 +276,7 @@ function fill(i: Info) {
   renderHomeTiles();
   $<HTMLInputElement>("sys-auto").checked = i.system.autoUpdate;
   $<HTMLInputElement>("sys-cool").checked = i.system.cooling ?? true;
+  $<HTMLInputElement>("snd-follow").checked = i.system.soundFollows ?? true;
   stations = i.radio.map((s) => ({ ...s }));
   renderStations();
   removeLock = false;
@@ -837,7 +842,7 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
-for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "n-start", "n-end", "h-url", "h-token", "sys-auto", "sys-cool", "l-pin", "d-language", "d-position", "d-size", "d-view", "d-background", "d-sounds"]) {
+for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "n-start", "n-end", "h-url", "h-token", "sys-auto", "sys-cool", "snd-follow", "l-pin", "d-language", "d-position", "d-size", "d-view", "d-background", "d-sounds"]) {
   $(id).addEventListener("input", refresh);
   $(id).addEventListener("change", refresh);
 }

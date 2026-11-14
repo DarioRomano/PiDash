@@ -382,6 +382,12 @@ ROWS = [
 ("battery", "Akku", "batterie", "batteria"),
 ("{name} is running low: {n} % battery left.", "{name} ist fast leer: noch {n} % Akku.", "{name} est presque déchargé : il reste {n} % de batterie.", "{name} è quasi scarico: resta il {n} % di batteria."),
 ("Small sounds when using the remote", "Leise Töne beim Bedienen mit der Fernbedienung", "Petits sons lors de l’utilisation de la télécommande", "Piccoli suoni quando si usa il telecomando"),
+# --- headphones, update notice
+("Switch to headphones or a speaker when they connect, and back when they disconnect", "Auf Kopfhörer oder Lautsprecher umschalten, sobald sie sich verbinden, und zurück, wenn sie sich trennen", "Passer au casque ou à l’enceinte dès qu’ils se connectent, et revenir quand ils se déconnectent", "Passa a cuffie o altoparlante quando si collegano, e torna indietro quando si scollegano"),
+("Sound now comes out of {name}.", "Der Ton kommt jetzt aus {name}.", "Le son sort maintenant par {name}.", "Ora l’audio esce da {name}."),
+("nothing plugged in", "nichts angeschlossen", "rien de branché", "nulla di collegato"),
+("Update available", "Update verfügbar", "Mise à jour disponible", "Aggiornamento disponibile"),
+("PiDash {version} is available. Install it under Settings, Updates.", "PiDash {version} ist verfügbar. Installieren unter Einstellungen, Aktualisierungen.", "PiDash {version} est disponible. Installez-le dans Réglages, Mises à jour.", "È disponibile PiDash {version}. Installalo in Impostazioni, Aggiornamenti."),
 ]
 
 def tidy(s): return re.sub(r"\s+", " ", s).strip()

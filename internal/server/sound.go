@@ -21,6 +21,53 @@ func (s *Server) handleSound(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.sound.Status(ctx))
 }
 
+// followSound keeps the dashboard informed about the outputs and, when that
+// is wanted, moves the sound to headphones as they connect and back as they
+// disconnect.
+func (s *Server) followSound(ctx context.Context) {
+	if s.sound == nil {
+		return
+	}
+	var follower sound.Follower
+	look := func() {
+		ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+		st := s.sound.Status(ctx)
+		if id := follower.Step(st); id != "" && s.cfg.Sound.FollowBluetooth {
+			if err := s.sound.Use(ctx, id); err != nil {
+				s.log.Warn("could not move the sound", "to", id, "err", err)
+			} else {
+				s.log.Info("the sound follows the headphones", "to", id)
+				st = s.sound.Status(ctx)
+				follower.Step(st) // seen: this was our own doing
+			}
+		}
+		s.soundMu.Lock()
+		s.lastSound = &st
+		s.soundMu.Unlock()
+		s.hub.broadcast("sound", st)
+	}
+	// Changes are only noted here and looked at one after the other. A look
+	// may change something itself (moving the sound), which is reported as
+	// another change; looking from inside the report would wait for itself.
+	changed := make(chan struct{}, 1)
+	go s.sound.Watch(ctx, func() {
+		select {
+		case changed <- struct{}{}:
+		default: // a look is already due
+		}
+	})
+	look()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-changed:
+			look()
+		}
+	}
+}
+
 // handleSoundAction chooses the output, sets its volume, mutes it, or plays
 // a test sound on it. Like the volume buttons of a remote, this needs no PIN.
 func (s *Server) handleSoundAction(w http.ResponseWriter, r *http.Request) {

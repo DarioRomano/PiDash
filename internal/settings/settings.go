@@ -84,6 +84,9 @@ type System struct {
 	// the Pi is hot. Absent (settings saved by an older version) leaves
 	// config.toml in charge.
 	Cooling *bool `json:"cooling,omitempty"`
+	// SoundFollows moves the sound to Bluetooth headphones when they
+	// connect. Absent leaves config.toml in charge.
+	SoundFollows *bool `json:"soundFollows,omitempty"`
 }
 
 // defaultCoolAbove is the limit used when cooling is switched on from the
@@ -474,6 +477,9 @@ func apply(base config.Config, f File, installed []desktop.Entry) (config.Config
 	}
 	if sys := f.System; sys != nil {
 		cfg.Update.Auto = sys.AutoUpdate
+		if sys.SoundFollows != nil {
+			cfg.Sound.FollowBluetooth = *sys.SoundFollows
+		}
 		if sys.Cooling != nil {
 			switch {
 			case !*sys.Cooling:
@@ -794,7 +800,7 @@ func (s *Store) View() View {
 			Sounds: boolPtr(cfg.Display.Sounds)},
 		Calendar: Calendar{Links: []Link{}},
 		Home:     Home{URL: cfg.Home.URL, TokenSet: cfg.Home.Token != "", Entities: append([]string{}, cfg.Home.Entities...)},
-		System:   System{AutoUpdate: cfg.Update.Auto, Cooling: boolPtr(cfg.System.CoolAbove > 0)},
+		System:   System{AutoUpdate: cfg.Update.Auto, Cooling: boolPtr(cfg.System.CoolAbove > 0), SoundFollows: boolPtr(cfg.Sound.FollowBluetooth)},
 		Lock:     Lock{Set: cfg.Remote.PIN != ""},
 		Radio:    append([]config.RadioStation{}, cfg.Radio...),
 		Apps:     []App{},

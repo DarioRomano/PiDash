@@ -76,6 +76,11 @@ at night, never while an app is open. It runs the same updater as above.
 Steps that need administrator rights only run where `sudo` works without a
 password, as it does by default on Raspberry Pi OS.
 
+With automatic updates off, the TV points a new version out: the **Settings**
+tile in the app row says "Update available", and the first time the app row
+is opened after the version appeared, a message says which one. It is not
+said at the moment it is found, which is as likely to be three at night.
+
 ### Uninstalling
 
 ```sh
@@ -403,6 +408,18 @@ over HDMI-CEC.
   volume buttons.
 - **Play a test sound** plays two notes on the chosen output, on the Pi, so it
   also tells which output is which when the page is open on a phone.
+
+**Headphones.** When Bluetooth headphones or a speaker connect, the sound
+moves to them, and when they disconnect it returns to where it was before:
+putting headphones on and taking them off is all there is to it. Devices that
+are already connected when PiDash starts are left as they are, and an output
+chosen by hand stays chosen. The switch for this is at the bottom of the
+Sound section (`follow_bluetooth` under `[sound]` in `config.toml`).
+
+While there is more than one output to choose from, the app row has a
+**Sound** tile that says where the sound is. **OK** on it moves the sound to
+the next output, and a short sound confirms it from there. An HDMI socket
+with nothing plugged in is left out, and marked as such in the settings.
 
 This uses `pactl`, the command-line tool of the Pi's sound service, which the
 installer adds if it is missing.
@@ -1055,6 +1072,30 @@ does not either. This needs a TV that says over HDMI whether it is on, which
 ```toml
 [tv]
 wake_on_controller = false
+```
+
+### If the dashboard freezes
+
+A browser that runs for weeks can end up with a page that has frozen or
+crashed while the browser itself is still there. Nothing would restart it,
+and the TV would show a stuck clock until someone noticed.
+
+So the dashboard tells PiDash every 20 seconds that it is alive. If nothing
+was heard for three minutes while the dashboard should be showing, PiDash
+starts the browser again, and the dashboard is back within seconds. This is
+not done while an app is open, since a hidden page may be put to sleep by the
+browser, and not after **Exit to desktop**. After three restarts within an
+hour it stops trying, because a page that will not stay up has a cause that
+restarting does not cure; the [status page](#status-page) and
+`journalctl --user -u pidash` then say so. Nothing is restarted before the
+dashboard has reported in at least once since PiDash started.
+
+A browser that crashes outright is restarted by its service, as before. To
+switch the watching off:
+
+```toml
+[kiosk]
+watchdog = false
 ```
 
 ### Debugging the browser on the TV

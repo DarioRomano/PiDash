@@ -250,6 +250,14 @@ func main() {
 		Busy: func() bool { return appManager.Status().Running != "" },
 	})
 
+	// Starts the browser on the TV again if the dashboard in it freezes.
+	kioskControl := kiosk.New(cfg.Kiosk.Unit, *mock, log)
+	var watchdog *kiosk.Watchdog
+	if cfg.Kiosk.Watchdog && !*mock && kioskControl.Available() {
+		watchdog = &kiosk.Watchdog{Browser: kioskControl, Log: log,
+			Paused: func() bool { return appManager.Status().Running != "" }}
+	}
+
 	// Bluetooth devices, managed from the settings page.
 	var blue bluetooth.Manager = bluetooth.NewMock()
 	if !*mock {
@@ -320,10 +328,10 @@ func main() {
 	}
 
 	srv = server.New(cfg, log, static, server.Deps{
-		Kiosk: kiosk.New(cfg.Kiosk.Unit, *mock, log), Apps: appManager, Photos: photoService,
+		Kiosk: kioskControl, Apps: appManager, Photos: photoService,
 		Input: phoneInput, TV: tvService, Version: version, NewRunner: newRunner, Updater: updater, PhotoStatePath: photoStatePath(), TestHooks: *mock,
 		Notices: notices, URLFile: server.URLFile(), Settings: store, BaseListen: baseListen,
-		Remote: remote, Problems: problems, Bluetooth: blue, Sound: audio,
+		Remote: remote, Problems: problems, Bluetooth: blue, Sound: audio, Watchdog: watchdog,
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -331,6 +339,9 @@ func main() {
 
 	if !*mock {
 		go remote.Run(ctx)
+		if watchdog != nil {
+			go watchdog.Run(ctx)
+		}
 		// Answer the TV's questions, so it keeps sending the remote's keys
 		// here after it was switched to another input and back.
 		go cecControl.Follow(ctx, log)

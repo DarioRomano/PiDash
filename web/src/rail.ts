@@ -11,6 +11,8 @@ export interface RailItem {
   /** Inline SVG markup used instead of an image or letter. */
   glyph?: string;
   running?: boolean;
+  /** The second line says something new: it is shown in the accent colour. */
+  notice?: boolean;
   /** An app: its place in the row can be changed with the remote. */
   movable?: boolean;
 }
@@ -237,6 +239,7 @@ export class Rail {
         const tile = document.createElement("div");
         tile.className = "tile";
         tile.classList.toggle("running", !!item.running);
+        tile.classList.toggle("notice", !!item.notice);
         const glow = document.createElement("div");
         glow.className = "tile-glow";
         void this.tintOf(item).then((tint) => {

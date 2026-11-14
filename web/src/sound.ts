@@ -9,6 +9,8 @@ interface Output {
   active: boolean;
   volume: number;
   muted: boolean;
+  /** Nothing is connected to this output's socket. */
+  unplugged?: boolean;
 }
 interface Status {
   available: boolean;
@@ -47,12 +49,12 @@ export function startSound() {
     if (!usable) return;
     // The list is only rebuilt when it changed, so that it does not close
     // under someone who is choosing from it.
-    const key = JSON.stringify(status.outputs.map((o) => [o.id, o.name]));
+    const key = JSON.stringify(status.outputs.map((o) => [o.id, o.name, !!o.unplugged]));
     if (key !== options) {
       options = key;
       pick.replaceChildren(
         ...status.outputs.map((o) => {
-          const opt = new Option(o.name, o.id);
+          const opt = new Option(o.unplugged ? `${o.name} (${t("nothing plugged in")})` : o.name, o.id);
           opt.dataset.noTranslate = ""; // the names of devices stay as they are
           return opt;
         }),
