@@ -52,6 +52,8 @@ function span(sec: number): string {
 export class StatusPanel {
   private opened = false;
   private timer = 0;
+  /** Pictures drawn in the last second; 0 while that is being measured. */
+  private drawn = 0;
   private report: StatusReport | null = null;
   private failed = false;
 
@@ -75,6 +77,33 @@ export class StatusPanel {
     void this.load();
     // Live, so pressing a button on the remote shows up as "last button".
     this.timer = window.setInterval(() => void this.load(), 2000);
+    this.count();
+  }
+
+  /**
+   * Counts how often the browser gets to draw, second by second, while the
+   * page is open: the measure of how fluid anything on screen can be.
+   */
+  private count() {
+    this.drawn = 0;
+    let pictures = 0;
+    let since = performance.now();
+    const tick = (now: number) => {
+      if (!this.opened) return;
+      pictures++;
+      if (now - since >= 1000) {
+        const rate = Math.round((pictures * 1000) / (now - since));
+        pictures = 0;
+        since = now;
+        // One more or less from second to second is not news.
+        if (this.drawn === 0 || Math.abs(rate - this.drawn) >= 2) {
+          this.drawn = rate;
+          this.render();
+        }
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
   }
 
   close() {
@@ -156,6 +185,16 @@ export class StatusPanel {
       row(pi, "Memory", t("{used} of {total} MB in use", { used: sys.memUsedMB, total: sys.memTotalMB }), share > 0.9 ? "warn" : "ok");
       row(pi, "Load", sys.load1.toFixed(2), sys.load1 > 4 ? "warn" : "ok");
       row(pi, "Switched on for", span(sys.uptimeSeconds));
+      // The screen as the browser has it, and how often it is really drawn.
+      const scale = window.devicePixelRatio || 1;
+      const size = `${Math.round(screen.width * scale)} × ${Math.round(screen.height * scale)}`;
+      if (this.drawn === 0) row(pi, "Screen", `${size} · ${t("measuring…")}`);
+      else if (this.drawn >= 45) row(pi, "Screen", `${size} · ${t("drawn {n} times a second", { n: this.drawn })}`, "ok");
+      else {
+        // Fewer pictures than a TV shows: menus cannot be fluid like this.
+        const why = screen.width * scale > 2000 ? t("the Pi cannot keep up at this size: set its screen to 1920 × 1080 for fluid menus") : t("the TV or its cable limits this, or the Pi is busy");
+        row(pi, "Screen", `${size} · ${t("drawn only {n} times a second", { n: this.drawn })} · ${why}`, "warn");
+      }
       row(pi, "Address", sys.addresses.length > 0 ? sys.addresses.map((a) => `${a}:${location.port || "80"}`).join(", ") : t("no network"), sys.addresses.length > 0 ? "ok" : "warn");
     }
 

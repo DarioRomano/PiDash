@@ -132,7 +132,9 @@ export class Ambient {
    */
   setPace(calmMs: number, stirredMs: number, floor = 0) {
     this.calmMs = Math.max(16, calmMs);
-    this.stirredMs = Math.max(16, Math.min(stirredMs, this.calmMs));
+    // The reaction to a button has a pace of its own: slowing the drift
+    // down must not make the menu feel slow.
+    this.stirredMs = Math.max(16, stirredMs);
     this.floor = Math.max(0, Math.min(SIZES.length - 1, floor));
     this.fitScreen();
   }

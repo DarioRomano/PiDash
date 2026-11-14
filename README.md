@@ -542,9 +542,24 @@ picture, which is what decides how much power it draws and how warm it gets:
 
 | Preset | Moving background | Photos | Video clips |
 |--------|-------------------|--------|-------------|
-| **Smooth** | 30 pictures a second, 60 while it reacts to the remote | move as set, redrawn 30 times a second | shown |
-| **Balanced** (default) | 12 a second, 30 while it reacts | move as set, redrawn 15 times a second | shown |
-| **Power saver** | 5 a second, 15 while it reacts, drawn less finely | stand still | left out |
+| **Smooth** | 30 pictures a second | move as set, redrawn 30 times a second | shown |
+| **Balanced** (default) | 12 a second | move as set, redrawn 15 times a second | shown |
+| **Power saver** | 5 a second, drawn less finely | stand still | left out |
+
+**Menus are not slowed down by any of this.** The app row, the settings and
+every other menu are drawn as often as the TV shows a picture, and so is what
+a button sets in motion in the background (it lifts as the app row opens and
+sways as the highlight moves). That lasts a second and costs next to nothing
+over a day; what the presets slow down is the picture behind the clock, which
+is drawn all day long.
+
+If menus do not look fluid, open **Status** in the app row: **Screen** says
+what size the picture is and how often it is really drawn. A TV shows 60
+pictures a second. Clearly fewer at 3840 × 2160 means the Pi cannot keep up
+at that size; set its screen to 1920 × 1080 (*Preferences → Screen
+Configuration* on the Pi's desktop) and the TV does the enlarging, which it
+is good at. Fewer at any size points to the TV or its cable (some run 4K at
+30 pictures a second), or to a Pi that is busy with something else.
 
 *Moving background: pictures a second* sets that one number by hand, whatever
 the preset says: from 5 for a background that barely costs anything to 60 for
@@ -565,8 +580,10 @@ nothing is drawn but a clock. While the TV is off nothing is drawn at all.
 
 A picture that stands still costs the Pi nothing; anything that moves makes
 it redraw the screen again and again, and at 4K that is what warms it. PiDash
-therefore redraws no more often than the eye can tell: moving photos 15 times
-a second, the drifting background 12 times, a reaction to a button 30 times.
+therefore redraws what is on screen all day no more often than it needs:
+moving photos 15 times a second and the drifting background 12 times, unless
+[Performance](#performance) says otherwise. Menus, and what a button sets in
+motion, are drawn on every picture the TV shows.
 
 It also stops drawing when nobody can see it:
 

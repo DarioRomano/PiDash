@@ -901,8 +901,8 @@ for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pas
 
 // What a performance preset does, in a sentence under the list.
 const PERFORMANCE_HINTS: Record<string, string> = {
-  smooth: "The moving background and moving photos are drawn 30 times a second, the background 60 times while it reacts to the remote. Most work for the Pi.",
-  balanced: "The moving background is drawn 12 times a second, and 30 times while it reacts to the remote.",
+  smooth: "The moving background and moving photos are drawn 30 times a second. Most work for the Pi.",
+  balanced: "The moving background is drawn 12 times a second, moving photos 15 times.",
   saver: "The moving background is drawn 5 times a second and less finely, photos stand still instead of drifting, and video clips are left out.",
 };
 function describePerformance() {

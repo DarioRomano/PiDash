@@ -377,6 +377,8 @@ test("app row: OK on Status shows how PiDash is doing; arrows leave it open, Bac
   await page.waitForFunction(() => /\d+ in the app row/.test(document.getElementById("status-panel").innerText));
   const text = await page.evaluate(() => document.getElementById("status-panel").innerText);
   for (const part of ["This Pi", "PiDash", "TV and remote", "Photos", "Weather", "Recent problems"]) assert.ok(text.includes(part), `the status page lacks "${part}":\n${text}`);
+  // The screen is measured while the page is open: its size, and how often it is drawn.
+  await page.waitForFunction(() => /Screen\s+1920 × 1080 · drawn (only )?\d+ times a second/.test(document.getElementById("status-panel").innerText), null, { timeout: 8000 });
   // Buttons can be tried out without the page going away.
   for (const action of ["left", "right", "up", "down"]) await remote.press(action);
   assert.equal(await open(), true, "arrows leave the status page open");
@@ -1371,7 +1373,14 @@ test("the performance preset sets how often the moving background is drawn", asy
       const rate = (await page.evaluate(() => window.__painted.size)) / 3;
       const preset = await page.evaluate(() => document.getElementById("stage").dataset.performance);
       const height = await page.evaluate(() => document.getElementById("ambient").height);
-      return { rate, preset, height };
+      // A button: the app row opens and the background lifts with it. How
+      // many pictures does that movement get in its first 800 ms?
+      await page.evaluate(() => window.__painted.clear());
+      await fetch(own.base + "/api/test/remote", { method: "POST", headers: json, body: JSON.stringify({ action: "select" }) });
+      await page.waitForFunction(() => document.getElementById("rail").classList.contains("open"));
+      await page.waitForTimeout(800);
+      const reacting = await page.evaluate(() => window.__painted.size);
+      return { rate, preset, height, reacting };
     } finally {
       await browser?.close();
       await own.stop();
@@ -1385,6 +1394,11 @@ test("the performance preset sets how often the moving background is drawn", asy
   about(balanced, 12, "balanced");
   const saver = await perSecond('performance = "saver"\n');
   about(saver, 5, "power saver");
+  // However slowly the background drifts, what a button sets in motion is
+  // fluid: far more pictures than the four or five the drift would get.
+  for (const [name, got] of [["balanced", balanced], ["power saver", saver]]) {
+    assert.ok(got.reacting >= 20, `${name}: the background's reaction to a button got ${got.reacting} pictures in 0.8 s, want it fluid`);
+  }
   assert.ok(saver.height <= 360 && saver.height < balanced.height, `the power saver draws a coarser picture: ${saver.height} against ${balanced.height} lines`);
   about(await perSecond('performance = "smooth"\n'), 30, "smooth");
   // A rate of one's own counts for more than the preset.
@@ -1405,6 +1419,7 @@ test("power saver: photos stand still; the settings offer the presets", async ()
     await settings.waitForSelector("#main:not([hidden])");
     assert.equal(await settings.inputValue("#d-performance"), "saver");
     assert.match(await settings.locator("#d-performance-hint").innerText(), /5 times a second/);
+    assert.match(await settings.locator("#main").innerText(), /Menus are not slowed down by this/);
     await settings.selectOption("#d-performance", "smooth");
     assert.match(await settings.locator("#d-performance-hint").innerText(), /30 times a second/);
     await settings.selectOption("#d-fps", "24");

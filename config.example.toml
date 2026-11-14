@@ -44,11 +44,12 @@ view = "clock"
 background = "moving"
 # How much work the Pi does for the picture, and so how much power it draws
 # and how warm it gets:
-#   "smooth"    the moving background is drawn 30 times a second (60 while it
-#               reacts to the remote)
-#   "balanced"  12 times a second (30 while it reacts)
-#   "saver"     5 times a second and less finely; photos stand still instead
-#               of drifting, and video clips are left out
+#   "smooth"    the moving background and moving photos are drawn 30 times
+#               a second
+#   "balanced"  the background 12 times a second, moving photos 15 times
+#   "saver"     the background 5 times a second and less finely; photos stand
+#               still instead of drifting, and video clips are left out
+# Menus are always drawn as fluidly as the screen allows, whatever is set here.
 performance = "balanced"
 # Pictures a second for the moving background, 1 to 60, whatever the setting
 # above says; 0 leaves it to that setting.

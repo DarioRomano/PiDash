@@ -1029,13 +1029,17 @@ let stillBackground = false;
 /** Power saver: photos stand still, as while the Pi is hot. */
 let saving = false;
 // What each performance setting means for the moving background: milliseconds
-// between pictures while it drifts, while it reacts to a button, and the
-// finest picture it may use (0: as fine as the screen calls for).
-const PACES: Record<string, [number, number, number]> = {
-  smooth: [33, 16, 0],
-  balanced: [83, 33, 0],
-  saver: [200, 66, 3],
+// between pictures while it drifts by itself, and the finest picture it may
+// use (0: as fine as the screen calls for).
+const PACES: Record<string, [number, number]> = {
+  smooth: [33, 0],
+  balanced: [83, 0],
+  saver: [200, 3],
 };
+// What a button sets in motion (the background lifting as the app row opens,
+// swaying as the highlight moves) is drawn on every picture the screen shows,
+// whatever the setting: it lasts a second, and is part of how the menu feels.
+const REACTING_MS = 16;
 
 let runningVersion = "";
 let shownNotice = "";
@@ -1068,9 +1072,9 @@ function applyConfig(cfg: ClientConfig) {
   }
   stillBackground = d.background === "still";
   ambient.setStill(stillBackground || hot);
-  let [calmMs, stirredMs, floor] = PACES[d.performance ?? ""] ?? PACES.balanced;
+  let [calmMs, floor] = PACES[d.performance ?? ""] ?? PACES.balanced;
   if ((d.background_fps ?? 0) > 0) calmMs = 1000 / (d.background_fps ?? 1);
-  ambient.setPace(calmMs, Math.min(stirredMs, calmMs), floor);
+  ambient.setPace(calmMs, REACTING_MS, floor);
   saving = d.performance === "saver";
   slideshow.setCalm(hot || saving);
   // Moving photos: redrawn twice as often when smoothness is what is wanted.
