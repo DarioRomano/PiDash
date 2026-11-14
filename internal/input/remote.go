@@ -54,6 +54,11 @@ type Remote struct {
 	// RepeatAfter and RepeatEvery set how a held direction repeats; zero
 	// means the usual 650 and 140 ms.
 	RepeatAfter, RepeatEvery time.Duration
+	// OnVolume makes the TV louder (+1) or quieter (-1). It is called when a
+	// direction is pressed on a game controller while its logo button is
+	// held, anywhere: on the dashboard, in a website, in a game. Nil
+	// switches this off.
+	OnVolume func(step int)
 	// OnAppKey is called for every button pressed while an app is open, so
 	// that the app's window can be given the keyboard if it lost it.
 	OnAppKey func()
@@ -74,6 +79,7 @@ type Remote struct {
 	seenMu  sync.Mutex
 	devices map[string]string // path → name
 	pads    map[string]bool   // path → is a game controller
+	logo    map[string]bool   // path → the controller's logo button is down
 	last    Heard
 }
 
@@ -158,6 +164,14 @@ func (r *Remote) wanted() []uint16 {
 // key handles one key event from a device: value 1 is press, 0 release, 2 repeat.
 func (r *Remote) key(device string, code uint16, value int32) {
 	r.hold.event(device, code, value)
+	if code == btnMode && value != 2 {
+		r.seenMu.Lock()
+		if r.logo == nil {
+			r.logo = map[string]bool{}
+		}
+		r.logo[device] = value == 1
+		r.seenMu.Unlock()
+	}
 	if value != 1 {
 		if value == 0 {
 			r.stopRepeat(device)
@@ -166,12 +180,21 @@ func (r *Remote) key(device string, code uint16, value int32) {
 	}
 	r.stopRepeat(device) // another button: the held one no longer counts
 	r.seenMu.Lock()
-	name, pad := r.devices[device], r.pads[device]
+	name, pad, logo := r.devices[device], r.pads[device], r.logo[device]
 	if name == "" {
 		name = filepath.Base(device)
 	}
 	r.last = Heard{Device: name, Key: KeyName(code), Action: r.Actions[code], At: time.Now()}
 	r.seenMu.Unlock()
+
+	// Logo button held, and up or down: the TV's volume. The logo button was
+	// not being held to leave the app after all.
+	if step := volumeStep(code); pad && logo && step != 0 && r.OnVolume != nil {
+		r.hold.defuse(device, btnMode)
+		r.OnVolume(step)
+		r.startRepeat(device, func() { r.OnVolume(step) })
+		return
+	}
 	if pad && code == btnMode && r.OnPadWake != nil {
 		r.OnPadWake(name)
 	}

@@ -145,3 +145,138 @@ func TestAWindowThatHasTheKeyboardIsLeftAloneForLonger(t *testing.T) {
 		t.Errorf("the keyboard is with %q, want retroarch", d.focused)
 	}
 }
+
+func musicManager(t *testing.T) (*Manager, *fakeDesktop, *Mock) {
+	t.Helper()
+	list := []config.App{
+		{ID: "spotify", Name: "Spotify", URL: "https://open.spotify.com/", Background: true},
+		{ID: "netflix", Name: "Netflix", URL: "https://www.netflix.com/"},
+	}
+	backend := &Mock{}
+	m := NewManager(list, backend, quiet)
+	d := &fakeDesktop{windows: map[string]bool{"pidash": true, "pidash-spotify": true, "pidash-netflix": true}, focused: "pidash"}
+	m.Focus = newFocuser(d)
+	return m, d, backend
+}
+
+func (d *fakeDesktop) has() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.focused
+}
+
+func settle() { time.Sleep(60 * time.Millisecond) } // the window calls made in the background
+
+func TestAMusicAppKeepsPlayingBehindTheDashboard(t *testing.T) {
+	m, d, backend := musicManager(t)
+	ctx := context.Background()
+	if err := m.Start(ctx, "spotify"); err != nil {
+		t.Fatal(err)
+	}
+	settle() // its window opened and was given the keyboard
+	if d.has() != "pidash-spotify" {
+		t.Fatalf("after starting Spotify the keyboard is with %q", d.has())
+	}
+
+	// Back held: the dashboard comes to the front, Spotify keeps running.
+	if err := m.Leave(ctx); err != nil {
+		t.Fatal(err)
+	}
+	st := m.Status()
+	if st.Running != "" || st.Background != "spotify" {
+		t.Fatalf("after leaving: running %q, background %q; want the dashboard in front and Spotify behind", st.Running, st.Background)
+	}
+	if !backend.Active(ctx, config.App{ID: "spotify"}) {
+		t.Fatal("Spotify was closed instead of being put behind the dashboard")
+	}
+	if d.has() != "pidash" {
+		t.Errorf("the keyboard is with %q, want the dashboard", d.has())
+	}
+	// The remote now belongs to the dashboard: nothing gives the keyboard
+	// back to Spotify, and it does not count as a website that is open.
+	m.EnsureFocus()
+	settle()
+	if d.has() != "pidash" || m.RunningWebsite() {
+		t.Errorf("Spotify took the keyboard back while behind the dashboard (keyboard: %s)", d.has())
+	}
+
+	// OK on its tile brings it back, without starting it a second time.
+	if err := m.Start(ctx, "spotify"); err != nil {
+		t.Fatal(err)
+	}
+	settle()
+	st = m.Status()
+	if st.Running != "spotify" || st.Background != "" || d.has() != "pidash-spotify" {
+		t.Errorf("after opening it again: running %q, background %q, keyboard %q", st.Running, st.Background, d.has())
+	}
+
+	// Behind the dashboard again, then another app is opened: the music ends.
+	m.Leave(ctx)
+	if err := m.Start(ctx, "netflix"); err != nil {
+		t.Fatal(err)
+	}
+	st = m.Status()
+	if st.Running != "netflix" || st.Background != "" || backend.Active(ctx, config.App{ID: "spotify"}) {
+		t.Errorf("after opening Netflix: %+v, Spotify still running: %v", st, backend.Active(ctx, config.App{ID: "spotify"}))
+	}
+	// Netflix is no music app: leaving it closes it.
+	m.Leave(ctx)
+	if st := m.Status(); st.Running != "" || st.Background != "" || backend.Active(ctx, config.App{ID: "netflix"}) {
+		t.Errorf("after leaving Netflix: %+v", st)
+	}
+}
+
+func TestStopEndsAMusicAppThatPlaysBehindTheDashboard(t *testing.T) {
+	m, _, backend := musicManager(t)
+	ctx := context.Background()
+	m.Start(ctx, "spotify")
+	m.Leave(ctx)
+	if err := m.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if st := m.Status(); st.Background != "" || st.Running != "" || backend.Active(ctx, config.App{ID: "spotify"}) {
+		t.Errorf("after Stop: %+v", st)
+	}
+}
+
+func TestWithoutAWayToMoveWindowsAMusicAppIsSimplyClosed(t *testing.T) {
+	m, _, backend := musicManager(t)
+	m.Focus = nil // no wlrctl on this system
+	ctx := context.Background()
+	m.Start(ctx, "spotify")
+	m.Leave(ctx)
+	if st := m.Status(); st.Background != "" || backend.Active(ctx, config.App{ID: "spotify"}) {
+		t.Errorf("it cannot be put behind the dashboard here, so it must be closed: %+v", st)
+	}
+
+	// The same when the dashboard's window is not there to come forward.
+	m, d, backend := musicManager(t)
+	delete(d.windows, "pidash")
+	m.Start(ctx, "spotify")
+	m.Leave(ctx)
+	if st := m.Status(); st.Background != "" || backend.Active(ctx, config.App{ID: "spotify"}) {
+		t.Errorf("without a dashboard window: %+v", st)
+	}
+}
+
+func TestAfterARestartPiDashKnowsThatTheMusicIsBehindTheDashboard(t *testing.T) {
+	// Saving settings restarts PiDash; Spotify plays on. The new PiDash finds
+	// it running and has to tell whether it is in front or behind.
+	for _, c := range []struct {
+		focused         string
+		running, behind string
+	}{{"pidash", "", "spotify"}, {"pidash-spotify", "spotify", ""}} {
+		m, d, backend := musicManager(t)
+		backend.Start(context.Background(), config.App{ID: "spotify"})
+		d.mu.Lock()
+		d.focused = c.focused
+		d.mu.Unlock()
+		ctx, cancel := context.WithCancel(context.Background())
+		go m.Run(ctx)
+		settle()
+		if st := m.Status(); st.Running != c.running || st.Background != c.behind {
+			t.Errorf("keyboard with %s: running %q, background %q; want %q and %q", c.focused, st.Running, st.Background, c.running, c.behind)
+		}
+		cancel()
+	}
+}

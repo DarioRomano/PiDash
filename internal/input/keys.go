@@ -22,6 +22,12 @@ const (
 	absHat0X = 0x10
 	absHat0Y = 0x11
 
+	// The skip buttons of a remote.
+	keyNextSong     = 163
+	keyPreviousSong = 165
+	keyNext         = 407
+	keyPrevious     = 412
+
 	// Buttons of a game controller, named by where they sit: south is the
 	// bottom one of the four (A on an Xbox pad, cross on a PlayStation pad).
 	btnSouth     = 0x130
@@ -91,6 +97,8 @@ func DefaultRemoteActions() map[uint16]string {
 		keyMenu: "menu", keySetup: "menu", keyCtxMenu: "menu",
 		keyHomepage: "home",
 		keyPlayCD:   "playpause", keyPauseCD: "playpause", keyPlayPause: "playpause", keyPlay: "playpause",
+		// The skip buttons: the next piece of music, or the next photo.
+		keyNextSong: "next", keyPreviousSong: "previous", keyNext: "next", keyPrevious: "previous",
 		keyInfo:      "help",
 		keyChannelUp: "right", keyChannelDn: "left",
 		// A game controller: the bottom button chooses, the right one goes
@@ -133,6 +141,18 @@ var padKeys = map[uint16]uint16{
 	btnSouth: keyEnter, btnEast: keyEsc, btnStart: keyPlayPause,
 }
 
+// volumeStep is +1 for a controller's "up" and -1 for its "down", by the
+// direction pad or the stick; 0 for everything else.
+func volumeStep(code uint16) int {
+	switch padKeys[code] {
+	case keyUp:
+		return 1
+	case keyDown:
+		return -1
+	}
+	return 0
+}
+
 // isArrow reports whether a key is one of the four arrows.
 func isArrow(code uint16) bool {
 	return code == keyUp || code == keyDown || code == keyLeft || code == keyRight
@@ -156,7 +176,7 @@ var keyNames = map[string]uint16{
 	"KEY_PLAYCD": keyPlayCD, "KEY_PAUSECD": keyPauseCD, "KEY_PLAYPAUSE": keyPlayPause, "KEY_PLAY": keyPlay,
 	"KEY_CHANNELUP": keyChannelUp, "KEY_CHANNELDOWN": keyChannelDn, "KEY_ENTER": keyEnter,
 	"KEY_REWIND": 168, "KEY_FASTFORWARD": 208, "KEY_RECORD": 167, "KEY_FAVORITES": 364, "KEY_TV": 377,
-	"KEY_PREVIOUS": 412, "KEY_NEXT": 407, "KEY_CLEAR": 355, "KEY_SUBTITLE": 370, "KEY_EPG": 365,
+	"KEY_PREVIOUS": keyPrevious, "KEY_NEXT": keyNext, "KEY_NEXTSONG": keyNextSong, "KEY_PREVIOUSSONG": keyPreviousSong, "KEY_CLEAR": 355, "KEY_SUBTITLE": 370, "KEY_EPG": 365,
 	"KEY_UP": keyUp, "KEY_DOWN": keyDown, "KEY_LEFT": keyLeft, "KEY_RIGHT": keyRight,
 	"BTN_SOUTH": btnSouth, "BTN_A": btnSouth, "BTN_EAST": btnEast, "BTN_B": btnEast,
 	"BTN_NORTH": 0x133, "BTN_X": 0x133, "BTN_WEST": 0x134, "BTN_Y": 0x134,

@@ -17,6 +17,8 @@ export interface DisplayConfig {
   view: string;
   /** "moving" or "still": the background shown without photos. */
   background: string;
+  /** "bold", "slim" or "analog". */
+  clock_style?: string;
   /** Small sounds when the remote is used. */
   sounds?: boolean;
   clock_24h: boolean;
@@ -36,6 +38,8 @@ export interface ClientConfig {
   notices: string[];
   started: number;
   radio?: RadioStation[];
+  /** The name of the Wi-Fi for visitors; empty when none is set up. */
+  guest_wifi?: string;
 }
 
 export interface StateEntry<T = unknown> {
@@ -67,17 +71,33 @@ export interface SystemState {
   hot?: boolean;
 }
 
+/** The music that is playing somewhere on the Pi. */
+export interface Track {
+  player: string;
+  title: string;
+  artist: string;
+  album: string;
+  playing: boolean;
+  /** Where the cover is; empty when there is none. */
+  art?: string;
+  canSkip: boolean;
+}
+
 export interface AppInfo {
   id: string;
   name: string;
   mode: "desktop" | "console";
   hasIcon: boolean;
+  /** A game of the PC, from Moonlight: a tile that cannot be moved. */
+  game?: boolean;
 }
 
 export interface AppsStatus {
   apps: AppInfo[];
-  /** id of the running app, or "". */
+  /** id of the app that has the screen, or "". */
   running: string;
+  /** id of an app that keeps playing behind the dashboard, or "". */
+  background?: string;
   consoleReady: boolean;
   error?: string;
 }
@@ -187,11 +207,11 @@ export interface WeatherState {
 /** The complete remote-control vocabulary. Everything else is ignored. */
 export type Action =
   | "up" | "down" | "left" | "right"
-  | "select" | "back" | "menu" | "home" | "playpause" | "exit" | "weather" | "help" | "settings"
+  | "select" | "back" | "menu" | "home" | "playpause" | "next" | "previous" | "exit" | "weather" | "help" | "settings"
   | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
 
 export const ACTIONS: ReadonlySet<string> = new Set<Action>([
-  "up", "down", "left", "right", "select", "back", "menu", "home", "playpause", "exit", "weather", "help", "settings",
+  "up", "down", "left", "right", "select", "back", "menu", "home", "playpause", "next", "previous", "exit", "weather", "help", "settings",
   "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
 ]);
 

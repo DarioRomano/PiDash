@@ -55,7 +55,7 @@ html, body {
 }
 /* Pages that cover the screen move with the rest, so their background
    reaches a little past their edges. */
-#help, #status-panel { box-shadow: 0 0 0 24px rgba(12, 14, 20, 0.95); }
+#help, #status-panel, #wifi-panel { box-shadow: 0 0 0 24px rgba(12, 14, 20, 0.95); }
 #weather-panel { box-shadow: 0 0 0 24px rgba(12, 14, 20, 0.93); }
 
 #backdrop {
@@ -101,6 +101,37 @@ html, body {
   transition: opacity 0.4s ease;
 }
 #stage.night #radio, #stage.panel-open #radio { opacity: 0; }
+
+/* What is playing: the cover, the title and who it is by. It sits where the
+   clock is not, in the top corner. */
+#playing {
+  position: absolute;
+  left: var(--safe);
+  top: var(--safe);
+  max-width: 760px;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 14px 26px 14px 14px;
+  border-radius: 22px;
+  background: rgba(12, 14, 20, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: opacity 0.4s ease;
+}
+#playing[hidden] { display: none; }
+#playing img, .playing-note { flex: 0 0 96px; width: 96px; height: 96px; border-radius: 12px; object-fit: cover; background: rgba(255, 255, 255, 0.08); }
+#playing img[hidden], .playing-note[hidden] { display: none; }
+.playing-note { display: grid; place-items: center; font-size: 46px; color: var(--accent); }
+.playing-words { min-width: 0; }
+.playing-title { font-size: 32px; font-weight: 600; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.playing-by { margin-top: 6px; font-size: 24px; color: var(--fg-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#playing.paused { opacity: 0.6; }
+#stage.night #playing, #stage.panel-open #playing, #stage.rail-open #playing { opacity: 0; }
+#stage[data-clock="top-left"] #playing { top: auto; bottom: var(--safe); }
+/* Below the lines for finding faults, while those are switched on. */
+#stage[data-debug="true"]:not([data-clock="top-left"]) #playing { top: calc(var(--safe) + 84px); }
+/* The radio's own line moves below the card while both are there. */
+#playing:not([hidden]) ~ #radio { display: none; }
 #stage[data-clock="top-left"] #radio { top: auto; bottom: var(--safe); }
 
 /* Opposite the clock: the next calendar events and, under them, the weather.
@@ -186,6 +217,25 @@ html, body {
   align-items: baseline;
   gap: 0.15em;
 }
+/* Slim numbers: the same clock, drawn with a fine pen. */
+#stage[data-clock-style="slim"] #time { font-weight: 200; letter-spacing: -0.035em; }
+#stage[data-clock-style="slim"] #date { font-weight: 300; }
+/* A clock with hands. It takes the place of the numbers; the date stays. */
+/* A soft shadow keeps the hands readable on a bright photo. The dial is small
+   and changes once a minute, so the shadow costs nothing. */
+#dial { display: none; width: 300px; height: 300px; overflow: visible; filter: drop-shadow(0 2px 12px rgba(0, 0, 0, 0.5)); }
+#dial line { stroke: var(--fg); stroke-linecap: round; }
+#dial-marks line { stroke-width: 2.500; stroke: rgba(244, 245, 247, 0.6); }
+#dial-marks line:nth-child(3n + 1) { stroke-width: 4; stroke: var(--fg); }
+#dial-hour { stroke-width: 8; }
+#dial-minute { stroke-width: 5; }
+#dial circle { fill: var(--fg); }
+#stage[data-clock-style="analog"] #dial { display: block; }
+#stage[data-clock-style="analog"] #time { display: none; }
+#stage[data-clock-style="analog"] #date { margin-top: 30px; }
+#stage[data-clock$="right"] #dial { margin-left: auto; }
+#stage[data-clock-size="medium"] #dial { width: 220px; height: 220px; }
+#stage[data-clock-size="small"] #dial { width: 150px; height: 150px; }
 #ampm { font-size: 0.28em; font-weight: 500; color: var(--fg-dim); letter-spacing: 0; }
 #date {
   margin-top: 18px;
@@ -549,6 +599,32 @@ html.pointer-active #toast { top: calc(var(--safe) + 92px); }
 #help.open { opacity: 1; transform: translateY(0); pointer-events: auto; }
 #help h2 { font-size: 50px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 22px; }
 #help h3 { font-size: 26px; font-weight: 500; color: var(--fg-dim); margin-bottom: 12px; }
+/* --- Wi-Fi for visitors ---------------------------------------------------------- */
+
+#wifi-panel {
+  position: absolute;
+  inset: 0;
+  padding: 70px 120px 44px;
+  background: rgba(12, 14, 20, 0.95);
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.25s ease, transform 0.3s ease;
+  pointer-events: none;
+}
+#wifi-panel.open { opacity: 1; transform: translateY(0); pointer-events: auto; }
+#wifi-panel h2 { font-size: 52px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 30px; }
+.wifi-note { font-size: 28px; color: var(--fg-dim); }
+.wifi-body { flex: 1; min-height: 0; display: flex; align-items: center; gap: 110px; }
+/* Large enough to be read by a phone from across the room. */
+.wifi-code { flex: 0 0 620px; height: 620px; border-radius: 28px; overflow: hidden; background: #fff; }
+.wifi-code svg { display: block; width: 100%; height: 100%; }
+.wifi-words { min-width: 0; }
+.wifi-how { font-size: 32px; line-height: 1.35; color: var(--fg-dim); max-width: 18em; margin-bottom: 54px; }
+.wifi-label { font-size: 26px; color: var(--fg-dim); margin-bottom: 6px; }
+.wifi-value { font-size: 54px; font-weight: 600; letter-spacing: 0.01em; margin-bottom: 36px; overflow-wrap: anywhere; font-variant-ligatures: none; }
+
 /* --- Status --------------------------------------------------------------------- */
 
 #status-panel {

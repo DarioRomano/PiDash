@@ -18,6 +18,9 @@ safe_area = 0.03
 # Show the last raw key code and mapped action in the corner. Turn on while
 # mapping a new TV remote over CEC, off once everything works.
 debug_keys = true
+# How the time is shown: "bold" numbers, "slim" numbers, or "analog", a clock
+# with hands.
+clock_style = "bold"
 # Small sounds when the remote moves the highlight or chooses something.
 sounds = true
 # Nudge the UI by up to this many pixels every few minutes (OLED/plasma burn-in). 0 = off.
@@ -46,6 +49,21 @@ night_end = ""
 clock_24h = true
 # BCP 47 locale for the date, e.g. "en-GB", "it-IT". Empty = browser default.
 locale = ""
+
+# --- Games ------------------------------------------------------------------------
+[games]
+# With Moonlight set up as an app, the games of the PC it is paired with get
+# tiles of their own: one press wakes the PC and starts that game. The list
+# is Moonlight's own; open the PC once in Moonlight to fill or refresh it.
+moonlight = true
+
+# --- Wi-Fi for visitors ----------------------------------------------------------
+# With a name set, the app row has a "Guest Wi-Fi" tile that shows a code to
+# scan with a phone's camera. Leave the password empty for an open network.
+[guest_wifi]
+name = ""
+password = ""
+hidden = false
 
 # --- Sound ----------------------------------------------------------------------
 # The output and its volume are chosen under Settings, Sound.
@@ -84,6 +102,12 @@ on = ""     # e.g. "06:30"
 # in standby switches the TV on and to the Pi, the way a games console does.
 # A TV that is on and showing something else is left alone.
 wake_on_controller = true
+# Volume from a game controller, so the remote can stay on the table: hold the
+# logo button and press up or down. The TV is asked over HDMI to turn itself
+# up or down; with a soundbar or receiver on HDMI that sets the volume
+# instead, use volume_to = "audio".
+controller_volume = true
+volume_to = "tv"
 
 # --- Phone remote --------------------------------------------------------------
 [remote]

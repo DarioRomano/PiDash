@@ -665,3 +665,61 @@ func TestSoundFollowingSwitch(t *testing.T) {
 		t.Error("an absent switch should leave the default in place")
 	}
 }
+
+func TestGuestWifi(t *testing.T) {
+	s, path := open(t)
+	if v := s.View(); v.Wifi.Name != "" || v.Wifi.PasswordSet {
+		t.Fatalf("no network is set at first: %+v", v.Wifi)
+	}
+	if err := s.Save(Update{Wifi: &Wifi{Name: " Guests ", Password: "welcome123"}}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := s.Effective()
+	if cfg.Wifi.Name != "Guests" || cfg.Wifi.Password != "welcome123" {
+		t.Errorf("wifi = %+v", cfg.Wifi)
+	}
+	// The page is told that a password exists, never which.
+	v := s.View()
+	if v.Wifi.Name != "Guests" || !v.Wifi.PasswordSet || v.Wifi.Password != "" || v.Wifi.Open {
+		t.Errorf("view = %+v", v.Wifi)
+	}
+	// Saved again with the password field left empty: it is kept.
+	if err := s.Save(Update{Wifi: &Wifi{Name: "Guests 5G", Hidden: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _ := s.Effective(); cfg.Wifi.Name != "Guests 5G" || cfg.Wifi.Password != "welcome123" || !cfg.Wifi.Hidden {
+		t.Errorf("wifi = %+v", cfg.Wifi)
+	}
+	// An open network has none.
+	if err := s.Save(Update{Wifi: &Wifi{Name: "Cafe", Open: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _ := s.Effective(); cfg.Wifi.Password != "" {
+		t.Errorf("an open network kept a password: %+v", cfg.Wifi)
+	}
+	if v := s.View(); !v.Wifi.Open || v.Wifi.PasswordSet {
+		t.Errorf("view of an open network = %+v", v.Wifi)
+	}
+	// What cannot be a Wi-Fi password or name is refused, and nothing changes.
+	for _, bad := range []Wifi{{Name: "Guests", Password: "short"}, {Name: "Guests", Password: strings.Repeat("x", 64)}, {Name: strings.Repeat("n", 33), Open: true}} {
+		if err := s.Save(Update{Wifi: &bad}); err == nil {
+			t.Errorf("accepted %+v", bad)
+		}
+	}
+	if cfg, _ := s.Effective(); cfg.Wifi.Name != "Cafe" {
+		t.Errorf("a refused network replaced the saved one: %+v", cfg.Wifi)
+	}
+	// An emptied name removes the network, password and all.
+	if err := s.Save(Update{Wifi: &Wifi{Name: "Guests", Password: "welcome123"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Save(Update{Wifi: &Wifi{Name: ""}}); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _ := s.Effective(); cfg.Wifi != (config.Wifi{}) {
+		t.Errorf("wifi after removing it = %+v", cfg.Wifi)
+	}
+	if data, _ := os.ReadFile(path); strings.Contains(string(data), "welcome123") {
+		t.Errorf("the password of a removed network is still stored: %s", data)
+	}
+}

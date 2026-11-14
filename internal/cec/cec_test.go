@@ -112,3 +112,43 @@ func TestNoTVIsReported(t *testing.T) {
 		t.Errorf("power = %v, err = %v", p, err)
 	}
 }
+
+func TestVolumeButtonsArePressedAndLetGo(t *testing.T) {
+	tv, c := newFake()
+	var sent []string
+	inner := c.Run
+	c.Run = func(ctx context.Context, args ...string) (string, error) {
+		if len(args) > 3 && args[2] == "--to" {
+			sent = append(sent, strings.Join(args[2:], " "))
+		}
+		return inner(ctx, args...)
+	}
+	_ = tv
+	ctx := context.Background()
+	if err := c.Volume(ctx, "up", 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Volume(ctx, "down", 5); err != nil { // to a soundbar
+		t.Fatal(err)
+	}
+	if err := c.Volume(ctx, "mute", 0); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"--to 0 --user-control-pressed ui-cmd=volume-up --user-control-released",
+		"--to 5 --user-control-pressed ui-cmd=volume-down --user-control-released",
+		"--to 0 --user-control-pressed ui-cmd=mute --user-control-released",
+	}
+	var volume []string
+	for _, s := range sent {
+		if strings.Contains(s, "user-control") {
+			volume = append(volume, s)
+		}
+	}
+	if strings.Join(volume, "\n") != strings.Join(want, "\n") {
+		t.Errorf("sent:\n%s\nwant:\n%s", strings.Join(volume, "\n"), strings.Join(want, "\n"))
+	}
+	if err := c.Volume(ctx, "louder; reboot", 0); err == nil {
+		t.Error("an unknown button must be refused")
+	}
+}

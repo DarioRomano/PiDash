@@ -46,6 +46,16 @@ func newHoldDetector(keys []uint16, hold time.Duration, fire func()) *holdDetect
 	return &holdDetector{keys: set, hold: hold, grace: grace, fire: fire, holds: map[holdKey]*holdState{}}
 }
 
+// defuse keeps a key that is being held from firing: the hold turned out to
+// mean something else. The key has to be let go before it can fire again.
+func (h *holdDetector) defuse(device string, code uint16) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if st := h.holds[holdKey{device, code}]; st != nil && st.fireTimer != nil {
+		st.fireTimer.Stop()
+	}
+}
+
 // event handles one key event: value 1 is press, 0 release, 2 auto-repeat.
 func (h *holdDetector) event(device string, code uint16, value int32) {
 	if !h.keys[code] {

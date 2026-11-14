@@ -11,7 +11,8 @@ const ACTIONS: [Action | "digits", string][] = [
   ["down", "Show less information"],
   ["menu", "App row"],
   ["weather", "Weather details"],
-  ["playpause", "Hold or resume the slideshow"],
+  ["playpause", "Pause the music, or hold the slideshow"],
+  ["next", "Next piece of music, or next photo"],
   ["settings", "Settings"],
   ["digits", "Choose a tile in the app row by number"],
   ["home", "Back to the standard view"],
@@ -126,7 +127,7 @@ export class Help {
     side.appendChild(el("p", "help-text", remoteURL ? t("Open {address} on a phone in your home network.", { address: remoteURL }) : "Open the PiDash address followed by /remote on your phone."));
 
     side.appendChild(el("h3", "help-gap", "Game controller"));
-    side.appendChild(el("p", "help-text", "The stick or direction pad moves, the bottom button chooses, the right one goes back, Start opens the app row. Holding the logo button for two seconds leaves a game."));
+    side.appendChild(el("p", "help-text", "The stick or direction pad moves, the bottom button chooses, the right one goes back, Start opens the app row. Holding the logo button for two seconds leaves a game; with it held, up and down change the volume."));
 
     const grid = el("div", "help-grid");
     grid.append(keyboard, side);

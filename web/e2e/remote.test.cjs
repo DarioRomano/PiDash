@@ -664,3 +664,187 @@ test("the dashboard and the settings on the TV report in, so a frozen page can b
   assert.equal(reports, 0);
   await phone.context().close();
 });
+
+// --- Clock styles --------------------------------------------------------------------
+
+test("the clock can be numbers or a clock with hands", async () => {
+  const shown = (page, id) => page.evaluate((id) => getComputedStyle(document.getElementById(id)).display !== "none", id);
+  const page = await dashboard();
+  assert.deepEqual([await shown(page, "time"), await shown(page, "dial")], [true, false], "numbers unless chosen otherwise");
+  await page.context().close();
+
+  const own = await startPiDash('clock_style = "analog"\n' + APPS);
+  try {
+    const page = await openPage(own.base);
+    await page.waitForFunction(() => document.getElementById("stage").dataset.clockStyle === "analog");
+    assert.deepEqual([await shown(page, "time"), await shown(page, "dial")], [false, true], "hands instead of numbers");
+    // The hands point at the time: the minute hand turns six degrees a minute.
+    const [minute, now] = await page.evaluate(() => [document.getElementById("dial-minute").getAttribute("transform"), new Date().getMinutes()]);
+    assert.ok([`rotate(${now * 6})`, `rotate(${((now + 59) % 60) * 6})`].includes(minute), `minute hand: ${minute} at minute ${now}`);
+    assert.equal(await page.evaluate(() => document.querySelectorAll("#dial-marks line").length), 12);
+    assert.equal(await shown(page, "date"), true, "the date stays");
+    assert.deepEqual(page.problems, []);
+    await page.context().close();
+  } finally {
+    await own.stop();
+  }
+});
+
+// --- Wi-Fi for visitors ------------------------------------------------------------
+
+test("the Guest Wi-Fi tile shows a code to scan, and forgets the password when closed", async () => {
+  const page = await dashboard();
+  const remote = remoteFor(page, pi.base);
+  await remote.press("select");
+  assert.ok(!(await tiles(page)).includes("Guest Wi-Fi"), "no tile without a network for visitors");
+  await page.context().close();
+
+  const own = await startPiDash(APPS + '\n[guest_wifi]\nname = "Guests"\npassword = "welcome123"\n');
+  try {
+    const page = await openPage(own.base);
+    await page.waitForFunction(() => document.getElementById("backdrop").classList.contains("has-photo"), null, { timeout: 20000 });
+    await page.waitForTimeout(2000);
+    const remote = remoteFor(page, own.base);
+    await remote.press("select");
+    await focusTile(page, remote, "Guest Wi-Fi");
+    await remote.press("select");
+    await page.waitForSelector("#wifi-panel.open svg");
+    const text = await page.evaluate(() => document.getElementById("wifi-panel").innerText);
+    assert.ok(text.includes("Guests") && text.includes("welcome123"), `the page should name the network and its password:\n${text}`);
+    // A code is a square of 21, 25, 29, … squares with a margin of four around it.
+    const size = await page.evaluate(() => Number(document.querySelector("#wifi-panel svg").getAttribute("viewBox").split(" ")[2]) - 8);
+    assert.ok(size >= 21 && (size - 17) % 4 === 0, `a code of ${size} squares`);
+    assert.equal(await rowOpen(page), false);
+    await remote.press("left"); // any button
+    assert.equal(await page.evaluate(() => document.getElementById("wifi-panel").classList.contains("open")), false);
+    assert.equal(await page.evaluate(() => document.getElementById("wifi-panel").textContent), "", "the password does not stay in the page");
+    assert.deepEqual(page.problems, []);
+    await page.context().close();
+  } finally {
+    await own.stop();
+  }
+});
+
+// --- Now playing ----------------------------------------------------------------------
+
+test("music that plays is shown, and the remote's play and skip buttons control it", async () => {
+  const own = await startPiDash(APPS + '\n[[apps]]\nid = "spotify"\nname = "Spotify"\nurl = "https://open.spotify.com/"\nbackground = true\n');
+  try {
+    const post = (where, body) => fetch(own.base + where, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) });
+    const page = await openPage(own.base);
+    await page.waitForFunction(() => document.getElementById("backdrop").classList.contains("has-photo"), null, { timeout: 20000 });
+    await page.waitForTimeout(2000);
+    const remote = remoteFor(page, own.base);
+    const card = () => page.evaluate(() => (document.getElementById("playing").hidden ? "" : document.getElementById("playing").innerText.replace(/\n+/g, " | ")));
+    assert.equal(await card(), "", "nothing is shown while nothing plays");
+
+    // Without music the skip button goes to the next photo.
+    const before = await photo(page);
+    await remote.press("next");
+    await page.waitForFunction((b) => {
+      const shown = [...document.querySelectorAll("#backdrop img.visible, #backdrop video.visible")].sort((x, y) => Number(y.style.zIndex) - Number(x.style.zIndex))[0];
+      return shown && shown.src !== b;
+    }, before);
+
+    await post("/api/test/playing", { player: "Chromium", title: "Blue in Green", artist: "Miles Davis", album: "Kind of Blue", playing: true, canSkip: true });
+    await page.waitForFunction(() => !document.getElementById("playing").hidden);
+    assert.equal(await card(), "♪ | Blue in Green | Miles Davis");
+
+    // With music, the same buttons belong to the music.
+    await page.waitForTimeout(2200);
+    const during = await photo(page);
+    await remote.press("next");
+    await page.waitForTimeout(600);
+    assert.equal(await photo(page), during, "skip goes to the music, not to the photos");
+    await remote.press("playpause");
+    await page.waitForFunction(() => document.getElementById("playing").classList.contains("paused"));
+    assert.equal(await card(), "♪ | Blue in Green | Miles Davis · paused");
+    await remote.press("playpause");
+    await page.waitForFunction(() => !document.getElementById("playing").classList.contains("paused"));
+
+    // A music app that is left keeps playing behind the dashboard.
+    assert.equal((await post("/api/apps/start", { id: "spotify" })).status, 200);
+    assert.equal((await post("/api/test/leave")).status, 204); // Back held on the remote
+    const apps = async () => (await (await fetch(own.base + "/api/apps")).json());
+    assert.deepEqual([(await apps()).running, (await apps()).background], ["", "spotify"]);
+    await remote.press("select");
+    const sub = (label) => page.evaluate((label) => [...document.querySelectorAll(".tile")].find((t) => t.querySelector(".tile-label").textContent === label)?.querySelector(".tile-sub").textContent, label);
+    assert.equal(await sub("Spotify"), "Playing · OK to open");
+    assert.equal(await page.evaluate(() => document.querySelector(".tile.focused .tile-label").textContent), "Spotify", "the row opens on it");
+    // OK brings it back to the front; it was never closed.
+    await remote.press("select");
+    await page.waitForTimeout(400);
+    assert.deepEqual([(await apps()).running, (await apps()).background], ["spotify", undefined]);
+    // Behind the dashboard again, and ended for good with its own tile.
+    await post("/api/test/leave");
+    await page.waitForTimeout(300);
+    await remote.press("select");
+    await focusTile(page, remote, "Stop Spotify");
+    await remote.press("select");
+    await page.waitForFunction(() => ![...document.querySelectorAll(".tile .tile-label")].some((l) => l.textContent === "Stop Spotify"));
+    assert.deepEqual([(await apps()).running, (await apps()).background], ["", undefined]);
+
+    // The music ends.
+    await fetch(own.base + "/api/test/playing", { method: "POST", headers: { "Content-Type": "application/json" }, body: "null" });
+    await page.waitForFunction(() => document.getElementById("playing").hidden);
+    assert.deepEqual(page.problems, []);
+    await page.context().close();
+  } finally {
+    await own.stop();
+  }
+});
+
+// --- Games ------------------------------------------------------------------------------
+
+test("the games of the PC, from Moonlight, are tiles that start with one press", async () => {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "pidash-home-"));
+  const conf = path.join(home, ".config", "Moonlight Game Streaming Project");
+  fs.mkdirSync(conf, { recursive: true });
+  fs.writeFileSync(
+    path.join(conf, "Moonlight.conf"),
+    "[hosts]\n1\\hostname=LIVING-PC\n1\\uuid=3F2A9C1E-77AB-4C0D-9E55-0A1B2C3D4E5F\n1\\mac=@ByteArray(\\x1c\\x1b\\r\\xaa\\xbb\\x42)\n1\\localaddress=192.168.1.20\n" +
+      "1\\apps\\1\\name=Desktop\n1\\apps\\1\\id=1\n1\\apps\\2\\name=Hollow Knight\n1\\apps\\2\\id=2\n1\\apps\\3\\name=Hidden thing\n1\\apps\\3\\id=3\n1\\apps\\3\\hidden=true\n1\\apps\\size=3\nsize=1\n",
+  );
+  const own = await startPiDash(APPS + '\n[[apps]]\nid = "moonlight"\nname = "Moonlight"\ncommand = "moonlight-qt"\n', { HOME: home });
+  try {
+    const page = await openPage(own.base);
+    await page.waitForFunction(() => document.getElementById("backdrop").classList.contains("has-photo"), null, { timeout: 20000 });
+    await page.waitForTimeout(2000);
+    const remote = remoteFor(page, own.base);
+    await remote.press("select");
+    const row = await tiles(page);
+    const at = row.indexOf("Moonlight");
+    assert.deepEqual(row.slice(at, at + 3), ["Moonlight", "Desktop", "Hollow Knight"], `the games follow the apps, the hidden one left out: ${row}`);
+
+    // Games keep the order of Moonlight's list: they cannot be picked up.
+    await focusTile(page, remote, "Hollow Knight");
+    await remote.press("up");
+    assert.equal(await carried(page), "");
+    // And moving an app next to them still saves, with the games left out of it.
+    await focusTile(page, remote, "Hollow Knight"); // stays
+    for (let i = 0; i < 2; i++) await remote.press("left"); // Moonlight
+    await remote.press("up");
+    assert.equal(await carried(page), "Moonlight");
+    await remote.press("left");
+    await remote.press("select");
+    await page.waitForTimeout(400);
+    const status = await (await fetch(own.base + "/api/apps")).json();
+    assert.deepEqual(status.apps.map((a) => a.name), ["Netflix", "Moonlight", "YouTube", "Desktop", "Hollow Knight"]);
+    assert.equal(status.error, undefined);
+
+    // OK starts the game.
+    await focusTile(page, remote, "Hollow Knight");
+    await remote.press("select");
+    await page.waitForFunction(() => !document.getElementById("rail").classList.contains("open"));
+    const running = (await (await fetch(own.base + "/api/apps")).json()).running;
+    assert.match(running, /^game-[0-9a-f]{6}-2$/, "the game is what is running");
+    assert.deepEqual(page.problems, []);
+    await page.context().close();
+  } finally {
+    await own.stop();
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

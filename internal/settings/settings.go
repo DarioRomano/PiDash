@@ -41,6 +41,8 @@ type File struct {
 	System   *System   `json:"system,omitempty"`
 	// Lock holds the PIN that must be typed before settings can be changed.
 	Lock *Lock `json:"lock,omitempty"`
+	// Wifi is the network for visitors.
+	Wifi *Wifi `json:"wifi,omitempty"`
 	// Radio are the stations in the app row.
 	Radio *[]config.RadioStation `json:"radio,omitempty"`
 }
@@ -52,6 +54,19 @@ type Lock struct {
 	// Set is for the page: a PIN exists. Remove, from the page, deletes it.
 	Set    bool `json:"set,omitempty"`
 	Remove bool `json:"remove,omitempty"`
+}
+
+// Wifi is the network for visitors. Like every password, this one is
+// write-only on the settings page: the page learns only whether one is set,
+// and sends an empty one to keep it.
+type Wifi struct {
+	Name     string `json:"name"`
+	Password string `json:"password,omitempty"`
+	Hidden   bool   `json:"hidden,omitempty"`
+	// Open says the network has no password; from the page, it clears one.
+	Open bool `json:"open,omitempty"`
+	// PasswordSet is for the page.
+	PasswordSet bool `json:"passwordSet,omitempty"`
 }
 
 // Calendar settings: the calendar links.
@@ -87,6 +102,8 @@ type System struct {
 	// SoundFollows moves the sound to Bluetooth headphones when they
 	// connect. Absent leaves config.toml in charge.
 	SoundFollows *bool `json:"soundFollows,omitempty"`
+	// Games shows the games of the PC, from Moonlight, as tiles.
+	Games *bool `json:"games,omitempty"`
 }
 
 // defaultCoolAbove is the limit used when cooling is switched on from the
@@ -114,6 +131,7 @@ type Screen struct {
 	Language      string `json:"language,omitempty"`
 	ClockPosition string `json:"clockPosition,omitempty"`
 	ClockSize     string `json:"clockSize,omitempty"`
+	ClockStyle    string `json:"clockStyle,omitempty"`
 	View          string `json:"view,omitempty"`
 	Background    string `json:"background,omitempty"`
 	// Sounds switches the small sounds of the remote; absent leaves config.toml in charge.
@@ -226,7 +244,7 @@ var Presets = []Preset{
 		NeedsURL: true, URLHint: "http://192.168.1.20:5000/?launchApp=SYNO.Foto.AppInstance",
 		App: config.App{Browser: config.BrowserChromium}},
 	{ID: "spotify", Name: "Spotify", Description: "The Spotify web player. Works best with a mouse; the remote's OK and play button work on what is selected",
-		App: config.App{URL: "https://open.spotify.com/", Browser: config.BrowserChromium}},
+		App: config.App{URL: "https://open.spotify.com/", Browser: config.BrowserChromium, Background: true}},
 	{ID: "plex", Name: "Plex", Description: "The Plex web player",
 		App: config.App{URL: "https://app.plex.tv/desktop", Browser: config.BrowserChromium}},
 	{ID: "moonlight", Name: "Moonlight", Description: "Game streaming from your PC. Needs Moonlight installed", Console: true,
@@ -477,6 +495,9 @@ func apply(base config.Config, f File, installed []desktop.Entry) (config.Config
 	}
 	if sys := f.System; sys != nil {
 		cfg.Update.Auto = sys.AutoUpdate
+		if sys.Games != nil {
+			cfg.Games.Moonlight = *sys.Games
+		}
 		if sys.SoundFollows != nil {
 			cfg.Sound.FollowBluetooth = *sys.SoundFollows
 		}
@@ -492,6 +513,9 @@ func apply(base config.Config, f File, installed []desktop.Entry) (config.Config
 	if l := f.Lock; l != nil {
 		cfg.Remote.PIN = l.PIN
 	}
+	if w := f.Wifi; w != nil {
+		cfg.Wifi = config.Wifi{Name: strings.TrimSpace(w.Name), Password: w.Password, Hidden: w.Hidden}
+	}
 	if f.Radio != nil {
 		cfg.Radio = append([]config.RadioStation{}, *f.Radio...)
 	}
@@ -503,6 +527,7 @@ func apply(base config.Config, f File, installed []desktop.Entry) (config.Config
 		}{
 			{sc.Language, &cfg.Display.Language}, {sc.ClockPosition, &cfg.Display.ClockPosition},
 			{sc.ClockSize, &cfg.Display.ClockSize}, {sc.View, &cfg.Display.View}, {sc.Background, &cfg.Display.Background},
+			{sc.ClockStyle, &cfg.Display.ClockStyle},
 		} {
 			if choice.from != "" {
 				*choice.to = choice.from
@@ -727,6 +752,7 @@ type View struct {
 	Home     Home                  `json:"home"`
 	System   System                `json:"system"`
 	Lock     Lock                  `json:"lock"`
+	Wifi     Wifi                  `json:"wifi"`
 	Radio    []config.RadioStation `json:"radio"`
 	Apps     []App                 `json:"apps"`
 	Presets  []Preset              `json:"presets"`
@@ -796,12 +822,13 @@ func (s *Store) View() View {
 				Quality: cfg.Photos.Synology.Quality},
 		},
 		Screen: Screen{NightStart: cfg.Display.NightStart, NightEnd: cfg.Display.NightEnd, Language: cfg.Display.Language,
-			ClockPosition: cfg.Display.ClockPosition, ClockSize: cfg.Display.ClockSize, View: cfg.Display.View, Background: cfg.Display.Background,
+			ClockPosition: cfg.Display.ClockPosition, ClockSize: cfg.Display.ClockSize, ClockStyle: cfg.Display.ClockStyle, View: cfg.Display.View, Background: cfg.Display.Background,
 			Sounds: boolPtr(cfg.Display.Sounds)},
 		Calendar: Calendar{Links: []Link{}},
 		Home:     Home{URL: cfg.Home.URL, TokenSet: cfg.Home.Token != "", Entities: append([]string{}, cfg.Home.Entities...)},
-		System:   System{AutoUpdate: cfg.Update.Auto, Cooling: boolPtr(cfg.System.CoolAbove > 0), SoundFollows: boolPtr(cfg.Sound.FollowBluetooth)},
+		System:   System{AutoUpdate: cfg.Update.Auto, Cooling: boolPtr(cfg.System.CoolAbove > 0), SoundFollows: boolPtr(cfg.Sound.FollowBluetooth), Games: boolPtr(cfg.Games.Moonlight)},
 		Lock:     Lock{Set: cfg.Remote.PIN != ""},
+		Wifi:     Wifi{Name: cfg.Wifi.Name, Hidden: cfg.Wifi.Hidden, PasswordSet: cfg.Wifi.Password != "", Open: cfg.Wifi.Name != "" && cfg.Wifi.Password == ""},
 		Radio:    append([]config.RadioStation{}, cfg.Radio...),
 		Apps:     []App{},
 		Presets:  presetsForPage(),
@@ -842,6 +869,7 @@ type Update struct {
 	Home     *Home                  `json:"home"`
 	System   *System                `json:"system"`
 	Lock     *Lock                  `json:"lock"`
+	Wifi     *Wifi                  `json:"wifi"`
 	Radio    *[]config.RadioStation `json:"radio"`
 }
 
@@ -922,6 +950,32 @@ func (s *Store) Save(u Update) error {
 	if u.Radio != nil {
 		stations := append([]config.RadioStation{}, *u.Radio...)
 		next.Radio = &stations
+	}
+	if w := u.Wifi; w != nil {
+		wifi := Wifi{Name: strings.TrimSpace(w.Name), Hidden: w.Hidden}
+		switch {
+		case wifi.Name == "":
+			wifi = Wifi{} // no network for visitors
+		case w.Open:
+			// No password, and none kept.
+		case w.Password != "":
+			// WPA wants 8 to 63 characters; anything else cannot be right.
+			if n := len(w.Password); n < 8 || n > 63 {
+				return errors.New("a Wi-Fi password has 8 to 63 characters")
+			}
+			wifi.Password = w.Password
+		default:
+			// Left empty on the page: keep the one already stored.
+			if cur, err := apply(s.base, s.file, s.installed()); err == nil {
+				wifi.Password = cur.Wifi.Password
+			} else {
+				wifi.Password = s.base.Wifi.Password
+			}
+		}
+		if len(wifi.Name) > 32 {
+			return errors.New("the name of a Wi-Fi network has at most 32 characters")
+		}
+		next.Wifi = &wifi
 	}
 	if l := u.Lock; l != nil {
 		pin := strings.TrimSpace(l.PIN)

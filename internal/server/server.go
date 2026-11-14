@@ -24,11 +24,13 @@ import (
 	"github.com/DarioRomano/PiDash/internal/apps"
 	"github.com/DarioRomano/PiDash/internal/bluetooth"
 	"github.com/DarioRomano/PiDash/internal/config"
+	"github.com/DarioRomano/PiDash/internal/games"
 	"github.com/DarioRomano/PiDash/internal/hass"
 	"github.com/DarioRomano/PiDash/internal/input"
 	"github.com/DarioRomano/PiDash/internal/kiosk"
 	"github.com/DarioRomano/PiDash/internal/logring"
 	"github.com/DarioRomano/PiDash/internal/photos"
+	"github.com/DarioRomano/PiDash/internal/playing"
 	"github.com/DarioRomano/PiDash/internal/providers"
 	"github.com/DarioRomano/PiDash/internal/providers/calendar"
 	"github.com/DarioRomano/PiDash/internal/providers/weather"
@@ -55,6 +57,8 @@ type Server struct {
 	bluetooth bluetooth.Manager
 	sound     sound.Manager
 	watchdog  *kiosk.Watchdog
+	player    Player
+	games     *games.Library
 	// lastSound is what the dashboard was last told about the sound outputs,
 	// for pages that connect later.
 	soundMu    sync.Mutex
@@ -105,6 +109,10 @@ type Deps struct {
 	Sound sound.Manager
 	// Watchdog is told when the dashboard on the TV reports in; may be nil.
 	Watchdog *kiosk.Watchdog
+	// Playing knows what music is playing; may be nil.
+	Playing Player
+	// Games wakes the PC before one of its games is started; may be nil.
+	Games *games.Library
 	// Version is the PiDash version, shown on the phone remote.
 	Version string
 	// Notices are start-up problems to show on the TV.
@@ -136,6 +144,10 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("GET /api/state", s.handleState)
 	s.mux.HandleFunc("GET /api/status", s.handleStatus)
 	s.mux.HandleFunc("POST /api/alive", s.handleAlive)
+	s.mux.HandleFunc("GET /api/wifi", s.handleWifi)
+	s.mux.HandleFunc("GET /api/playing", s.handlePlaying)
+	s.mux.HandleFunc("GET /api/playing/art", s.handlePlayingArt)
+	s.mux.HandleFunc("POST /api/playing/{button}", s.handlePlayingControl)
 	s.mux.HandleFunc("GET /api/sound", s.handleSound)
 	s.mux.HandleFunc("POST /api/sound/{action}", s.handleSoundAction)
 	s.mux.HandleFunc("GET /api/bluetooth", s.handleBluetooth)
@@ -161,6 +173,25 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 		})
 	}
 	if d.TestHooks {
+		// Back held on the remote while an app is open.
+		s.mux.HandleFunc("POST /api/test/leave", func(w http.ResponseWriter, r *http.Request) {
+			if err := s.apps.Leave(r.Context()); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		})
+		// Music starting and stopping, for the end-to-end tests.
+		s.mux.HandleFunc("POST /api/test/playing", func(w http.ResponseWriter, r *http.Request) {
+			var track *playing.Track
+			mock, ok := s.player.(*playing.Mock)
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&track); err != nil || !ok {
+				http.Error(w, "bad request", http.StatusBadRequest)
+				return
+			}
+			mock.Set(track)
+			w.WriteHeader(http.StatusNoContent)
+		})
 		// Headphones being switched on and off, for the end-to-end tests.
 		s.mux.HandleFunc("POST /api/test/headphones", func(w http.ResponseWriter, r *http.Request) {
 			var req struct {
@@ -219,6 +250,7 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("POST /api/home/activate", s.handleHomeActivate)
 	s.updater = d.Updater
 	s.remote, s.problems, s.bluetooth, s.sound, s.watchdog = d.Remote, d.Problems, d.Bluetooth, d.Sound, d.Watchdog
+	s.player, s.games = d.Playing, d.Games
 	s.mux.HandleFunc("GET /api/update", s.handleUpdate)
 	s.mux.HandleFunc("POST /api/update/check", s.handleUpdate)
 	s.mux.HandleFunc("POST /api/update/install", s.handleUpdateInstall)
@@ -462,6 +494,19 @@ func (s *Server) handleAppStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad json", http.StatusBadRequest)
 		return
 	}
+	// A game on a PC that is asleep: wake the PC first, and say so on the TV.
+	if s.games != nil {
+		err := s.games.Prepare(r.Context(), req.ID, func(pc string) {
+			s.hub.broadcast("waking", struct {
+				Name string `json:"name"`
+			}{pc})
+		})
+		if err != nil {
+			s.log.Warn("game start: the PC did not wake up", "game", req.ID, "err", err)
+			http.Error(w, err.Error(), http.StatusGatewayTimeout)
+			return
+		}
+	}
 	err := s.apps.Start(r.Context(), req.ID)
 	switch {
 	case errors.Is(err, apps.ErrUnknownApp):
@@ -493,7 +538,13 @@ func (s *Server) handleAppOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The same apps in another order, or nothing is changed.
-	now := s.apps.Status().Apps
+	// Game tiles are not among the apps a person arranges.
+	var now []apps.Info
+	for _, a := range s.apps.Status().Apps {
+		if !a.Game {
+			now = append(now, a)
+		}
+	}
 	have := map[string]bool{}
 	for _, a := range now {
 		have[a.ID] = true
@@ -1195,6 +1246,11 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := send("tv", s.tv.Status()); err != nil {
 		return
+	}
+	if s.player != nil {
+		if err := send("playing", s.player.Current()); err != nil {
+			return
+		}
 	}
 	s.soundMu.Lock()
 	outputs := s.lastSound

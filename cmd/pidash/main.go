@@ -20,11 +20,13 @@ import (
 	"github.com/DarioRomano/PiDash/internal/bluetooth"
 	"github.com/DarioRomano/PiDash/internal/cec"
 	"github.com/DarioRomano/PiDash/internal/config"
+	"github.com/DarioRomano/PiDash/internal/games"
 	"github.com/DarioRomano/PiDash/internal/hass"
 	"github.com/DarioRomano/PiDash/internal/input"
 	"github.com/DarioRomano/PiDash/internal/kiosk"
 	"github.com/DarioRomano/PiDash/internal/logring"
 	"github.com/DarioRomano/PiDash/internal/photos"
+	"github.com/DarioRomano/PiDash/internal/playing"
 	"github.com/DarioRomano/PiDash/internal/providers"
 	"github.com/DarioRomano/PiDash/internal/providers/calendar"
 	"github.com/DarioRomano/PiDash/internal/providers/system"
@@ -178,7 +180,21 @@ func main() {
 		// Keeps the keyboard, and with it the remote, on the app that is open.
 		appManager.Focus = &apps.Focuser{Env: func() []string { return apps.DesktopEnv(os.Environ()) }, Log: log}
 	}
+	if *mock {
+		appManager.Focus = apps.PretendFocuser(log)
+	}
 	appManager.ResolveIcons(apps.DefaultIconFinder())
+	// The games of the PC, as Moonlight knows them, become tiles too.
+	library := gameLibrary(cfg, log)
+	if library != nil {
+		finder := apps.DefaultIconFinder()
+		appManager.SetGames(library.Load(), finder)
+		library.OnChange = func(tiles []config.App) { appManager.SetGames(tiles, finder) }
+		if *mock {
+			// Development: no PC is knocked at or woken.
+			library.Wake.Up = func(context.Context, games.Host) bool { return true }
+		}
+	}
 
 	photoService, err := newPhotoService(cfg.Photos, *mock, log)
 	if err != nil {
@@ -272,8 +288,18 @@ func main() {
 		audio = &sound.Pactl{}
 	}
 
-	// The TV remote, keyboards and game controllers, read below the desktop.
+	// What music is playing, for the dashboard.
+	var player server.Player
+	var follow func(context.Context)
 	var srv *server.Server
+	if *mock {
+		player = &playing.Mock{OnChange: func(t *playing.Track) { srv.PlayingChanged(t) }}
+	} else {
+		real := &playing.Service{Log: log, OnChange: func(t *playing.Track) { srv.PlayingChanged(t) }}
+		player, follow = real, real.Run
+	}
+
+	// The TV remote, keyboards and game controllers, read below the desktop.
 	var remote *input.Remote
 	if !*mock {
 		remote = &input.Remote{
@@ -284,8 +310,8 @@ func main() {
 				srv.RemoteAction(action)
 			},
 			OnAppExit: func() {
-				log.Info("Back held on the remote: closing the app")
-				if err := appManager.Stop(context.Background()); err != nil {
+				log.Info("Back held on the remote: leaving the app")
+				if err := appManager.Leave(context.Background()); err != nil {
 					log.Warn("closing the app", "err", err)
 				}
 			},
@@ -310,6 +336,37 @@ func main() {
 				srv.RemoteAction(action)
 			},
 		}
+		if cfg.TV.ControllerVolume {
+			// Logo button and up or down on a controller: the TV's volume.
+			// The steps are sent one after the other; while the TV is busy
+			// with one, further presses are dropped rather than piled up.
+			steps := make(chan int, 2)
+			to := 0 // the TV
+			if cfg.TV.VolumeTo == "audio" {
+				to = 5 // a soundbar or receiver
+			}
+			go func() {
+				warned := false
+				for step := range steps {
+					button := "up"
+					if step < 0 {
+						button = "down"
+					}
+					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					if err := cecControl.Volume(ctx, button, to); err != nil && !warned {
+						warned = true
+						log.Warn("could not change the volume from the controller", "err", err)
+					}
+					cancel()
+				}
+			}()
+			remote.OnVolume = func(step int) {
+				select {
+				case steps <- step:
+				default:
+				}
+			}
+		}
 		if cfg.TV.WakeOnController {
 			// Like a games console: switching the controller on switches the TV on.
 			remote.OnPadWake = func(name string) {
@@ -331,17 +388,21 @@ func main() {
 		Kiosk: kioskControl, Apps: appManager, Photos: photoService,
 		Input: phoneInput, TV: tvService, Version: version, NewRunner: newRunner, Updater: updater, PhotoStatePath: photoStatePath(), TestHooks: *mock,
 		Notices: notices, URLFile: server.URLFile(), Settings: store, BaseListen: baseListen,
-		Remote: remote, Problems: problems, Bluetooth: blue, Sound: audio, Watchdog: watchdog,
+		Remote: remote, Problems: problems, Bluetooth: blue, Sound: audio, Watchdog: watchdog, Playing: player, Games: library,
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	if library != nil {
+		go library.Run(ctx)
+	}
 	if !*mock {
 		go remote.Run(ctx)
 		if watchdog != nil {
 			go watchdog.Run(ctx)
 		}
+		go follow(ctx)
 		// Answer the TV's questions, so it keeps sending the remote's keys
 		// here after it was switched to another input and back.
 		go cecControl.Follow(ctx, log)
@@ -372,7 +433,34 @@ func main() {
 // runApp replaces this process with the command of the configured app. It is
 // what the systemd units for both launch modes execute, so an app's command
 // lives only in config.toml.
+// gameLibrary returns the games of the PC, if Moonlight is one of the apps
+// and its games are wanted as tiles; nil otherwise.
+func gameLibrary(cfg config.Config, log *slog.Logger) *games.Library {
+	if !cfg.Games.Moonlight {
+		return nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	for _, a := range cfg.Apps {
+		if games.IsMoonlight(a) {
+			return &games.Library{Home: home, Moonlight: a, Log: log}
+		}
+	}
+	return nil
+}
+
 func runApp(cfg config.Config, id string, log *slog.Logger) error {
+	// A game tile is not in the settings: it is read from Moonlight's list.
+	if strings.HasPrefix(id, games.Prefix) {
+		if library := gameLibrary(cfg, log); library != nil {
+			library.Load()
+			if game, ok := library.Find(id); ok {
+				cfg.Apps = append(cfg.Apps, game)
+			}
+		}
+	}
 	for _, a := range cfg.Apps {
 		if a.ID != id {
 			continue

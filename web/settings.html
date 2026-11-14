@@ -194,6 +194,14 @@
           </select>
         </label>
         <label class="field">
+          <span>Clock style</span>
+          <select id="d-style">
+            <option value="bold">Bold numbers</option>
+            <option value="slim">Slim numbers</option>
+            <option value="analog">A clock with hands</option>
+          </select>
+        </label>
+        <label class="field">
           <span>Shown at start</span>
           <select id="d-view">
             <option value="clock">Clock, date and calendar</option>
@@ -233,6 +241,11 @@
         <h2>Apps</h2>
         <p class="hint">These appear in the app row on the TV, in this order.</p>
         <ul id="app-list"></ul>
+        <label class="check"><input id="sys-games" type="checkbox" /><span>Show the games of my PC, from Moonlight, as tiles of their own</span></label>
+        <p class="hint">
+          Needs Moonlight in the list above, paired with the PC. One press on a game wakes the PC and starts it.
+          The list is Moonlight's: open the PC once in Moonlight to fill or refresh it.
+        </p>
 
         <div class="add">
           <label class="field">
@@ -308,6 +321,25 @@
         <p id="bt-found-title" class="hint" hidden>Found nearby:</p>
         <ul id="bt-found" class="rows"></ul>
         <p id="bt-result" class="result"></p>
+      </section>
+
+      <section class="card">
+        <h2>Wi-Fi for visitors</h2>
+        <p class="hint">
+          With a network entered here, the app row has a "Guest Wi-Fi" tile. It shows a code that visitors point
+          their phone's camera at to join, without anyone spelling out a password.
+        </p>
+        <label class="field">
+          <span>Name of the network</span>
+          <input id="wf-name" type="text" autocomplete="off" autocapitalize="off" maxlength="32" />
+        </label>
+        <label class="field" id="wf-pass-row">
+          <span>Password</span>
+          <input id="wf-pass" type="password" autocomplete="new-password" maxlength="63" />
+        </label>
+        <label class="check"><input id="wf-open" type="checkbox" /><span>This network has no password</span></label>
+        <label class="check"><input id="wf-hidden" type="checkbox" /><span>The network does not show its name</span></label>
+        <p class="hint">The password is shown on the TV to whoever opens that tile. A guest network of its own is the safest choice.</p>
       </section>
 
       <section class="card">

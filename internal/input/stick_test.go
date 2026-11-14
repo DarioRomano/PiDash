@@ -302,3 +302,80 @@ func TestAControllerIsAKeyboardInsideAWebsite(t *testing.T) {
 		t.Errorf("the dashboard reacted while an app was open: %v", actions)
 	}
 }
+
+func TestLogoButtonAndUpOrDownIsTheVolume(t *testing.T) {
+	h := newRemoteHarness(80 * time.Millisecond) // holding the logo button this long leaves an app
+	h.RepeatAfter, h.RepeatEvery = 60*time.Millisecond, 20*time.Millisecond
+	var mu sync.Mutex
+	var steps []int
+	h.OnVolume = func(step int) { mu.Lock(); steps = append(steps, step); mu.Unlock() }
+	got := func() []int { mu.Lock(); defer mu.Unlock(); return append([]int{}, steps...) }
+	const pad, tv = "/dev/input/event7", "/dev/input/event2"
+	h.listening(pad, "DualSense Wireless Controller", true, true)
+	h.listening(tv, "LG TV", false, true)
+	h.appRunning = true // in the middle of a game
+
+	// Without the logo button, up and down are the game's.
+	h.key(pad, btnDpadUp, 1)
+	h.key(pad, btnDpadUp, 0)
+	if len(got()) != 0 {
+		t.Fatalf("the volume changed without the logo button: %v", got())
+	}
+
+	// Logo button held: up, up, down. And the game is not left, although
+	// the logo button stays down for longer than it takes to leave.
+	h.key(pad, btnMode, 1)
+	h.key(pad, btnDpadUp, 1)
+	h.key(pad, btnDpadUp, 0)
+	h.key(pad, keyUp, 1) // the stick, which arrives as an arrow
+	h.key(pad, keyUp, 0)
+	h.key(pad, btnDpadDown, 1)
+	h.key(pad, btnDpadDown, 0)
+	time.Sleep(200 * time.Millisecond)
+	h.key(pad, btnMode, 0)
+	if g := got(); len(g) != 3 || g[0] != 1 || g[1] != 1 || g[2] != -1 {
+		t.Errorf("volume steps = %v, want +1 +1 -1", g)
+	}
+	if _, _, exits := h.snapshot(); exits != 0 {
+		t.Errorf("the game was closed %d times while the logo button was held for the volume", exits)
+	}
+
+	// Held down, it keeps turning.
+	h.key(pad, btnMode, 1)
+	h.key(pad, btnDpadDown, 1)
+	time.Sleep(160 * time.Millisecond)
+	h.key(pad, btnDpadDown, 0)
+	h.key(pad, btnMode, 0)
+	if g := got(); len(g) < 6 {
+		t.Errorf("a held direction turned the volume %d steps, want several", len(g)-3)
+	}
+	for _, s := range got()[3:] {
+		if s != -1 {
+			t.Errorf("turned the wrong way: %v", got()[3:])
+			break
+		}
+	}
+
+	// After letting go, the logo button is the way out of the game again.
+	time.Sleep(100 * time.Millisecond) // the release is believed
+	h.key(pad, btnMode, 1)
+	time.Sleep(200 * time.Millisecond)
+	h.key(pad, btnMode, 0)
+	if _, _, exits := h.snapshot(); exits != 1 {
+		t.Errorf("holding the logo button alone closed the game %d times, want once", exits)
+	}
+
+	// Left and right with the logo button are nothing, and another device's
+	// arrows never count, whatever a controller is holding.
+	n := len(got())
+	h.appRunning = false
+	h.key(pad, btnMode, 1)
+	h.key(pad, btnDpadLeft, 1)
+	h.key(pad, btnDpadLeft, 0)
+	h.key(tv, keyUp, 1)
+	h.key(tv, keyUp, 0)
+	h.key(pad, btnMode, 0)
+	if len(got()) != n {
+		t.Errorf("the volume changed on left, or on the TV remote's arrow: %v", got()[n:])
+	}
+}

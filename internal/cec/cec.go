@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -187,6 +188,26 @@ func (c *Controller) Standby(ctx context.Context) error {
 		return err
 	}
 	_, err = c.run(ctx, "-d", a.dev, "--to", "0", "--standby")
+	return err
+}
+
+// Volume presses a volume button of the TV's remote on its behalf: "up",
+// "down" or "mute". to is the device that sets the volume: 0 for the TV,
+// 5 for a soundbar or receiver that has taken over the sound.
+func (c *Controller) Volume(ctx context.Context, button string, to int) error {
+	if button != "up" && button != "down" && button != "mute" {
+		return fmt.Errorf("unknown volume button %q", button)
+	}
+	a, err := c.ready(ctx)
+	if err != nil {
+		return err
+	}
+	cmd := "volume-" + button
+	if button == "mute" {
+		cmd = "mute"
+	}
+	// Pressed and let go, as a finger would.
+	_, err = c.run(ctx, "-d", a.dev, "--to", strconv.Itoa(to), "--user-control-pressed", "ui-cmd="+cmd, "--user-control-released")
 	return err
 }
 

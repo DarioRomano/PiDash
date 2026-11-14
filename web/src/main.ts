@@ -3,6 +3,7 @@ import { setLanguage, t } from "./i18n";
 import { Clock } from "./clock";
 import { Help } from "./help";
 import { StatusPanel } from "./status";
+import { WifiPanel } from "./wifi";
 import { play, setSounds } from "./sfx";
 import { reportAlive } from "./alive";
 
@@ -11,6 +12,7 @@ import { Input } from "./input";
 import { Rail, type RailItem } from "./rail";
 import { Slideshow } from "./slideshow";
 import { connect } from "./sse";
+import type { Track } from "./types";
 import type { Action, AppsStatus, CalendarState, ClientConfig, HomeEntity, PhotoItem, RadioStation, PhotosStatus, StateEntry, SystemState, WeatherState } from "./types";
 import { WeatherView } from "./weather";
 
@@ -224,6 +226,19 @@ const help = new Help($("#help"), (open) => stage.classList.toggle("panel-open",
 // --- Status ---------------------------------------------------------------------
 // How PiDash is doing, readable from the sofa.
 
+// --- Wi-Fi for visitors ---------------------------------------------------------
+
+const WIFI_ID = "__wifi";
+const WIFI_GLYPH =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M3 9.500a13 13 0 0 1 18 0M6 12.800a8.600 8.600 0 0 1 12 0M9 16a4.300 4.300 0 0 1 6 0"/><circle cx="12" cy="19" r="0.900" fill="currentColor"/></svg>';
+let guestWifi = "";
+const wifiPanel: WifiPanel = new WifiPanel($("#wifi-panel"), (open) => stage.classList.toggle("panel-open", open || weather.isOpen || help.isOpen || statusPanel.isOpen));
+
+const STOP_ID = "__stop-music";
+const STOP_GLYPH =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
+  '<circle cx="12" cy="12" r="9"/><rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor"/></svg>';
 const STATUS_ID = "__status";
 const STATUS_GLYPH =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
@@ -294,6 +309,58 @@ let radioStations: RadioStation[] = [];
 let radioPlaying = -1;
 const radio = new Audio();
 radio.preload = "none";
+// --- Now playing --------------------------------------------------------------------
+// Music that plays somewhere on the Pi: Spotify behind the dashboard, a
+// Spotify Connect or AirPlay receiver, any player that announces itself. A
+// small card says what it is; the remote's play and skip buttons control it.
+
+const playingCard = document.createElement("div");
+playingCard.id = "playing";
+playingCard.hidden = true;
+const playingArt = document.createElement("img");
+playingArt.alt = "";
+const playingNote = document.createElement("div"); // shown when there is no cover
+playingNote.className = "playing-note";
+playingNote.textContent = "♪";
+const playingTitle = document.createElement("div");
+playingTitle.className = "playing-title";
+const playingBy = document.createElement("div");
+playingBy.className = "playing-by";
+const playingWords = document.createElement("div");
+playingWords.className = "playing-words";
+playingWords.append(playingTitle, playingBy);
+playingCard.append(playingArt, playingNote, playingWords);
+// Names of songs and artists are not for translating.
+playingCard.dataset.noTranslate = "";
+ui.appendChild(playingCard);
+playingArt.addEventListener("error", () => {
+  playingArt.hidden = true;
+  playingNote.hidden = false;
+});
+let track: Track | null = null;
+
+function onPlaying(next: Track | null) {
+  if (next && !next.title) next = null; // a player with nothing to say
+  track = next;
+  playingCard.hidden = !next;
+  if (!next) return;
+  playingCard.classList.toggle("paused", !next.playing);
+  playingTitle.textContent = next.title;
+  playingBy.textContent = [next.artist, next.playing ? "" : t("paused")].filter(Boolean).join("  ·  ") || next.player;
+  const art = next.art ?? "";
+  if (playingArt.getAttribute("src") !== art) {
+    if (art) playingArt.src = art;
+    else playingArt.removeAttribute("src");
+  }
+  playingArt.hidden = !art;
+  playingNote.hidden = !!art;
+}
+
+/** Presses play/pause, next or previous on whatever is playing. */
+function musicButton(button: "playpause" | "next" | "previous") {
+  void fetch(`/api/playing/${button}`, { method: "POST" }).catch(() => {});
+}
+
 const radioLabel = document.createElement("div");
 radioLabel.id = "radio";
 radioLabel.hidden = true;
@@ -321,6 +388,9 @@ function toggleRadio(index: number) {
   if (!st) return;
   radioPlaying = index;
   radio.src = st.url;
+  // The browser announces what it plays to the rest of the Pi. Marked as
+  // PiDash's own, so that it is not shown a second time as "now playing".
+  if ("mediaSession" in navigator) navigator.mediaSession.metadata = new MediaMetadata({ title: st.name, album: "PiDash" });
   radio.play().catch((err: unknown) => {
     // Pausing before the station has started is not a failure.
     if (radioPlaying !== index || (err instanceof DOMException && err.name === "AbortError")) return;
@@ -535,13 +605,16 @@ function railItems(): RailItem[] {
   if (w) items.push({ id: WEATHER_ID, label: "Weather", glyph: w.glyph, sub: w.sub });
   for (const a of appsStatus.apps) {
     const running = appsStatus.running === a.id;
+    // A music app that was left keeps playing behind the dashboard.
+    const behind = appsStatus.background === a.id;
     items.push({
       id: a.id,
       label: a.name,
       icon: a.hasIcon ? `/api/apps/${encodeURIComponent(a.id)}/icon` : undefined,
-      movable: true,
-      running,
-      sub: running ? "Running · OK to stop" : "",
+      // Games come as Moonlight lists them; only the apps are arranged by hand.
+      movable: !a.game,
+      running: running || behind,
+      sub: running ? "Running · OK to stop" : behind ? "Playing · OK to open" : a.game ? "Game" : "",
     });
   }
   radioStations.forEach((st, i) => {
@@ -571,6 +644,9 @@ function railItems(): RailItem[] {
   if (soundOutputs.length > 1) {
     items.push({ id: SOUND_ID, label: "Sound", glyph: SOUND_GLYPH, sub: soundOutputs.find((o) => o.active)?.name ?? "" });
   }
+  const behind = appsStatus.apps.find((a) => a.id === appsStatus.background);
+  if (behind) items.push({ id: STOP_ID, label: t("Stop {name}", { name: behind.name }), glyph: STOP_GLYPH });
+  if (guestWifi) items.push({ id: WIFI_ID, label: "Guest Wi-Fi", glyph: WIFI_GLYPH, sub: guestWifi });
   items.push({ id: STATUS_ID, label: "Status", glyph: STATUS_GLYPH });
   items.push({ id: SETTINGS_ID, label: "Settings", glyph: GEAR_GLYPH, sub: newVersion ? "Update available" : undefined, notice: !!newVersion });
   items.push({ id: EXIT_ID, label: "Desktop", glyph: EXIT_GLYPH });
@@ -612,6 +688,20 @@ async function activateRailItem(item: RailItem) {
   }
   if (item.id === SOUND_ID) {
     void nextSoundOutput();
+    return;
+  }
+  if (item.id === STOP_ID) {
+    // Ends the music app that plays behind the dashboard.
+    try {
+      onApps((await (await postJSON("/api/apps/stop", {})).json()) as AppsStatus);
+    } catch {
+      toast("The PiDash backend is not reachable.", 5000);
+    }
+    return;
+  }
+  if (item.id === WIFI_ID) {
+    rail.close();
+    wifiPanel.open();
     return;
   }
   if (item.id === STATUS_ID) {
@@ -684,7 +774,11 @@ async function activateRailItem(item: RailItem) {
       : await postJSON("/api/apps/start", { id: item.id });
     // Launch problems arrive as an "apps" event with an error message, which
     // is shown as a toast; only report what that channel cannot.
-    if (!res.ok && res.status >= 500 && !appsStatus.error) toast((await res.text()).trim(), 9000);
+    if (!res.ok && res.status >= 500 && !appsStatus.error) {
+      // What the Pi answers starts in lower case, as its log does.
+      const said = t((await res.text()).trim());
+      toast(said.charAt(0).toUpperCase() + said.slice(1), 12000);
+    }
     if (res.ok && !stopping) rail.close();
   } catch {
     toast("The PiDash backend is not reachable.", 6000);
@@ -725,10 +819,15 @@ function applyConfig(cfg: ClientConfig) {
   clock.configure(d.clock_24h, locale);
   clock24h = d.clock_24h;
   setSounds(d.sounds ?? true);
+  if ((cfg.guest_wifi ?? "") !== guestWifi) {
+    guestWifi = cfg.guest_wifi ?? "";
+    rail.setItems(railItems());
+  }
   stillBackground = d.background === "still";
   ambient.setStill(stillBackground || hot);
   stage.dataset.clock = d.clock_position || "bottom-left";
   stage.dataset.clockSize = d.clock_size || "large";
+  stage.dataset.clockStyle = d.clock_style || "bold";
   if (!viewChosen) {
     density = d.view === "details" ? 2 : d.view === "photo" ? 0 : 1;
     overlay.dataset.density = DENSITIES[density];
@@ -751,6 +850,7 @@ function applyConfig(cfg: ClientConfig) {
   railTimeoutMs = (d.app_row_timeout ?? 30) * 1000;
   railActivity();
   sysBadge.hidden = !d.debug_keys;
+  stage.dataset.debug = String(!!d.debug_keys);
 }
 
 // Pages that cover the screen reach this far past its edges (see #help in
@@ -919,6 +1019,7 @@ input.on((action, ev) => {
     return;
   }
   if (help.handle(action)) return play("back");
+  if (wifiPanel.handle(action)) return play("back");
   if (statusPanel.handle(action)) {
     if (!statusPanel.isOpen) play("back");
     return;
@@ -976,11 +1077,26 @@ input.on((action, ev) => {
       play("move");
       slideshow.next();
       break;
+    case "next":
+    case "previous":
+      // The next piece of music if there is music; otherwise the next photo.
+      if (track?.canSkip && radioPlaying < 0) {
+        musicButton(action);
+        break;
+      }
+      play("move");
+      if (action === "next") slideshow.next();
+      else slideshow.previous();
+      break;
     case "playpause":
       if (radioPlaying >= 0) {
         // A live station cannot be resumed where it stopped: pausing mutes it.
         if (radio.paused) void radio.play().catch(() => stopRadio());
         else radio.pause();
+        break;
+      }
+      if (track) {
+        musicButton("playpause");
         break;
       }
       if (slideshow.hasPhotos) toast(slideshow.togglePause() ? "Slideshow paused" : "Slideshow resumed", 2000);
@@ -1078,6 +1194,7 @@ window.addEventListener("pointerdown", pointerActive);
 stage.addEventListener("click", (e) => {
   if (help.isOpen) return help.close();
   if (statusPanel.isOpen) return statusPanel.close();
+  if (wifiPanel.isOpen) return wifiPanel.close();
   if (weather.isOpen) return weather.close();
   if ((e.target as Element).closest("#hud")) return;
   if (rail.isOpen) rail.close();
@@ -1096,7 +1213,7 @@ window.addEventListener(
   "wheel",
   (e) => {
     e.preventDefault();
-    if (help.isOpen || weather.isOpen || statusPanel.isOpen) return;
+    if (help.isOpen || weather.isOpen || statusPanel.isOpen || wifiPanel.isOpen) return;
     const now = performance.now();
     if (now - lastWheel < (rail.isOpen ? 110 : 450)) return;
     const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
@@ -1118,6 +1235,9 @@ connect("/events", {
     appsLoaded = true;
   },
   onPhotos,
+  // A game was chosen while its PC is asleep: say why nothing happens yet.
+  onWaking: (pc) => toast(t("Waking {name}. This can take a minute.", { name: pc.name }), 60000),
+  onPlaying,
   onSound,
   onBattery: (n) => toast(t("{name} is running low: {n} % battery left.", { name: n.name, n: n.percent }), 12000),
   onTV: (st) => {

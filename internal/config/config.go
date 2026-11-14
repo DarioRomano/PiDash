@@ -26,6 +26,8 @@ type Config struct {
 	Remote  Remote  `toml:"remote"`
 	TV      TV      `toml:"tv"`
 	Sound   Sound   `toml:"sound"`
+	Wifi    Wifi    `toml:"guest_wifi"`
+	Games   Games   `toml:"games"`
 	// Calendar shows the next events from calendars published as links.
 	Calendar Calendar `toml:"calendar"`
 	// Home shows and switches devices of a Home Assistant installation.
@@ -150,6 +152,8 @@ type Display struct {
 	ClockPosition string `toml:"clock_position" json:"clock_position"`
 	// ClockSize is "large" (default), "medium" or "small".
 	ClockSize string `toml:"clock_size" json:"clock_size"`
+	// ClockStyle is "bold" (default), "slim" or "analog", a clock with hands.
+	ClockStyle string `toml:"clock_style" json:"clock_style"`
 	// View is what the dashboard shows when it starts: "clock" (default),
 	// "details" (also the weather and the photo's caption) or "photo" (only
 	// the photo). Up and Down switch between them at any time.
@@ -197,6 +201,22 @@ type Remote struct {
 }
 
 // TV is the daily schedule for switching the TV off and on over HDMI-CEC.
+// Games configures the tiles PiDash makes for games.
+type Games struct {
+	// Moonlight shows the games of the PCs Moonlight is paired with as
+	// tiles of their own, next to the apps.
+	Moonlight bool `toml:"moonlight"`
+}
+
+// Wifi is the network visitors may use. Its name and password are shown on
+// the TV as a code a phone can scan.
+type Wifi struct {
+	Name     string `toml:"name"`
+	Password string `toml:"password"`
+	// Hidden marks a network that does not announce its name.
+	Hidden bool `toml:"hidden"`
+}
+
 // Sound configures where the Pi's sound goes.
 type Sound struct {
 	// FollowBluetooth moves the sound to Bluetooth headphones or a speaker
@@ -212,6 +232,12 @@ type TV struct {
 	// WakeOnController switches the TV on, and to the Pi, when a game
 	// controller is switched on while the TV is in standby.
 	WakeOnController bool `toml:"wake_on_controller"`
+	// ControllerVolume lets a game controller change the volume: its logo
+	// button held, and up or down.
+	ControllerVolume bool `toml:"controller_volume"`
+	// VolumeTo is who sets the volume: "tv", or "audio" for a soundbar or
+	// receiver connected by HDMI.
+	VolumeTo string `toml:"volume_to"`
 }
 
 var clockPattern = regexp.MustCompile(`^([01]?\d|2[0-3]):[0-5]\d$`)
@@ -371,6 +397,10 @@ type App struct {
 	// PiDash can give it the keyboard. Filled in from the menu entry for
 	// installed programs; rarely needed by hand.
 	Window string `toml:"window"`
+	// Background keeps the app running when it is left: it is only put
+	// behind the dashboard, so that its music carries on. For websites
+	// that play music, such as Spotify.
+	Background bool `toml:"background"`
 	// Zoom enlarges a web app, for sites drawn too small on a 4K screen:
 	// 1.5 shows everything half as large again. 0 or 1 leaves it alone.
 	Zoom float64 `toml:"zoom"`
@@ -411,11 +441,12 @@ func Default() Config {
 			"Backspace":      "back",
 			"BrowserBack":    "back",
 			"MediaPlayPause": "playpause",
-			"MediaPlay":      "playpause",
-			"MediaPause":     "playpause",
-			"ContextMenu":    "menu",
-			"Home":           "home",
-			"F10":            "exit",
+			"MediaTrackNext": "next", "MediaTrackPrevious": "previous",
+			"MediaPlay":   "playpause",
+			"MediaPause":  "playpause",
+			"ContextMenu": "menu",
+			"Home":        "home",
+			"F10":         "exit",
 			// Keyboard shortcuts.
 			"KeyA":     "menu",
 			"KeyW":     "weather",
@@ -431,8 +462,9 @@ func Default() Config {
 		}},
 		System:   System{Enabled: true, Interval: Duration{10 * time.Second}, CoolAbove: 75},
 		Kiosk:    Kiosk{Unit: "pidash-kiosk.service", Watchdog: true},
-		TV:       TV{WakeOnController: true},
+		TV:       TV{WakeOnController: true, ControllerVolume: true, VolumeTo: "tv"},
 		Sound:    Sound{FollowBluetooth: true},
+		Games:    Games{Moonlight: true},
 		Weather:  Weather{Units: "metric", Interval: Duration{15 * time.Minute}},
 		Calendar: Calendar{Days: 14},
 		Photos: Photos{
@@ -623,12 +655,16 @@ func (c Config) validate() error {
 		{"language", &c.Display.Language, []string{"en", "de", "fr", "it"}},
 		{"clock_position", &c.Display.ClockPosition, []string{"bottom-left", "bottom-right", "top-left", "top-right"}},
 		{"clock_size", &c.Display.ClockSize, []string{"large", "medium", "small"}},
+		{"clock_style", &c.Display.ClockStyle, []string{"bold", "slim", "analog"}},
 		{"view", &c.Display.View, []string{"clock", "details", "photo"}},
 		{"background", &c.Display.Background, []string{"moving", "still"}},
 	} {
 		if *choice.value != "" && !slices.Contains(choice.of, *choice.value) {
 			return fmt.Errorf("display.%s must be one of %s, got %q", choice.name, strings.Join(choice.of, ", "), *choice.value)
 		}
+	}
+	if v := c.TV.VolumeTo; v != "" && v != "tv" && v != "audio" {
+		return fmt.Errorf("tv.volume_to must be \"tv\" or \"audio\", got %q", v)
 	}
 	if (c.Display.NightStart == "") != (c.Display.NightEnd == "") {
 		return fmt.Errorf("display.night_start and display.night_end must both be set, or both be empty")
@@ -668,6 +704,9 @@ type Client struct {
 	Started int64 `json:"started"`
 	// Radio are the stations in the app row.
 	Radio []RadioStation `json:"radio"`
+	// GuestWifi is the name of the network for visitors; empty when none is
+	// set. Its password is fetched only when the code is shown.
+	GuestWifi string `json:"guest_wifi"`
 }
 
 // ForClient returns the browser-facing view of the configuration.
@@ -676,5 +715,5 @@ func (c Config) ForClient() Client {
 	if stations == nil {
 		stations = []RadioStation{}
 	}
-	return Client{Display: c.Display, Keys: c.Input.Keys, Radio: stations}
+	return Client{Display: c.Display, Keys: c.Input.Keys, Radio: stations, GuestWifi: c.Wifi.Name}
 }

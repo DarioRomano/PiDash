@@ -2,6 +2,7 @@ package apps
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -95,6 +96,16 @@ func (f *Focuser) tool() string {
 // Available reports whether windows can be given the keyboard here.
 func (f *Focuser) Available() bool { return f != nil && f.tool() != "" }
 
+// Focused reports whether the named window has the keyboard right now.
+func (f *Focuser) Focused(ctx context.Context, window string) bool {
+	if f == nil || window == "" || f.tool() != "wlrctl" {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	return f.run(ctx, "wlrctl", "toplevel", "find", "app_id:"+window, "state:focused") == nil
+}
+
 // Ensure gives the named window the keyboard unless it has it already. It
 // reports whether the window exists.
 func (f *Focuser) Ensure(ctx context.Context, window string) bool {
@@ -163,4 +174,25 @@ func (f *Focuser) EnsureSoon(window string) {
 			f.mu.Unlock()
 		}
 	}()
+}
+
+// PretendFocuser returns a focuser for development (-mock): every window
+// exists and takes the keyboard when asked.
+func PretendFocuser(log *slog.Logger) *Focuser {
+	var mu sync.Mutex
+	focused := ""
+	return &Focuser{Log: log, Env: func() []string { return []string{"WAYLAND_DISPLAY=pretend"} },
+		Run: func(_ context.Context, _ []string, _ string, args ...string) error {
+			mu.Lock()
+			defer mu.Unlock()
+			if len(args) < 3 {
+				return nil
+			}
+			window := strings.TrimPrefix(args[2], "app_id:")
+			if args[1] == "find" && focused != window {
+				return errors.New("not focused")
+			}
+			focused = window
+			return nil
+		}}
 }

@@ -119,6 +119,9 @@ What the installer does:
 | Change settings | Choose **Settings** in the app row, press **S**, or open `http://<pi-ip>:8080/settings` on your phone. See [Settings](#settings) |
 | Launch an app | Press **OK** on the dashboard to open the app row, choose with ◀ ▶ and press OK. Or tap the app on the phone remote |
 | Move an app in the app row | Select it, press ▲, carry it with ◀ ▶, press **OK**. **Back** leaves it where it was |
+| Let a visitor onto the Wi-Fi | **Guest Wi-Fi** in the app row. See [Wi-Fi for visitors](#wi-fi-for-visitors) |
+| Start a game on your PC | Its tile in the app row. See [Games from your PC](#games-from-your-pc) |
+| Change the TV's volume from a controller | Hold its logo button and press up or down |
 | See how PiDash is doing | Choose **Status** in the app row. See [Status page](#status-page) |
 | Choose where the sound comes out, and how loud | **Settings** in the app row, then **Sound**. See [Sound](#sound) |
 | Pair a Bluetooth controller, headphones or a speaker | **Settings** in the app row, then **Bluetooth**. See [Bluetooth](#bluetooth) |
@@ -353,6 +356,8 @@ Under **Screen** on the settings page:
   NAS cannot be reached", stay in English.
 - **Clock position and size:** any of the four corners, in three sizes. The
   calendar takes the bottom corner the clock leaves free.
+- **Clock style:** bold numbers, slim numbers, or a clock with hands. The
+  hands move once a minute, like the numbers.
 - **Shown at start:** the clock with date and calendar, the same plus weather
   and the photo's caption, or nothing but the photo. Up and Down on the
   remote switch between these three at any time.
@@ -388,6 +393,26 @@ into `config.toml` with the address of their stream:
 name = "Radio Swiss Jazz"
 url = "https://stream.srg-ssr.ch/m/rsj/mp3_128"
 ```
+
+### Now playing
+
+When music plays somewhere on the Pi, the dashboard shows a small card with
+its cover, title and artist. The remote's **play/pause** button then pauses
+the music instead of the slideshow, and its **skip** buttons go to the next
+and previous piece instead of the next photo.
+
+PiDash learns this from the players themselves, which announce on the Pi's
+desktop what they are playing: browsers (Spotify, YouTube), Spotify Connect
+and AirPlay receivers, media players. Nothing has to be set up, and nothing is
+asked again and again; a player says when something changes.
+
+**Music behind the dashboard.** Leaving Spotify (holding Back) does not close
+it: it is put behind the dashboard and plays on, with the photos and the
+"now playing" card in front. Its tile says **Playing · OK to open**, and OK
+brings it back as it was. **Stop Spotify** in the app row ends it; so does
+opening another app. Any website app can do this with `background = true` in
+its `[[apps]]` block. It needs the helper `wlrctl`, which the installer adds;
+without it the app is closed as before.
 
 ### Sleep timer
 
@@ -452,6 +477,17 @@ on the [status page](#status-page), and the TV says so once when it falls to
 
 Things nearby that have no name (other people's phones, beacons) are left out
 of the list. With a [lock](#lock) set, changes ask for the PIN.
+
+### Wi-Fi for visitors
+
+Under **Wi-Fi for visitors** in the settings, enter the name and password of
+the network guests may use. The app row then has a **Guest Wi-Fi** tile: it
+fills the screen with a code that a phone's camera reads to join the network,
+and shows name and password in letters for anyone who prefers to type. Any
+button closes it.
+
+The password is stored on the Pi like the others and shown to whoever opens
+that tile, which is its purpose. Use a guest network rather than your own.
 
 ### Lock
 
@@ -712,7 +748,8 @@ a program.
 #### Spotify
 
 **Spotify** in the list of ready-made apps opens the Spotify web player in
-Chromium. It is made for a mouse: with only the TV remote, OK and the play
+Chromium, and keeps playing when you return to the dashboard (see
+[Now playing](#now-playing)). It is made for a mouse: with only the TV remote, OK and the play
 button work on whatever is selected, but moving around the page needs a mouse
 or the phone's touchpad. Setting its size to 150% or more helps on a 4K
 screen.
@@ -856,6 +893,24 @@ per console: `apt search libretro` lists the ones Raspberry Pi OS has.
 Inside an emulator the [game controller](#game-controller) belongs to the
 game. **Holding its logo button for two seconds** returns to PiDash, as does
 holding Back on the TV remote.
+
+#### Games from your PC
+
+With **Moonlight** in the app row and paired with your PC, the games the PC
+offers get tiles of their own, after the apps. **OK** on one wakes the PC if
+it is asleep, waits for it, and starts that game; the TV says "Waking …"
+meanwhile. A PC that does not come up within a minute and a half is reported
+as such.
+
+The list is Moonlight's own: PiDash reads it from Moonlight's settings, with
+the covers Moonlight has fetched. Open the PC once in Moonlight to fill it,
+and again after adding a game on the PC. Games you hid in Moonlight stay
+hidden. They keep Moonlight's order and cannot be moved; the switch for all
+of this is under Settings, Apps (`moonlight = false` under `[games]`).
+
+Waking needs the PC to be set up for it (Wake-on-LAN, a network cable), and
+Moonlight to have seen the PC at least once, which is how its network card
+becomes known.
 
 #### The TV remote inside apps
 
@@ -1040,6 +1095,16 @@ setup:
 | Start / Menu / Options | Opens the app row |
 | Shoulder buttons | Previous and next photo |
 | Logo button | Back to the standard view. **Held for two seconds inside an app: closes it** |
+| Logo button held, and up or down | TV volume |
+
+**Volume.** With the logo button held, up and down on the direction pad or
+the stick turn the TV's volume up and down, anywhere: on the dashboard, in a
+website, in a game. PiDash presses the volume buttons of the TV's remote on
+its behalf, over HDMI. If a soundbar or receiver on HDMI sets the volume, put
+`volume_to = "audio"` under `[tv]`; `controller_volume = false` switches this
+off. The game sees the logo button being pressed too, since PiDash only
+listens in; inside Steam that button plus a direction can have a meaning of
+its own.
 
 Buttons are named by where they sit, so on a Nintendo pad the bottom button
 is B. To change what a button does on the dashboard, name it under
@@ -1272,6 +1337,9 @@ internal/cec/        HDMI-CEC through cec-ctl: register with the TV, power on/of
 internal/tv/         daily TV power schedule
 internal/bluetooth/  Bluetooth devices: list, search, pair, connect, forget
 internal/sound/      sound output and volume, through pactl
+internal/playing/    what music is playing, from the players on the session bus
+internal/games/      the games of a PC, read from Moonlight's settings
+internal/wifi/       the code a phone scans to join the Wi-Fi for visitors
 deploy/              the installer run on the Pi, uninstaller, systemd units, kiosk launcher
 install.sh           one-line installer and updater: downloads a release and runs deploy/install.sh
 scripts/dist.sh      builds the release packages

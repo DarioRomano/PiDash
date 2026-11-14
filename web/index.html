@@ -22,6 +22,13 @@
       <div id="ui">
       <main id="overlay" data-density="compact">
         <section id="clock">
+          <!-- The clock with hands, for those who chose it in the settings. -->
+          <svg id="dial" viewBox="-100 -100 200 200" aria-hidden="true">
+            <g id="dial-marks"></g>
+            <line id="dial-hour" x1="0" y1="10" x2="0" y2="-50" />
+            <line id="dial-minute" x1="0" y1="14" x2="0" y2="-82" />
+            <circle r="5.500" />
+          </svg>
           <div id="time"><span id="hm">--:--</span><span id="ampm"></span></div>
           <div id="date">&nbsp;</div>
         </section>
@@ -52,6 +59,8 @@
       <section id="help" aria-hidden="true"></section>
 
       <section id="status-panel" aria-hidden="true"></section>
+
+      <section id="wifi-panel" aria-hidden="true"></section>
 
       <div id="toast" role="status"></div>
 

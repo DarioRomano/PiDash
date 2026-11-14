@@ -9,6 +9,9 @@ export class Clock {
   private lastTime = "";
   private lastDate = "";
   private timer = 0;
+  private lastHands = -1;
+  private hour = document.getElementById("dial-hour");
+  private minute = document.getElementById("dial-minute");
   private timeFmt!: Intl.DateTimeFormat;
   private dateFmt!: Intl.DateTimeFormat;
 
@@ -16,6 +19,19 @@ export class Clock {
     this.hm = hm;
     this.ampm = ampm;
     this.date = date;
+    // Twelve marks around the dial, the quarters a little longer.
+    const marks = document.getElementById("dial-marks");
+    if (marks && marks.childElementCount === 0) {
+      for (let h = 0; h < 12; h++) {
+        const mark = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        mark.setAttribute("x1", "0");
+        mark.setAttribute("x2", "0");
+        mark.setAttribute("y1", h % 3 === 0 ? "-78" : "-86");
+        mark.setAttribute("y2", "-96");
+        mark.setAttribute("transform", `rotate(${h * 30})`);
+        marks.appendChild(mark);
+      }
+    }
     this.configure(true, "");
   }
 
@@ -65,6 +81,13 @@ export class Clock {
       this.hm.textContent = hm;
       this.ampm.textContent = ampm;
       this.lastTime = hm;
+    }
+    // The hands move once a minute, like the numbers: nothing is redrawn in between.
+    const minutes = now.getHours() * 60 + now.getMinutes();
+    if (minutes !== this.lastHands) {
+      this.lastHands = minutes;
+      this.hour?.setAttribute("transform", `rotate(${((minutes % 720) / 2).toFixed(1)})`);
+      this.minute?.setAttribute("transform", `rotate(${(minutes % 60) * 6})`);
     }
     if (dateText !== this.lastDate) {
       this.date.textContent = dateText;

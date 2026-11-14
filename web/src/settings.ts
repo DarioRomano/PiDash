@@ -65,11 +65,12 @@ interface Info {
     synology: { url: string; username: string; passwordSet: boolean; insecureTls: boolean; quality: string };
     folderPath: string;
   };
-  screen: { nightStart: string; nightEnd: string; language: string; clockPosition: string; clockSize: string; view: string; background: string; sounds?: boolean };
+  screen: { nightStart: string; nightEnd: string; language: string; clockPosition: string; clockSize: string; clockStyle?: string; view: string; background: string; sounds?: boolean };
   calendar: { links: CalendarLink[] };
   home: { url: string; tokenSet: boolean; entities: string[] };
-  system: { autoUpdate: boolean; cooling?: boolean; soundFollows?: boolean };
+  system: { autoUpdate: boolean; cooling?: boolean; soundFollows?: boolean; games?: boolean };
   lock: { set: boolean };
+  wifi?: { name: string; passwordSet?: boolean; open?: boolean; hidden?: boolean };
   radio: Station[];
   apps: AppEntry[];
   presets: Preset[];
@@ -182,6 +183,7 @@ function readForm() {
       language: val("d-language"),
       clockPosition: val("d-position"),
       clockSize: val("d-size"),
+      clockStyle: val("d-style"),
       view: val("d-view"),
       background: val("d-background"),
       sounds: $<HTMLInputElement>("d-sounds").checked,
@@ -193,7 +195,10 @@ function readForm() {
       autoUpdate: $<HTMLInputElement>("sys-auto").checked,
       cooling: $<HTMLInputElement>("sys-cool").checked,
       soundFollows: $<HTMLInputElement>("snd-follow").checked,
+      games: $<HTMLInputElement>("sys-games").checked,
     },
+    // An empty password keeps the one that is stored.
+    wifi: { name: val("wf-name").trim(), password: val("wf-pass"), open: $<HTMLInputElement>("wf-open").checked, hidden: $<HTMLInputElement>("wf-hidden").checked },
     // Empty leaves the PIN as it is.
     lock: { pin: val("l-pin").trim(), remove: removeLock },
     radio: stations.map(({ name, url }) => ({ name, url })),
@@ -255,6 +260,7 @@ function fill(i: Info) {
   setLanguage(language.value);
   $<HTMLSelectElement>("d-position").value = i.screen.clockPosition || "bottom-left";
   $<HTMLSelectElement>("d-size").value = i.screen.clockSize || "large";
+  $<HTMLSelectElement>("d-style").value = i.screen.clockStyle || "bold";
   $<HTMLSelectElement>("d-view").value = i.screen.view || "clock";
   $<HTMLSelectElement>("d-background").value = i.screen.background || "moving";
   $<HTMLInputElement>("d-sounds").checked = i.screen.sounds ?? true;
@@ -277,9 +283,17 @@ function fill(i: Info) {
   $<HTMLInputElement>("sys-auto").checked = i.system.autoUpdate;
   $<HTMLInputElement>("sys-cool").checked = i.system.cooling ?? true;
   $<HTMLInputElement>("snd-follow").checked = i.system.soundFollows ?? true;
+  $<HTMLInputElement>("sys-games").checked = i.system.games ?? true;
   stations = i.radio.map((s) => ({ ...s }));
   renderStations();
   removeLock = false;
+  $<HTMLInputElement>("wf-name").value = i.wifi?.name ?? "";
+  const wifiPass = $<HTMLInputElement>("wf-pass");
+  wifiPass.value = "";
+  wifiPass.placeholder = i.wifi?.passwordSet ? "A password is set. Leave empty to keep it" : "";
+  $<HTMLInputElement>("wf-open").checked = !!i.wifi?.open;
+  $<HTMLInputElement>("wf-hidden").checked = !!i.wifi?.hidden;
+  $("wf-pass-row").hidden = !!i.wifi?.open;
   const lockPin = $<HTMLInputElement>("l-pin");
   lockPin.value = "";
   lockPin.placeholder = i.lock.set ? "A PIN is set. Leave empty to keep it" : "";
@@ -842,7 +856,7 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
-for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "n-start", "n-end", "h-url", "h-token", "sys-auto", "sys-cool", "snd-follow", "l-pin", "d-language", "d-position", "d-size", "d-view", "d-background", "d-sounds"]) {
+for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "n-start", "n-end", "h-url", "h-token", "sys-auto", "sys-cool", "snd-follow", "sys-games", "l-pin", "wf-name", "wf-pass", "wf-open", "wf-hidden", "d-language", "d-position", "d-size", "d-style", "d-view", "d-background", "d-sounds"]) {
   $(id).addEventListener("input", refresh);
   $(id).addEventListener("change", refresh);
 }
@@ -854,6 +868,9 @@ async function load() {
   $("main").hidden = false;
   $("footer").hidden = false;
 }
+
+// An open network has no password to type.
+$("wf-open").addEventListener("change", () => ($("wf-pass-row").hidden = $<HTMLInputElement>("wf-open").checked));
 
 startSound();
 startBluetooth(send);
