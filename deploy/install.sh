@@ -93,8 +93,6 @@ if ! dpkg -s libwidevinecdm0 >/dev/null 2>&1 && apt-cache show libwidevinecdm0 >
 fi
 # Chooses the sound output and its volume from the settings page.
 if ! command -v pactl >/dev/null 2>&1 && apt-cache show pulseaudio-utils >/dev/null 2>&1; then missing+=(pulseaudio-utils); fi
-# Gives the open app's window the keyboard when it lost it (Wayland desktops).
-if ! command -v wlrctl >/dev/null 2>&1 && apt-cache show wlrctl >/dev/null 2>&1; then missing+=(wlrctl); fi
 if [ "$CONSOLE_APPS" -eq 1 ]; then
   command -v chvt >/dev/null 2>&1 || missing+=(kbd)
 fi

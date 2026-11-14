@@ -40,11 +40,17 @@ type Focuser struct {
 	// Env supplies the desktop session's environment (WAYLAND_DISPLAY, …).
 	Env func() []string
 	Log *slog.Logger
-	// Run executes a tool; nil means the real one. For tests.
+	// Run executes a tool; nil means the real one. For tests, which describe
+	// the desktop in the words of the tool wlrctl: "toplevel find app_id:x
+	// state:focused" and "toplevel focus app_id:x".
 	Run func(ctx context.Context, env []string, name string, args ...string) error
 
 	mu   sync.Mutex
 	next time.Time // EnsureSoon does nothing before this
+	// Whether the desktop lets windows be chosen, and when that was asked.
+	can     bool
+	canAt   time.Time
+	canOnce bool
 }
 
 // How long EnsureSoon rests after a check. A window that had the keyboard is
@@ -68,42 +74,76 @@ func (f *Focuser) run(ctx context.Context, name string, args ...string) error {
 	return cmd.Run()
 }
 
-// tool reports which helper fits the session: wlrctl on a Wayland desktop
-// such as Raspberry Pi OS's, xdotool on X11.
-func (f *Focuser) tool() string {
-	env := os.Environ()
+func (f *Focuser) env() []string {
 	if f.Env != nil {
-		env = f.Env()
+		return f.Env()
 	}
-	wayland := false
-	for _, kv := range env {
-		if strings.HasPrefix(kv, "WAYLAND_DISPLAY=") && len(kv) > len("WAYLAND_DISPLAY=") {
-			wayland = true
-		}
-	}
-	name := "xdotool"
-	if wayland {
-		name = "wlrctl"
-	}
-	if f.Run == nil {
-		if _, err := exec.LookPath(name); err != nil {
-			return ""
-		}
-	}
-	return name
+	return os.Environ()
 }
 
-// Available reports whether windows can be given the keyboard here.
-func (f *Focuser) Available() bool { return f != nil && f.tool() != "" }
+// tool reports how windows are reached in this session: "wayland" on a
+// Wayland desktop such as Raspberry Pi OS's, which PiDash talks to itself,
+// the tool xdotool on X11, or "" when there is no way.
+func (f *Focuser) tool() string {
+	if _, wayland := waylandSocket(f.env()); wayland || f.Run != nil {
+		return "wayland"
+	}
+	if _, err := exec.LookPath("xdotool"); err != nil {
+		return ""
+	}
+	return "xdotool"
+}
+
+// window does the work on a Wayland desktop.
+func (f *Focuser) window(ctx context.Context, window string, give bool) (exists, hadIt bool, err error) {
+	if f.Run == nil {
+		return wlWindow(ctx, f.env(), window, give)
+	}
+	if f.Run(ctx, f.env(), "wlrctl", "toplevel", "find", "app_id:"+window, "state:focused") == nil {
+		return true, true, nil
+	}
+	if !give {
+		return false, false, nil
+	}
+	return f.Run(ctx, f.env(), "wlrctl", "toplevel", "focus", "app_id:"+window) == nil, false, nil
+}
+
+// Available reports whether windows can be given the keyboard here. Not
+// every Wayland desktop allows it; the answer is asked for now and then,
+// since the desktop may not be up yet when PiDash starts.
+func (f *Focuser) Available() bool {
+	if f == nil {
+		return false
+	}
+	switch f.tool() {
+	case "":
+		return false
+	case "xdotool":
+		return true
+	}
+	if f.Run != nil {
+		return true
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.canOnce || time.Since(f.canAt) > 30*time.Second {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_, _, err := wlWindow(ctx, f.env(), KioskWindow, false)
+		cancel()
+		f.can, f.canAt, f.canOnce = err == nil, time.Now(), true
+	}
+	return f.can
+}
 
 // Focused reports whether the named window has the keyboard right now.
 func (f *Focuser) Focused(ctx context.Context, window string) bool {
-	if f == nil || window == "" || f.tool() != "wlrctl" {
+	if f == nil || window == "" || f.tool() != "wayland" {
 		return false
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	return f.run(ctx, "wlrctl", "toplevel", "find", "app_id:"+window, "state:focused") == nil
+	_, hadIt, _ := f.window(ctx, window, false)
+	return hadIt
 }
 
 // Ensure gives the named window the keyboard unless it has it already. It
@@ -121,15 +161,16 @@ func (f *Focuser) ensure(ctx context.Context, window string) (exists, hadIt bool
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	switch f.tool() {
-	case "wlrctl":
-		if f.run(ctx, "wlrctl", "toplevel", "find", "app_id:"+window, "state:focused") == nil {
-			return true, true
-		}
-		if err := f.run(ctx, "wlrctl", "toplevel", "focus", "app_id:"+window); err != nil {
+	case "wayland":
+		exists, hadIt, err := f.window(ctx, window, true)
+		if err != nil {
+			f.Log.Debug("cannot reach the windows of the desktop", "err", err)
 			return false, false
 		}
-		f.Log.Debug("gave the keyboard to a window", "window", window)
-		return true, false
+		if exists && !hadIt {
+			f.Log.Debug("gave the keyboard to a window", "window", window)
+		}
+		return exists, hadIt
 	case "xdotool":
 		return f.run(ctx, "xdotool", "search", "--limit", "1", "--class", "^"+window+"$", "windowactivate") == nil, false
 	}

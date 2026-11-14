@@ -287,7 +287,7 @@ ROWS = [
 ("nothing: no remote, keyboard or controller was found", "nichts: keine Fernbedienung, Tastatur oder Controller gefunden", "rien : aucune télécommande, aucun clavier ni manette n’a été trouvé", "niente: nessun telecomando, tastiera o controller trovato"),
 ("none yet: press one to try", "noch keine: zum Ausprobieren eine drücken", "aucune pour l’instant : appuyez sur une touche pour essayer", "ancora nessuno: premine uno per provare"),
 ("PiDash hands it to the app that is open", "PiDash gibt sie der geöffneten App", "PiDash le donne à l’appli ouverte", "PiDash la passa all’app aperta"),
-("the helper “wlrctl” is missing: run the installer again", "das Hilfsprogramm „wlrctl“ fehlt: das Installationsprogramm erneut ausführen", "l’outil « wlrctl » manque : relancez l’installation", "manca lo strumento “wlrctl”: esegui di nuovo l’installazione"),
+("this desktop does not let PiDash choose the window", "dieser Desktop lässt PiDash das Fenster nicht wählen", "ce bureau ne laisse pas PiDash choisir la fenêtre", "questo desktop non permette a PiDash di scegliere la finestra"),
 ("looking for photos…", "Fotos werden gesucht…", "recherche de photos…", "ricerca delle foto…"),
 ("not set up", "nicht eingerichtet", "non configuré", "non configurato"),
 ("updated {when}", "aktualisiert {when}", "mis à jour {when}", "aggiornato {when}"),

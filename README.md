@@ -427,8 +427,8 @@ it: it is put behind the dashboard and plays on, with the photos and the
 "now playing" card in front. Its tile says **Playing · OK to open**, and OK
 brings it back as it was. **Stop Spotify** in the app row ends it; so does
 opening another app. Any website app can do this with `background = true` in
-its `[[apps]]` block. It needs the helper `wlrctl`, which the installer adds;
-without it the app is closed as before.
+its `[[apps]]` block. It needs a desktop that lets PiDash choose which window
+is in front, as Raspberry Pi OS's does; elsewhere the app is closed as before.
 
 ### Sleep timer
 
@@ -1028,8 +1028,9 @@ Buttons go to whichever window has the keyboard. An app's window gets it when
 it opens, but can lose it, for example when the TV is switched off and on
 again; the app then looks as if the remote had stopped working. PiDash checks
 on every button press that the open app's window has the keyboard and gives
-it back if not. This uses the small tool `wlrctl`, which the installer adds,
-and works for websites and for programs added from the list of installed
+it back if not. PiDash asks the desktop for this itself; nothing extra needs
+installing on Raspberry Pi OS (on a desktop with X11 it uses `xdotool`). It
+works for websites and for programs added from the list of installed
 programs. The [status page](#status-page) says whether it is available.
 
 This works in every app, including ones that run outside the desktop. It needs

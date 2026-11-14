@@ -381,7 +381,7 @@ const list: Record<string, string> = {
   "nothing: no remote, keyboard or controller was found": "nichts: keine Fernbedienung, Tastatur oder Controller gefunden",
   "none yet: press one to try": "noch keine: zum Ausprobieren eine drücken",
   "PiDash hands it to the app that is open": "PiDash gibt sie der geöffneten App",
-  "the helper “wlrctl” is missing: run the installer again": "das Hilfsprogramm „wlrctl“ fehlt: das Installationsprogramm erneut ausführen",
+  "this desktop does not let PiDash choose the window": "dieser Desktop lässt PiDash das Fenster nicht wählen",
   "looking for photos…": "Fotos werden gesucht…",
   "not set up": "nicht eingerichtet",
   "updated {when}": "aktualisiert {when}",

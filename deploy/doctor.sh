@@ -92,11 +92,7 @@ if have pactl; then
 else
   echo "sound: pactl is not installed (sudo apt install pulseaudio-utils)"
 fi
-if have wlrctl; then
-  echo "keyboard for open apps: wlrctl is installed (PiDash can hand the keyboard to an app's window)"
-else
-  echo "keyboard for open apps: wlrctl is not installed (sudo apt install wlrctl)"
-fi
+echo "keyboard for open apps: see the status page on the TV (PiDash asks the desktop itself; no extra tool is needed)"
 
 section "TV over HDMI-CEC"
 if have cec-ctl; then "$APP_DIR/pidash" -cec status 2>&1; else echo "cec-ctl is not installed (sudo apt install v4l-utils)"; fi
