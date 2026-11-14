@@ -3,11 +3,10 @@
 //
 // YouTube itself is not asked for anything here. The first test runs the
 // script on its own; the second loads it into a real browser, the way the
-// YouTube app does, with a stand-in for YouTube that answers on this machine.
+// YouTube app does, with every request answered by a stand-in for YouTube.
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
-const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 const vm = require("node:vm");
@@ -100,20 +99,19 @@ test("YouTube on the TV: the browser loads the script for the TV interface, and 
   const page = `<!doctype html><title>stand-in</title><script>
     window.answers = { player: JSON.parse(${JSON.stringify(JSON.stringify(PLAYER))}), home: JSON.parse(${JSON.stringify(JSON.stringify(HOME))}) };
   </script>`;
-  const server = http.createServer((req, res) => res.writeHead(200, { "Content-Type": "text/html" }).end(page));
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "pidash-yt-"));
   const browser = await chromium.launchPersistentContext(profile, {
     channel: "chromium",
-    args: [
-      `--load-extension=${EXTENSION}`,
-      `--disable-extensions-except=${EXTENSION}`,
-      "--disable-features=DisableLoadExtensionCommandLineSwitch",
-      `--host-resolver-rules=MAP www.youtube.com:80 127.0.0.1:${server.address().port}`,
-      "--no-proxy-server",
-    ],
+    args: [`--load-extension=${EXTENSION}`, `--disable-extensions-except=${EXTENSION}`, "--disable-features=DisableLoadExtensionCommandLineSwitch"],
   });
   try {
+    // Every request is answered here, by the stand-in: nothing leaves this
+    // machine, whether or not it could reach YouTube.
+    let asked = 0;
+    await browser.route("**/*", (route) => {
+      asked++;
+      return route.fulfill({ status: 200, contentType: "text/html", body: page });
+    });
     const tab = await browser.newPage();
     const seen = async (address) => {
       await tab.goto(address);
@@ -123,13 +121,13 @@ test("YouTube on the TV: the browser loads the script for the TV interface, and 
         title: window.answers.player.videoDetails.title,
       }));
     };
-    assert.deepEqual(await seen("http://www.youtube.com/tv"), { plans: [], rows: 2, title: "A film about a river" }, "on the TV interface the adverts are gone");
-    assert.deepEqual(await seen("http://www.youtube.com/tv#/watch?v=abc123"), { plans: [], rows: 2, title: "A film about a river" });
+    assert.deepEqual(await seen("https://www.youtube.com/tv"), { plans: [], rows: 2, title: "A film about a river" }, "on the TV interface the adverts are gone");
+    assert.deepEqual(await seen("https://www.youtube.com/tv#/watch?v=abc123"), { plans: [], rows: 2, title: "A film about a river" });
     // The ordinary website is left alone: the script is made for the TV interface.
-    assert.deepEqual(await seen("http://www.youtube.com/watch?v=abc123"), { plans: ["adPlacements", "adSlots", "playerAds"], rows: 3, title: "A film about a river" });
+    assert.deepEqual(await seen("https://www.youtube.com/watch?v=abc123"), { plans: ["adPlacements", "adSlots", "playerAds"], rows: 3, title: "A film about a river" });
+    assert.ok(asked >= 2, "the pages came from the stand-in");
   } finally {
     await browser.close();
-    server.close();
     fs.rmSync(profile, { recursive: true, force: true });
   }
 });
