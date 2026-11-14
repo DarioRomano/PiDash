@@ -1,5 +1,5 @@
 import { LANGUAGES, setLanguage, t } from "./i18n";
-import { ask, enterPIN, onTV, startTVNav } from "./tvnav";
+import { ask, enterPIN, highlight, onTV, startTVNav } from "./tvnav";
 import { startBluetooth } from "./bluetooth";
 import { startSound } from "./sound";
 import { setSounds } from "./sfx";
@@ -66,7 +66,7 @@ interface Info {
     synology: { url: string; username: string; passwordSet: boolean; insecureTls: boolean; quality: string };
     folderPath: string;
   };
-  screen: { nightStart: string; nightEnd: string; language: string; clockPosition: string; clockSize: string; clockStyle?: string; eveningDim?: string; view: string; background: string; sounds?: boolean };
+  screen: { nightStart: string; nightEnd: string; language: string; clockPosition: string; clockSize: string; clockStyle?: string; eveningDim?: string; view: string; background: string; performance?: string; backgroundFps?: number; sounds?: boolean };
   calendar: { links: CalendarLink[] };
   home: { url: string; tokenSet: boolean; entities: string[] };
   system: { autoUpdate: boolean; cooling?: boolean; soundFollows?: boolean; games?: boolean };
@@ -189,6 +189,8 @@ function readForm() {
       eveningDim: val("d-dim"),
       view: val("d-view"),
       background: val("d-background"),
+      performance: val("d-performance"),
+      backgroundFps: Number(val("d-fps")) || 0,
       sounds: $<HTMLInputElement>("d-sounds").checked,
     },
     apps: apps.map(({ detail: _detail, missing: _missing, ...rest }) => rest),
@@ -267,6 +269,13 @@ function fill(i: Info) {
   $<HTMLSelectElement>("d-style").value = i.screen.clockStyle || "bold";
   $<HTMLSelectElement>("d-view").value = i.screen.view || "clock";
   $<HTMLSelectElement>("d-background").value = i.screen.background || "moving";
+  $<HTMLSelectElement>("d-performance").value = i.screen.performance || "balanced";
+  const fps = $<HTMLSelectElement>("d-fps");
+  const rate = String(i.screen.backgroundFps ?? 0);
+  // A rate set by hand in config.toml that is not on the list is offered as it is.
+  if (![...fps.options].some((o) => o.value === rate)) fps.add(new Option(rate, rate));
+  fps.value = rate;
+  describePerformance();
   $<HTMLInputElement>("d-sounds").checked = i.screen.sounds ?? true;
   setSounds(i.screen.sounds ?? true);
   fillTimes($<HTMLSelectElement>("n-start"), i.screen.nightStart, "Off", "start");
@@ -885,17 +894,96 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
-for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "p-map", "n-start", "n-end", "h-url", "h-token", "sys-auto", "sys-cool", "snd-follow", "sys-games", "l-pin", "wf-name", "wf-pass", "wf-open", "wf-hidden", "d-language", "d-position", "d-size", "d-style", "d-dim", "d-view", "d-background", "d-sounds"]) {
+for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "p-map", "n-start", "n-end", "h-url", "h-token", "sys-auto", "sys-cool", "snd-follow", "sys-games", "l-pin", "wf-name", "wf-pass", "wf-open", "wf-hidden", "d-language", "d-position", "d-size", "d-style", "d-dim", "d-view", "d-background", "d-performance", "d-fps", "d-sounds"]) {
   $(id).addEventListener("input", refresh);
   $(id).addEventListener("change", refresh);
 }
+
+// What a performance preset does, in a sentence under the list.
+const PERFORMANCE_HINTS: Record<string, string> = {
+  smooth: "The moving background and moving photos are drawn 30 times a second, the background 60 times while it reacts to the remote. Most work for the Pi.",
+  balanced: "The moving background is drawn 12 times a second, and 30 times while it reacts to the remote.",
+  saver: "The moving background is drawn 5 times a second and less finely, photos stand still instead of drifting, and video clips are left out.",
+};
+function describePerformance() {
+  $("d-performance-hint").textContent = t(PERFORMANCE_HINTS[val("d-performance")] ?? "");
+}
+$("d-performance").addEventListener("change", describePerformance);
+
+// --- Categories --------------------------------------------------------------------
+// The settings are sorted into a few categories, listed in a bar: at the
+// left on a TV or computer, along the top on a phone. One is shown at a time.
+
+const groupButtons = [...$("groups").querySelectorAll<HTMLButtonElement>("button")];
+const cards = [...document.querySelectorAll<HTMLElement>("#main section.card")];
+let group = "";
+
+function showGroup(name: string) {
+  const offered = groupButtons.filter((b) => !b.hidden);
+  if (!offered.some((b) => b.dataset.group === name)) name = offered[0]?.dataset.group ?? "";
+  if (!name || name === group) return;
+  group = name;
+  for (const c of cards) c.classList.toggle("other-group", c.dataset.group !== name);
+  $("version").classList.toggle("other-group", name !== "system");
+  for (const b of groupButtons) {
+    const on = b.dataset.group === name;
+    b.classList.toggle("current", on);
+    if (on) {
+      b.setAttribute("aria-current", "true");
+      // On a phone the bar scrolls sideways: keep the chosen one in view.
+      b.scrollIntoView({ block: "nearest", inline: "center" });
+    } else b.removeAttribute("aria-current");
+  }
+  // Kept in the address, so that coming back, or loading the page again
+  // after saving, returns to the same category.
+  history.replaceState(null, "", location.pathname + location.search + "#" + name);
+  window.scrollTo(0, 0);
+}
+
+/** A category all of whose settings are missing here, such as sound on a Pi without any, is not offered. */
+function offerGroups() {
+  for (const b of groupButtons) b.hidden = !cards.some((c) => c.dataset.group === b.dataset.group && !c.hidden);
+  const offered = (name: string) => groupButtons.some((b) => b.dataset.group === name && !b.hidden);
+  // The category the page was opened for may only now have something to
+  // show: whether the Pi has sound and Bluetooth is known a moment later.
+  const to = asked && offered(asked) ? asked : offered(group) ? group : "";
+  if (to === group) return;
+  const inBar = !!document.querySelector("#groups .tv-focus");
+  group = "";
+  showGroup(to || wantedGroup());
+  // On the TV the highlight goes along, if it is on the bar.
+  if (inBar) highlight(groupButtons.find((b) => b.classList.contains("current")) ?? null);
+}
+
+/** The category the address asks for: by its own name, or by something in it ("#bt-card"). */
+function wantedGroup(): string {
+  const wanted = decodeURIComponent(location.hash.slice(1));
+  if (groupButtons.some((b) => b.dataset.group === wanted)) return wanted;
+  const inside = wanted ? document.getElementById(wanted)?.closest<HTMLElement>("section.card") : null;
+  return inside?.dataset.group ?? groupButtons[0].dataset.group ?? "";
+}
+
+for (const b of groupButtons) {
+  b.addEventListener("click", () => {
+    asked = ""; // from here on the person chooses
+    showGroup(b.dataset.group ?? "");
+  });
+}
+new MutationObserver(offerGroups).observe($("main"), { subtree: true, attributes: true, attributeFilter: ["hidden"] });
+window.addEventListener("hashchange", () => showGroup(wantedGroup()));
+/** The category the address asked for when the page was opened. */
+let asked = wantedGroup();
+showGroup(asked);
 
 async function load() {
   const res = await fetch("/api/settings", { cache: "no-store" });
   if (!res.ok) throw new Error(await res.text());
   fill(await res.json());
+  $("groups").hidden = false;
   $("main").hidden = false;
   $("footer").hidden = false;
+  offerGroups();
+  groupButtons.find((b) => b.classList.contains("current"))?.scrollIntoView({ block: "nearest", inline: "center" });
 }
 
 // An open network has no password to type.

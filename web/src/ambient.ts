@@ -28,7 +28,10 @@ const SIZES = [1080, 720, 540, 360, 270];
 const GLOW_W = 160; // the glows' own small picture
 const GLOW_H = 90;
 /** Step down a size when pictures arrive slower than this on average, in milliseconds. */
-const TOO_SLOW_MS = 48;
+// Late by this much on average, and the picture is too much work. Being a
+// screen refresh late now and then is normal: pictures can only be shown when
+// the screen is drawn.
+const TOO_LATE_MS = 15;
 const JUDGE_AFTER = 60; // pictures per verdict
 // The drift is slow enough that 12 pictures a second look continuous; a
 // reaction to a key press gets 30. Every picture costs the Pi work, and with
@@ -83,6 +86,11 @@ export class Ambient {
   private last = 0;
   private clock = Math.random() * 600; // seconds; a different sky after every start
   private lingerTimer = 0;
+  // How often a picture is drawn while drifting and while reacting to a
+  // button, and the finest picture allowed: the performance setting.
+  private calmMs = CALM_FRAME_MS;
+  private stirredMs = STIRRED_FRAME_MS;
+  private floor = 0;
   private reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   private still = this.reducedMotion;
 
@@ -114,7 +122,24 @@ export class Ambient {
     const screenHeight = Math.max(window.innerHeight, (window.innerWidth * 9) / 16) * (window.devicePixelRatio || 1);
     let size = SIZES.findIndex((s) => s <= screenHeight / 2 + 1);
     if (size < 0) size = SIZES.length - 1;
-    this.resize(Math.max(size, this.finest));
+    this.resize(Math.max(size, this.finest, this.floor));
+  }
+
+  /**
+   * Sets the pace: milliseconds between pictures while drifting and while
+   * reacting to a button, and the finest picture size to use (an index into
+   * SIZES; 0 allows the finest).
+   */
+  setPace(calmMs: number, stirredMs: number, floor = 0) {
+    this.calmMs = Math.max(16, calmMs);
+    this.stirredMs = Math.max(16, Math.min(stirredMs, this.calmMs));
+    this.floor = Math.max(0, Math.min(SIZES.length - 1, floor));
+    this.fitScreen();
+  }
+
+  /** What the pace is, for the status page and the tests. */
+  get pace() {
+    return { calmMs: this.calmMs, stirredMs: this.stirredMs, height: this.h };
   }
 
   private resize(size: number) {
@@ -129,16 +154,19 @@ export class Ambient {
     this.paint();
   }
 
-  /** Notes how long the last picture took to arrive and steps down a size if that keeps being too long. */
-  private judge(interval: number) {
-    if (interval <= 0 || interval > 250) return; // a pause, not a slow picture
-    this.slowSum += interval;
+  /**
+   * Notes how late the last picture was, measured against when it was wanted,
+   * and steps down a size if pictures keep arriving late.
+   */
+  private judge(interval: number, wanted: number) {
+    if (interval <= 0 || interval > wanted + 250) return; // a pause, not a slow picture
+    this.slowSum += interval - wanted;
     if (++this.slowCount < JUDGE_AFTER) return;
     const average = this.slowSum / this.slowCount;
     this.slowSum = this.slowCount = 0;
     // One slow stretch can be something else keeping the machine busy; two
     // in a row mean this size is too much for it.
-    this.slowVerdicts = average > TOO_SLOW_MS ? this.slowVerdicts + 1 : 0;
+    this.slowVerdicts = average > TOO_LATE_MS ? this.slowVerdicts + 1 : 0;
     if (this.slowVerdicts >= 2 && this.size < SIZES.length - 1) {
       this.finest = this.size + 1;
       this.resize(this.finest);
@@ -232,12 +260,15 @@ export class Ambient {
     this.raf = 0;
     // Drifting needs few pictures; a reaction to a key press gets more.
     // (A millisecond of slack, or a frame that arrives just early is skipped.)
-    if (this.last && now - this.last < (this.stirred ? STIRRED_FRAME_MS : CALM_FRAME_MS) - 1) {
+    const wanted = this.stirred ? this.stirredMs : this.calmMs;
+    if (this.last && now - this.last < wanted - 1) {
       this.raf = requestAnimationFrame(this.frame);
       return;
     }
-    const dt = this.last ? Math.min(0.1, (now - this.last) / 1000) : 0;
-    if (this.last) this.judge(now - this.last);
+    // A picture covers the time since the last one, up to a limit: after a
+    // long pause the background does not jump ahead.
+    const dt = this.last ? Math.min(0.4, (now - this.last) / 1000) : 0;
+    if (this.last) this.judge(now - this.last, wanted);
     this.last = now;
 
     // Colours ease towards the target palette.
@@ -252,16 +283,22 @@ export class Ambient {
     }
 
     if (!this.still) this.clock += dt * DRIFT;
-    // A push along the ribbons glides to a stop.
-    this.flow += this.flowSpeed * dt;
-    this.flowSpeed *= Math.exp(-dt / 0.7);
-    // The sway is a damped spring around its resting height.
-    this.swaySpeed += (-(this.sway - this.lift) * 26 - this.swaySpeed * 6.5) * dt;
-    this.sway += this.swaySpeed * dt;
-    this.swell *= Math.exp(-dt / 1.1);
-    const follow = 1 - Math.exp(-dt / 0.5);
-    this.lean[0] += (this.leanTarget[0] - this.lean[0]) * follow;
-    this.lean[1] += (this.leanTarget[1] - this.lean[1]) * follow;
+    // What a button set in motion is worked out in small steps, so that it
+    // comes out the same however seldom a picture is drawn.
+    for (let rest = dt; rest > 0.0005; ) {
+      const h = Math.min(0.05, rest);
+      rest -= h;
+      // A push along the ribbons glides to a stop.
+      this.flow += this.flowSpeed * h;
+      this.flowSpeed *= Math.exp(-h / 0.7);
+      // The sway is a damped spring around its resting height.
+      this.swaySpeed += (-(this.sway - this.lift) * 26 - this.swaySpeed * 6.5) * h;
+      this.sway += this.swaySpeed * h;
+      this.swell *= Math.exp(-h / 1.1);
+      const follow = 1 - Math.exp(-h / 0.5);
+      this.lean[0] += (this.leanTarget[0] - this.lean[0]) * follow;
+      this.lean[1] += (this.leanTarget[1] - this.lean[1]) * follow;
+    }
 
     this.paint();
 

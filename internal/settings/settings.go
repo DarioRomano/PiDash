@@ -136,6 +136,10 @@ type Screen struct {
 	EveningDim    string `json:"eveningDim,omitempty"`
 	View          string `json:"view,omitempty"`
 	Background    string `json:"background,omitempty"`
+	Performance   string `json:"performance,omitempty"`
+	// BackgroundFPS is how many pictures a second the moving background
+	// gets; 0 leaves it to Performance, absent leaves config.toml in charge.
+	BackgroundFPS *int `json:"backgroundFps,omitempty"`
 	// Sounds switches the small sounds of the remote; absent leaves config.toml in charge.
 	Sounds *bool `json:"sounds,omitempty"`
 }
@@ -535,6 +539,7 @@ func apply(base config.Config, f File, installed []desktop.Entry) (config.Config
 			{sc.Language, &cfg.Display.Language}, {sc.ClockPosition, &cfg.Display.ClockPosition},
 			{sc.ClockSize, &cfg.Display.ClockSize}, {sc.View, &cfg.Display.View}, {sc.Background, &cfg.Display.Background},
 			{sc.ClockStyle, &cfg.Display.ClockStyle}, {sc.EveningDim, &cfg.Display.EveningDim},
+			{sc.Performance, &cfg.Display.Performance},
 		} {
 			if choice.from != "" {
 				*choice.to = choice.from
@@ -542,6 +547,9 @@ func apply(base config.Config, f File, installed []desktop.Entry) (config.Config
 		}
 		if sc.Sounds != nil {
 			cfg.Display.Sounds = *sc.Sounds
+		}
+		if sc.BackgroundFPS != nil {
+			cfg.Display.BackgroundFPS = *sc.BackgroundFPS
 		}
 	}
 
@@ -831,6 +839,7 @@ func (s *Store) View() View {
 		},
 		Screen: Screen{NightStart: cfg.Display.NightStart, NightEnd: cfg.Display.NightEnd, Language: cfg.Display.Language,
 			ClockPosition: cfg.Display.ClockPosition, ClockSize: cfg.Display.ClockSize, ClockStyle: cfg.Display.ClockStyle, EveningDim: cfg.Display.EveningDim, View: cfg.Display.View, Background: cfg.Display.Background,
+			Performance: cfg.Display.Performance, BackgroundFPS: &cfg.Display.BackgroundFPS,
 			Sounds: boolPtr(cfg.Display.Sounds)},
 		Calendar: Calendar{Links: []Link{}},
 		Home:     Home{URL: cfg.Home.URL, TokenSet: cfg.Home.Token != "", Entities: append([]string{}, cfg.Home.Entities...)},

@@ -99,7 +99,7 @@ test("app row: OK on Settings opens the settings on the TV, Back returns", async
     await remote.press("right");
   }
   await remote.press("select");
-  await page.waitForURL("**/settings?from=tv");
+  await page.waitForURL(/\/settings\?from=tv/);
   await page.waitForSelector(".tv-focus");
   await remote.press("back");
   await page.waitForURL(pi.base + "/");
@@ -108,32 +108,138 @@ test("app row: OK on Settings opens the settings on the TV, Back returns", async
 
 const highlighted = (page) => page.evaluate(() => document.querySelector(".tv-focus")?.id ?? "");
 
+// The settings on the TV open with the highlight on the bar of categories;
+// Right goes into the one that is shown.
+async function settingsOnTV(base, category) {
+  const page = await openPage(base, "/settings?from=tv#" + category);
+  const remote = remoteFor(page, base);
+  await page.waitForSelector("#groups .tv-focus");
+  await page.waitForTimeout(600);
+  await remote.press("right");
+  return { page, remote };
+}
+
+test("settings on the TV: categories at the left, shown as the highlight moves along them", async () => {
+  const page = await openPage(pi.base, "/settings?from=tv");
+  const remote = remoteFor(page, pi.base);
+  await page.waitForSelector("#groups .tv-focus");
+  await page.waitForTimeout(600);
+  const category = () => page.evaluate(() => document.querySelector("#groups .tv-focus")?.textContent ?? "");
+  const shown = () => page.evaluate(() => [...document.querySelectorAll("#main section.card")].filter((c) => c.getClientRects().length > 0).map((c) => c.querySelector("h2").textContent));
+  assert.deepEqual(
+    await page.evaluate(() => [...document.querySelectorAll("#groups button")].map((b) => b.textContent)),
+    ["Screen", "Photos", "Weather and calendar", "Apps and radio", "Sound and Bluetooth", "Home and guests", "System"],
+  );
+  assert.equal(await category(), "Screen");
+  assert.deepEqual(await shown(), ["Screen", "Performance", "Night"]);
+  await remote.press("up"); // the top is the top
+  assert.equal(await category(), "Screen");
+
+  // Moving along the bar shows each category at once.
+  await remote.press("down");
+  assert.deepEqual([await category(), await shown()], ["Photos", ["Background photos"]]);
+  await remote.press("down");
+  assert.deepEqual([await category(), await shown()], ["Weather and calendar", ["Weather", "Calendar"]]);
+  assert.match(page.url(), /#info$/, "the address remembers the category");
+  for (let i = 0; i < 6; i++) await remote.press("down");
+  assert.deepEqual([await category(), await shown()], ["System", ["Lock", "Updates", "Backup"]]);
+  for (let i = 0; i < 4; i++) await remote.press("up");
+  assert.deepEqual([await category(), await shown()], ["Weather and calendar", ["Weather", "Calendar"]]);
+
+  // Right goes in. Up and Down stay inside, however close the bar is.
+  await remote.press("right");
+  assert.equal(await highlighted(page), "w-location");
+  await remote.press("up");
+  assert.equal(await highlighted(page), "w-location");
+  await remote.press("down");
+  assert.equal(await highlighted(page), "w-units");
+  // On a list, Left means "the one before", not "out".
+  await remote.press("right");
+  assert.equal(await highlighted(page), "w-test");
+  await remote.press("left");
+  assert.equal(await highlighted(page), "w-units");
+  const units = await page.inputValue("#w-units");
+  await remote.press("left");
+  assert.equal(await highlighted(page), "w-units");
+  // Back comes out to the bar, to the category that is shown; Back again leaves.
+  await remote.press("back");
+  assert.equal(await category(), "Weather and calendar");
+  assert.ok(page.url().includes("/settings"));
+  // OK goes in as well.
+  await remote.press("select");
+  assert.equal(await highlighted(page), "w-location");
+  // From a button at the left edge, Left leads to the bar.
+  await page.selectOption("#w-units", units);
+  await remote.press("back");
+  await remote.press("down");
+  await remote.press("down");
+  assert.equal(await category(), "Sound and Bluetooth");
+  await remote.press("right");
+  await remote.press("down");
+  assert.equal(await highlighted(page), "snd-down");
+  await remote.press("left");
+  assert.equal(await category(), "Sound and Bluetooth");
+  await remote.press("back");
+  await page.waitForURL(pi.base + "/");
+  assert.deepEqual(page.problems, []);
+  await page.context().close();
+});
+
+test("settings on a phone: the categories are a bar along the top", async () => {
+  const { chromium } = require("playwright");
+  const browser = await chromium.launch();
+  try {
+    const phone = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
+    const problems = [];
+    phone.on("pageerror", (e) => problems.push(String(e)));
+    await phone.goto(pi.base + "/settings#bt-card"); // something in a category names the category
+    await phone.waitForSelector("#main:not([hidden])");
+    const shown = () => phone.evaluate(() => [...document.querySelectorAll("#main section.card")].filter((c) => c.getClientRects().length > 0).map((c) => c.querySelector("h2").textContent));
+    assert.deepEqual(await shown(), ["Sound", "Bluetooth"]);
+    const bar = await phone.evaluate(() => {
+      const nav = document.getElementById("groups").getBoundingClientRect();
+      const current = document.querySelector("#groups .current").getBoundingClientRect();
+      return { height: nav.height, visible: current.left >= 0 && current.right <= innerWidth, wide: document.documentElement.scrollWidth <= innerWidth };
+    });
+    assert.ok(bar.height < 80, `the bar is one line, not ${bar.height}px high`);
+    assert.ok(bar.visible, "the chosen category is scrolled into view");
+    assert.ok(bar.wide, "the page does not scroll sideways");
+    await phone.click('#groups button[data-group="system"]');
+    assert.deepEqual(await shown(), ["Lock", "Updates", "Backup"]);
+    assert.match(phone.url(), /#system$/);
+    assert.deepEqual(problems, []);
+  } finally {
+    await browser.close();
+  }
+});
+
 for (const how of ["press", "keyboard", "both"]) {
   const name = { press: "read by the backend only", keyboard: "as keys in the browser only", both: "reported twice" }[how];
   test(`settings on the TV: arrows move the highlight one control at a time (${name})`, async () => {
-    const page = await openPage(pi.base, "/settings?from=tv");
-    const remote = remoteFor(page, pi.base);
-    await page.waitForSelector(".tv-focus");
-    await page.waitForTimeout(600);
-    assert.equal(await highlighted(page), "w-location", "the first field is highlighted");
+    const { page, remote } = await settingsOnTV(pi.base, "screen");
+    assert.equal(await highlighted(page), "d-language", "the first control of the category is highlighted");
     await remote[how]("down");
-    assert.equal(await highlighted(page), "w-units");
+    assert.equal(await highlighted(page), "d-position");
     await remote[how]("down");
-    assert.equal(await highlighted(page), "p-source", "a second Down moves on by one, not two");
+    assert.equal(await highlighted(page), "d-size", "a second Down moves on by one, not two");
     await remote[how]("up");
-    assert.equal(await highlighted(page), "w-units");
-    await remote[how]("right");
-    assert.equal(await highlighted(page), "w-test", "Right reaches the button beside the list");
+    assert.equal(await highlighted(page), "d-position");
+    await page.context().close();
+    const weather = await settingsOnTV(pi.base, "info");
+    await weather.remote[how]("down");
+    assert.equal(await highlighted(weather.page), "w-units");
+    await weather.remote[how]("right");
+    assert.equal(await highlighted(weather.page), "w-test", "Right reaches the button beside the list");
+    assert.deepEqual(weather.page.problems, []);
+    await weather.page.context().close();
+    return;
     assert.deepEqual(page.problems, []);
     await page.context().close();
   });
 }
 
 test("settings on the TV: the keyboard opens with OK, types, and closes with Back", async () => {
-  const page = await openPage(pi.base, "/settings?from=tv");
-  const remote = remoteFor(page, pi.base);
-  await page.waitForSelector(".tv-focus");
-  await page.waitForTimeout(600);
+  const { page, remote } = await settingsOnTV(pi.base, "info");
   await remote.press("select");
   await page.waitForSelector(".tv-keyboard");
   const before = await page.evaluate(() => document.querySelector(".tv-keyboard .tv-focus").textContent);
@@ -148,10 +254,7 @@ test("settings on the TV: the keyboard opens with OK, types, and closes with Bac
 });
 
 test("settings on the TV: a keyboard's arrows move the cursor in a text field, not the highlight", async () => {
-  const page = await openPage(pi.base, "/settings?from=tv");
-  const remote = remoteFor(page, pi.base);
-  await page.waitForSelector(".tv-focus");
-  await page.waitForTimeout(600);
+  const { page, remote } = await settingsOnTV(pi.base, "info");
   await page.fill("#w-location", "Bern");
   await page.evaluate(() => document.getElementById("w-location").setSelectionRange(4, 4));
   await remote.both("left"); // a real keyboard: the browser gets the key and the backend reports it too
@@ -287,7 +390,7 @@ test("app row: OK on Status shows how PiDash is doing; arrows leave it open, Bac
 // --- Emulators -----------------------------------------------------------------
 
 test("settings: emulators are offered, with how to install one that is missing", async () => {
-  const page = await openPage(pi.base, "/settings");
+  const page = await openPage(pi.base, "/settings#apps");
   await page.waitForSelector("#add-kind option", { state: "attached" });
   const choices = await page.evaluate(() => [...document.querySelectorAll("#add-kind option")].map((o) => o.textContent));
   for (const emulator of ["RetroArch", "PPSSPP", "Dolphin", "ScummVM"]) assert.ok(choices.some((c) => c.startsWith(emulator)), `${emulator} is not offered: ${choices}`);
@@ -340,8 +443,7 @@ test("settings on the TV: Bluetooth devices are found, paired and forgotten with
   // A Pi of its own: the devices it ends up with must not matter to other tests.
   const own = await startPiDash(APPS);
   try {
-    const page = await openPage(own.base, "/settings?from=tv");
-    const remote = remoteFor(page, own.base);
+    const { page, remote } = await settingsOnTV(own.base, "sound");
     await page.waitForSelector("#bt-list li");
     // What the highlight is on: "<button>@<device>".
     const lit = () =>
@@ -438,9 +540,7 @@ test("a held direction runs along the app row, but does not race through photos"
 });
 
 test("settings on the TV: a held direction keeps the highlight moving", async () => {
-  const page = await openPage(pi.base, "/settings?from=tv");
-  const remote = remoteFor(page, pi.base);
-  await page.waitForSelector(".tv-focus");
+  const { page, remote } = await settingsOnTV(pi.base, "screen");
   const seen = [await highlighted(page)];
   await remote.press("down");
   seen.push(await highlighted(page));
@@ -497,7 +597,7 @@ test("the remote is answered with small sounds, unless they are switched off", a
 test("settings: the sound output is chosen, and its volume set, at once", async () => {
   const own = await startPiDash(APPS);
   try {
-    const page = await openPage(own.base, "/settings");
+    const page = await openPage(own.base, "/settings#sound");
     await page.waitForSelector("#snd-output option", { state: "attached" });
     const outputs = async () => Object.fromEntries((await (await fetch(own.base + "/api/sound")).json()).outputs.map((o) => [o.id, o]));
     assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll("#snd-output option")].map((o) => o.textContent)), ["TV (HDMI)", "Living room speaker"]);
@@ -536,7 +636,7 @@ test("settings: the sound output is chosen, and its volume set, at once", async 
 // --- Batteries ----------------------------------------------------------------------
 
 test("a controller's battery is shown with the Bluetooth devices and on the status page", async () => {
-  const page = await openPage(pi.base, "/settings");
+  const page = await openPage(pi.base, "/settings#sound");
   await page.waitForSelector("#bt-list li");
   const rows = await page.evaluate(() => [...document.querySelectorAll("#bt-list li .what")].map((w) => w.innerText.replace(/\n+/g, " / ")));
   assert.ok(rows.includes("Xbox Wireless Controller / Game controller · connected · battery 80 %"), `rows: ${rows}`);
@@ -1154,5 +1254,176 @@ test("RetroArch's favourite games are tiles, and the one played last comes first
   } finally {
     await own.stop();
     fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+// --- Bluetooth from the app row ---------------------------------------------------------
+
+test("the Bluetooth tile connects and disconnects devices without a trip through the settings", async () => {
+  const own = await startPiDash(APPS);
+  try {
+    const page = await openPage(own.base);
+    await page.waitForFunction(() => document.getElementById("backdrop").classList.contains("has-photo"), null, { timeout: 20000 });
+    await page.waitForTimeout(2000);
+    const remote = remoteFor(page, own.base);
+    const menu = () =>
+      page.evaluate(() => {
+        const m = document.getElementById("menu");
+        if (!m.classList.contains("open")) return null;
+        return { title: m.querySelector("h2").textContent, at: [...m.querySelectorAll(".menu-item")].findIndex((e) => e.classList.contains("focused")), items: [...m.querySelectorAll(".menu-item")].map((e) => [e.querySelector(".menu-label").textContent, (e.querySelector(".menu-hint")?.textContent ?? "").replace(/\s+/g, " ")]) };
+      });
+    const connected = async () => (await (await fetch(own.base + "/api/bluetooth")).json()).devices.filter((d) => d.connected).map((d) => d.name);
+
+    await remote.press("select");
+    await focusTile(page, remote, "Bluetooth");
+    assert.equal(await page.evaluate(() => document.querySelector(".tile.focused .tile-sub")?.textContent), "Xbox Wireless Controller", "the tile names what is connected");
+    await remote.press("select");
+    assert.equal(await rowOpen(page), false);
+    assert.deepEqual(await menu(), {
+      title: "Bluetooth",
+      at: 0,
+      items: [
+        ["Living room speaker", "Not connected · OK connects"],
+        ["Xbox Wireless Controller", "Connected · battery 80 % · OK disconnects"],
+        ["Pair a new device…", "Opens the settings, where devices are also forgotten."],
+      ],
+    });
+
+    // OK connects the speaker; the menu stays, with the highlight where it was.
+    await remote.press("select");
+    await page.waitForFunction(() => /^Connected/.test(document.querySelector("#menu .menu-item .menu-hint")?.textContent ?? ""));
+    assert.deepEqual(await connected(), ["Living room speaker", "Xbox Wireless Controller"]);
+    assert.equal((await menu()).at, 0);
+    // And disconnects the controller.
+    await remote.press("down");
+    await remote.press("select");
+    await page.waitForFunction(() => /^Not connected/.test(document.querySelectorAll("#menu .menu-item .menu-hint")[1]?.textContent ?? ""));
+    assert.deepEqual(await connected(), ["Living room speaker"]);
+    assert.equal((await menu()).at, 1);
+
+    // Back closes; the tile now names the speaker.
+    await remote.press("back");
+    assert.equal(await menu(), null);
+    await remote.press("select");
+    await focusTile(page, remote, "Bluetooth");
+    assert.equal(await page.evaluate(() => document.querySelector(".tile.focused .tile-sub")?.textContent), "Living room speaker");
+
+    // Pairing is done in the settings, which open at the right category.
+    await remote.press("select");
+    await remote.press("down");
+    await remote.press("down");
+    await remote.press("select");
+    await page.waitForURL(/\/settings\?from=tv#sound$/);
+    await page.waitForSelector("#groups .tv-focus");
+    assert.equal(await page.evaluate(() => document.querySelector("#groups .tv-focus").textContent), "Sound and Bluetooth");
+    assert.deepEqual(page.problems, []);
+    await page.context().close();
+  } finally {
+    await own.stop();
+  }
+});
+
+// --- Performance ------------------------------------------------------------------------
+
+test("the performance preset sets how often the moving background is drawn", async () => {
+  // Counts the screen refreshes in which the moving background was painted.
+  const counting = () => {
+    window.__painted = new Set();
+    let frame = 0;
+    const raf = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = (cb) =>
+      raf((t) => {
+        frame = t;
+        cb(t);
+      });
+    for (const name of ["drawImage", "fillRect", "putImageData"]) {
+      const original = CanvasRenderingContext2D.prototype[name];
+      CanvasRenderingContext2D.prototype[name] = function (...args) {
+        if (this.canvas.id === "ambient") window.__painted.add(frame);
+        return original.apply(this, args);
+      };
+    }
+  };
+  const perSecond = async (config) => {
+    const own = await startPiDash(config + APPS);
+    let browser;
+    try {
+      // No photos: the moving background is what is on screen. The sample
+      // photos are hidden one by one until none is left.
+      const json = { "Content-Type": "application/json" };
+      for (let i = 0; i < 100; i++) {
+        const list = (await (await fetch(own.base + "/api/photos/playlist?limit=4")).json()).items;
+        const status = await (await fetch(own.base + "/api/photos")).json();
+        if (list.length === 0 && !status.indexing && i > 2) break;
+        if (list.length > 0) await fetch(own.base + "/api/photos/hide", { method: "POST", headers: json, body: JSON.stringify({ keys: list.map((it) => it.key) }) });
+        else await new Promise((r) => setTimeout(r, 100));
+      }
+      browser = await require("playwright").chromium.launch();
+      const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+      const page = await context.newPage();
+      await page.addInitScript(counting);
+      await page.goto(own.base);
+      await page.waitForFunction(() => document.getElementById("stage").dataset.performance);
+      await page.waitForTimeout(2500); // settled: nothing reacts to a button any more
+      assert.equal(await page.evaluate(() => document.getElementById("backdrop").classList.contains("has-photo")), false, "no photo is showing");
+      await page.evaluate(() => window.__painted.clear());
+      await page.waitForTimeout(3000);
+      const rate = (await page.evaluate(() => window.__painted.size)) / 3;
+      const preset = await page.evaluate(() => document.getElementById("stage").dataset.performance);
+      const height = await page.evaluate(() => document.getElementById("ambient").height);
+      return { rate, preset, height };
+    } finally {
+      await browser?.close();
+      await own.stop();
+    }
+  };
+  // Never more often than asked for; and not much less, or it would stutter.
+  const about = (got, want, what) => assert.ok(got.rate <= want * 1.15 + 0.5 && got.rate >= want * 0.5, `${what}: drawn ${got.rate.toFixed(1)} times a second, want about ${want}`);
+
+  const balanced = await perSecond("");
+  assert.equal(balanced.preset, "balanced");
+  about(balanced, 12, "balanced");
+  const saver = await perSecond('performance = "saver"\n');
+  about(saver, 5, "power saver");
+  assert.ok(saver.height <= 360 && saver.height < balanced.height, `the power saver draws a coarser picture: ${saver.height} against ${balanced.height} lines`);
+  about(await perSecond('performance = "smooth"\n'), 30, "smooth");
+  // A rate of one's own counts for more than the preset.
+  about(await perSecond('performance = "saver"\nbackground_fps = 20\n'), 20, "20 a second by hand");
+});
+
+test("power saver: photos stand still; the settings offer the presets", async () => {
+  const own = await startPiDash('performance = "saver"\n' + APPS + '\n[photos]\nmotion = "fill"\n');
+  try {
+    const page = await openPage(own.base);
+    await page.waitForFunction(() => document.getElementById("backdrop").classList.contains("has-photo"), null, { timeout: 20000 });
+    await page.waitForTimeout(2500);
+    const moving = await page.evaluate(() => document.getAnimations().filter((a) => a.effect?.target?.closest?.("#backdrop") && a.playState === "running" && (a.effect.getKeyframes?.() ?? []).some((k) => "transform" in k)).length);
+    assert.equal(moving, 0, "no photo is drifting");
+    await page.context().close();
+
+    const settings = await openPage(own.base, "/settings#screen");
+    await settings.waitForSelector("#main:not([hidden])");
+    assert.equal(await settings.inputValue("#d-performance"), "saver");
+    assert.match(await settings.locator("#d-performance-hint").innerText(), /5 times a second/);
+    await settings.selectOption("#d-performance", "smooth");
+    assert.match(await settings.locator("#d-performance-hint").innerText(), /30 times a second/);
+    await settings.selectOption("#d-fps", "24");
+    await settings.click("#save");
+    await settings.waitForFunction(() => document.getElementById("save").disabled);
+    // The backend starts again with what was saved.
+    let display = {};
+    for (let i = 0; i < 50 && !(display.performance === "smooth" && display.background_fps === 24); i++) {
+      await new Promise((r) => setTimeout(r, 200));
+      try {
+        display = (await (await fetch(own.base + "/api/config")).json()).display ?? {};
+      } catch {
+        /* restarting */
+      }
+    }
+    assert.deepEqual([display.performance, display.background_fps], ["smooth", 24]);
+    assert.deepEqual(settings.problems, []);
+    await settings.context().close();
+  } finally {
+    await own.stop();
   }
 });

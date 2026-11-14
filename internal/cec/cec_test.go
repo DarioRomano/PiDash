@@ -152,3 +152,36 @@ func TestVolumeButtonsArePressedAndLetGo(t *testing.T) {
 		t.Error("an unknown button must be refused")
 	}
 }
+
+func TestStartingTheDashboardDoesNotWakeTheTV(t *testing.T) {
+	tv, c := newFake()
+	ctx := context.Background()
+
+	// The TV is on: it is told to show the Pi, and nothing more.
+	shown, err := c.Announce(ctx)
+	if err != nil || !shown {
+		t.Fatalf("TV on: shown=%v err=%v", shown, err)
+	}
+	joined := strings.Join(tv.calls, "\n")
+	if !strings.Contains(joined, "--playback --osd-name PiDash") || !strings.Contains(joined, "--active-source phys-addr=1.0.0.0") {
+		t.Errorf("the Pi should register and ask to be shown:\n%s", joined)
+	}
+	if strings.Contains(joined, "--image-view-on") {
+		t.Errorf("nothing that wakes a TV should be sent:\n%s", joined)
+	}
+
+	// The TV is in standby: it stays there, but the remote will reach the Pi.
+	tv2, c2 := newFake()
+	tv2.power = "standby"
+	shown, err = c2.Announce(ctx)
+	if err != nil || shown {
+		t.Fatalf("TV in standby: shown=%v err=%v", shown, err)
+	}
+	joined = strings.Join(tv2.calls, "\n")
+	if strings.Contains(joined, "--image-view-on") || strings.Contains(joined, "--active-source") || tv2.power != "standby" {
+		t.Errorf("a TV in standby was disturbed:\n%s", joined)
+	}
+	if !tv2.registered {
+		t.Error("the Pi should register even with the TV in standby")
+	}
+}

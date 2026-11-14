@@ -482,6 +482,17 @@ func (s *Server) handleKioskControl(w http.ResponseWriter, r *http.Request) {
 	switch req.Action {
 	case "start":
 		err, active = s.kiosk.Start(r.Context()), true
+		if err == nil && s.tv != nil {
+			// Somebody asked for the dashboard on the TV: that TV may be
+			// switched on for it. Starting by itself no longer does that.
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				if err := s.tv.SetPower(ctx, true); err != nil {
+					s.log.Debug("show on TV: switching the TV on", "err", err)
+				}
+			}()
+		}
 	case "stop":
 		err = s.kiosk.Stop(r.Context())
 	default:

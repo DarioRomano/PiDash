@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -343,7 +344,10 @@ func (r *Remote) Run(ctx context.Context) {
 			axes, isPad := padAxes(f)
 			r.listening(p, name, isPad, true)
 			r.Log.Debug("listening to input device", "path", p, "name", name, "controller", isPad)
-			if isPad && started && r.OnPadWake != nil {
+			// A controller made by a program (a game stream's stand-in, a
+			// remote desktop's) is not somebody picking one up.
+			made := dir == "/dev/input" && madeByAProgram("/sys/class/input", p)
+			if isPad && started && !made && r.OnPadWake != nil {
 				r.Log.Info("a game controller was switched on", "name", name)
 				r.OnPadWake(name)
 			}
@@ -394,4 +398,13 @@ func (r *Remote) Run(ctx context.Context) {
 		case <-t.C:
 		}
 	}
+}
+
+// madeByAProgram reports whether an input device was created by a program
+// (through uinput) rather than plugged in or connected over Bluetooth. The
+// kernel files those under "virtual/input"; a Bluetooth device is "virtual"
+// too, but hangs off the Bluetooth service's own node.
+func madeByAProgram(sysInput, device string) bool {
+	real, err := filepath.EvalSymlinks(filepath.Join(sysInput, filepath.Base(device)))
+	return err == nil && strings.Contains(real, "/devices/virtual/input/")
 }

@@ -240,7 +240,7 @@ async function start() {
 
 // On the TV: Back returns to the settings, after offering to save.
 if (onTV) {
-  document.querySelector<HTMLAnchorElement>(".back")!.href = "/settings?from=tv";
+  document.querySelector<HTMLAnchorElement>(".back")!.href = "/settings?from=tv#photos";
   startTVNav({
     onBack: async () => {
       if (!saveBtn.disabled) {
@@ -251,7 +251,7 @@ if (onTV) {
           return;
         }
       }
-      location.href = "/settings?from=tv";
+      location.href = "/settings?from=tv#photos";
     },
   });
 }

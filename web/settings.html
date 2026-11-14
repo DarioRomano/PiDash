@@ -17,12 +17,22 @@
     </header>
 
     <p id="tv-help" class="hint tv-help" hidden>
-      Arrows move · OK chooses or opens the keyboard · Back leaves. Long entries are easier on a phone or computer:
+      ▲ ▼ choose a category, ▶ or OK goes into it · OK chooses or opens the keyboard · Back returns. Long entries are easier on a phone or computer:
       open this TV's address followed by <b>/settings</b>.
     </p>
 
+    <div id="layout">
+      <nav id="groups" data-tv-side aria-label="Categories" hidden>
+        <button type="button" data-group="screen">Screen</button>
+        <button type="button" data-group="photos">Photos</button>
+        <button type="button" data-group="info">Weather and calendar</button>
+        <button type="button" data-group="apps">Apps and radio</button>
+        <button type="button" data-group="sound">Sound and Bluetooth</button>
+        <button type="button" data-group="home">Home and guests</button>
+        <button type="button" data-group="system">System</button>
+      </nav>
     <main id="main" hidden>
-      <section class="card">
+      <section class="card" data-group="info">
         <h2>Weather</h2>
         <label class="field">
           <span>Town</span>
@@ -44,7 +54,7 @@
         </p>
       </section>
 
-      <section class="card">
+      <section class="card" data-group="photos">
         <h2>Background photos</h2>
         <label class="field">
           <span>Photos come from</span>
@@ -106,7 +116,7 @@
         <a id="p-folders" class="link" href="/photos" hidden>Choose folders and albums<span>›</span></a>
       </section>
 
-      <section class="card">
+      <section class="card" data-group="info">
         <h2>Calendar</h2>
         <p class="hint">
           Shows your next events on the TV. It needs the calendar's link: in Google Calendar the "Secret address in
@@ -124,7 +134,7 @@
         <p id="cal-result" class="result"></p>
       </section>
 
-      <section class="card">
+      <section class="card" data-group="home">
         <h2>Smart home</h2>
         <p class="hint">Lights, plugs, scenes and sensors from Home Assistant, as tiles in the app row.</p>
         <label class="field">
@@ -151,28 +161,7 @@
         </p>
       </section>
 
-      <section class="card">
-        <h2>Radio</h2>
-        <p class="hint">Stations appear as tiles in the app row and play while the photos carry on. The remote's play button pauses.</p>
-        <ul id="r-list" class="rows"></ul>
-        <div class="pair">
-          <label class="field">
-            <span>Find a station by name</span>
-            <input id="r-query" type="text" autocomplete="off" />
-          </label>
-          <button id="r-search" type="button" class="secondary">Search</button>
-        </div>
-        <p id="r-result" class="result"></p>
-        <div id="r-add" class="add" hidden>
-          <label class="field">
-            <span>Found</span>
-            <select id="r-pick"></select>
-          </label>
-          <button id="r-add-btn" type="button" class="secondary wide">Add to the app row</button>
-        </div>
-      </section>
-
-      <section class="card">
+      <section class="card" data-group="screen">
         <h2>Screen</h2>
         <label class="field">
           <span>Language</span>
@@ -220,11 +209,37 @@
           </select>
         </label>
         <label class="check"><input id="d-sounds" type="checkbox" /><span>Small sounds when using the remote</span></label>
+      </section>
+
+      <section class="card" data-group="screen">
+        <h2>Performance</h2>
+        <p class="hint">How much work the Pi does for the picture, and so how much power it draws and how warm it gets.</p>
+        <label class="field">
+          <span>Preset</span>
+          <select id="d-performance">
+            <option value="smooth">Smooth: everything moves as fluidly as it can</option>
+            <option value="balanced">Balanced</option>
+            <option value="saver">Power saver: little movement, the least work</option>
+          </select>
+        </label>
+        <p id="d-performance-hint" class="hint"></p>
+        <label class="field">
+          <span>Moving background: pictures a second</span>
+          <select id="d-fps">
+            <option value="0">As the preset says</option>
+            <option value="5">5</option>
+            <option value="10">10</option>
+            <option value="15">15</option>
+            <option value="24">24</option>
+            <option value="30">30</option>
+            <option value="60">60</option>
+          </select>
+        </label>
         <label class="check"><input id="sys-cool" type="checkbox" /><span>Pause movement while the Pi is hot</span></label>
         <p class="hint">The background stands still and photos stop moving until the Pi has cooled down.</p>
       </section>
 
-      <section class="card">
+      <section class="card" data-group="screen">
         <h2>Night</h2>
         <p class="hint">
           Between these times the TV shows only a dim clock on black. Any button brings the dashboard back for a
@@ -251,7 +266,7 @@
         <p class="hint">The picture darkens over the hour after sunset and is back to normal at sunrise.</p>
       </section>
 
-      <section class="card">
+      <section class="card" data-group="apps">
         <h2>Apps</h2>
         <p class="hint">These appear in the app row on the TV, in this order.</p>
         <ul id="app-list"></ul>
@@ -290,7 +305,28 @@
         </p>
       </section>
 
-      <section class="card" id="snd-card">
+      <section class="card" data-group="apps">
+        <h2>Radio</h2>
+        <p class="hint">Stations appear as tiles in the app row and play while the photos carry on. The remote's play button pauses.</p>
+        <ul id="r-list" class="rows"></ul>
+        <div class="pair">
+          <label class="field">
+            <span>Find a station by name</span>
+            <input id="r-query" type="text" autocomplete="off" />
+          </label>
+          <button id="r-search" type="button" class="secondary">Search</button>
+        </div>
+        <p id="r-result" class="result"></p>
+        <div id="r-add" class="add" hidden>
+          <label class="field">
+            <span>Found</span>
+            <select id="r-pick"></select>
+          </label>
+          <button id="r-add-btn" type="button" class="secondary wide">Add to the app row</button>
+        </div>
+      </section>
+
+      <section class="card" id="snd-card" data-group="sound">
         <h2>Sound</h2>
         <p class="hint">
           Where the Pi's sound comes out, and how loud. Headphones and speakers are connected under Bluetooth below;
@@ -316,7 +352,7 @@
         <label class="check"><input id="snd-follow" type="checkbox" /><span>Switch to headphones or a speaker when they connect, and back when they disconnect</span></label>
       </section>
 
-      <section class="card" id="bt-card">
+      <section class="card" id="bt-card" data-group="sound">
         <h2>Bluetooth</h2>
         <p class="hint">
           Game controllers, headphones, speakers and keyboards. A device paired here connects by itself when it is
@@ -338,7 +374,7 @@
         <p id="bt-result" class="result"></p>
       </section>
 
-      <section class="card">
+      <section class="card" data-group="home">
         <h2>Wi-Fi for visitors</h2>
         <p class="hint">
           With a network entered here, the app row has a "Guest Wi-Fi" tile. It shows a code that visitors point
@@ -357,7 +393,7 @@
         <p class="hint">The password is shown on the TV to whoever opens that tile. A guest network of its own is the safest choice.</p>
       </section>
 
-      <section class="card">
+      <section class="card" data-group="system">
         <h2>Lock</h2>
         <p class="hint">With a PIN, settings can be looked at but not changed without it.</p>
         <label class="field">
@@ -367,7 +403,7 @@
         <button id="l-remove" type="button" class="secondary wide" hidden>Remove the lock</button>
       </section>
 
-      <section class="card">
+      <section class="card" data-group="system">
         <h2>Updates</h2>
         <p id="up-status" class="hint"></p>
         <label class="check" id="up-auto-row"><input id="sys-auto" type="checkbox" /><span>Install new versions automatically</span></label>
@@ -379,7 +415,7 @@
         <p id="up-result" class="result"></p>
       </section>
 
-      <section class="card">
+      <section class="card" data-group="system">
         <h2>Backup</h2>
         <p class="hint">
           One file with everything set up here, to move to another Pi or a new memory card. It contains the passwords
@@ -397,6 +433,7 @@
       <p id="kb-problem" class="hint warn" hidden></p>
       <p id="version" class="hint center"></p>
     </main>
+    </div>
 
     <footer id="footer" hidden>
       <span id="summary"></span>

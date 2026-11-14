@@ -71,7 +71,7 @@ func main() {
 	log := slog.New(problems.Handler(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 
 	if *cecCmd != "" {
-		os.Exit(runCEC(*cecCmd))
+		os.Exit(runCEC(*cecCmd, *cfgPath))
 	}
 
 	cfg, err := config.Load(*cfgPath)
@@ -198,7 +198,12 @@ func main() {
 		}
 	}
 
-	photoService, err := newPhotoService(cfg.Photos, *mock, log)
+	photoSettings := cfg.Photos
+	if cfg.Display.Performance == "saver" {
+		// Playing video is among the hardest work the dashboard does.
+		photoSettings.Videos = false
+	}
+	photoService, err := newPhotoService(photoSettings, *mock, log)
 	if err != nil {
 		log.Error("photos", "err", err)
 		os.Exit(1)
@@ -578,12 +583,24 @@ func newPhotoService(cfg config.Photos, mock bool, log *slog.Logger) (*photos.Se
 // runCEC handles `pidash -cec <command>` and returns the exit status. The
 // kiosk unit uses "setup" so the TV switches to the Pi and forwards its
 // remote's keys; the other commands are handy for trying CEC by hand.
-func runCEC(command string) int {
+func runCEC(command, cfgPath string) int {
 	c := cec.New()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	var err error
 	switch command {
+	case "start":
+		// The dashboard starts: after switching the Pi on, but just as well
+		// after a fault, an update, or someone working on the Pi from afar.
+		// None of that is a reason to switch a TV on.
+		if cfg, cfgErr := config.Load(cfgPath); cfgErr == nil && cfg.TV.WakeOnStart {
+			err = c.Setup(ctx)
+			break
+		}
+		var shown bool
+		if shown, err = c.Announce(ctx); err == nil && !shown {
+			fmt.Println("the TV is in standby and was left so")
+		}
 	case "setup", "on":
 		err = c.Setup(ctx)
 	case "off":
@@ -594,7 +611,7 @@ func runCEC(command string) int {
 			fmt.Println("TV power:", p)
 		}
 	default:
-		fmt.Fprintln(os.Stderr, "usage: pidash -cec setup|on|off|status")
+		fmt.Fprintln(os.Stderr, "usage: pidash -cec start|on|off|status")
 		return 2
 	}
 	if err != nil {

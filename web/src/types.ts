@@ -17,6 +17,10 @@ export interface DisplayConfig {
   view: string;
   /** "moving" or "still": the background shown without photos. */
   background: string;
+  /** "smooth", "balanced" or "saver": how much work the Pi does for the picture. */
+  performance?: string;
+  /** Pictures a second for the moving background; 0 leaves it to performance. */
+  background_fps?: number;
   /** "off", "light" or "strong": how much the picture darkens in the evening. */
   evening_dim?: string;
   /** "bold", "slim" or "analog". */

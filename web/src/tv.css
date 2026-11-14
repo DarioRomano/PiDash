@@ -1,6 +1,7 @@
 /* The settings pages on the TV, driven with the remote (see tvnav.ts). */
 html.tv, html.tv body { cursor: none; }
-html.tv body { max-width: 860px; padding-top: 28px; }
+html.tv body { max-width: 1120px; padding-top: 28px; }
+html.tv #groups button.tv-focus { color: var(--fg); }
 html.tv .tv-focus { outline: 3px solid var(--accent) !important; outline-offset: 2px; box-shadow: 0 0 0 7px rgba(124, 196, 255, 0.18); }
 html.tv input[type="checkbox"].tv-focus { outline-offset: 4px; }
 html.tv .field input:focus, html.tv .field select:focus { outline: none; }

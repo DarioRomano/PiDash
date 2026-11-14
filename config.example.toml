@@ -42,6 +42,17 @@ view = "clock"
 # The background shown while there is no photo: "moving" drifts slowly and
 # reacts to the remote; "still" is painted once, which keeps the Pi cooler.
 background = "moving"
+# How much work the Pi does for the picture, and so how much power it draws
+# and how warm it gets:
+#   "smooth"    the moving background is drawn 30 times a second (60 while it
+#               reacts to the remote)
+#   "balanced"  12 times a second (30 while it reacts)
+#   "saver"     5 times a second and less finely; photos stand still instead
+#               of drifting, and video clips are left out
+performance = "balanced"
+# Pictures a second for the moving background, 1 to 60, whatever the setting
+# above says; 0 leaves it to that setting.
+background_fps = 0
 # Night mode: between these times the TV shows only a dim clock on black. Any
 # button brings the dashboard back for a minute. Leave both empty for none.
 # A time is "22:30", or follows the sun: "sunset", "sunrise", and either moved
@@ -108,6 +119,11 @@ watchdog = true
 [tv]
 off = ""    # e.g. "23:30"
 on = ""     # e.g. "06:30"
+# Switch the TV on whenever the dashboard starts. Off by default: the
+# dashboard also starts after a fault or an update, and while someone works on
+# the Pi from afar, and a TV in standby should then stay in standby. A TV
+# that is on is switched to the Pi's input either way.
+wake_on_start = false
 # Switching a game controller on (or pressing its logo button) while the TV is
 # in standby switches the TV on and to the Pi, the way a games console does.
 # A TV that is on and showing something else is left alone.

@@ -100,7 +100,10 @@ export function startTVNav(opts: Options) {
 
   // The first control gets the highlight once the page has filled itself in.
   const first = () => {
-    if (!current || !usable(current)) focus(controls()[0] ?? null);
+    if (current && usable(current)) return;
+    const all = controls();
+    // With a bar of categories, the one that is shown.
+    focus(sideHome(all) ?? all[0] ?? null);
   };
   new MutationObserver(first).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden", "disabled"] });
   first();
@@ -209,7 +212,8 @@ function focus(el: HTMLElement | null) {
       /* number fields */
     }
   }
-  el.scrollIntoView({ block: "center", behavior: "smooth" });
+  // The bar of categories stays where it is; the page moves to what is in it.
+  el.scrollIntoView(inSide(el) ? { block: "nearest" } : { block: "center", behavior: "smooth" });
 }
 
 /**
@@ -257,18 +261,41 @@ function nearest(from: DOMRect, dir: Dir, candidates: HTMLElement[]): HTMLElemen
   return best;
 }
 
+// A page may have a bar of categories at its side (marked data-tv-side). It
+// is a place of its own: Up and Down move along it and show each category at
+// once, Right or OK goes into the category, and Back comes out to it again.
+const inSide = (c: HTMLElement) => !!c.closest("[data-tv-side]");
+const sideHome = (all: HTMLElement[]) => all.find((c) => inSide(c) && c.getAttribute("aria-current") === "true") ?? all.find(inSide) ?? null;
+
 function page(press: Press) {
+  const all = controls();
   if (press === "back") {
     play("back");
+    const bar = sideHome(all);
+    if (bar && current && usable(current) && !inSide(current)) return focus(bar);
     return options.onBack();
   }
   if (press === "exit") return;
-  const all = controls();
   if (!current || !usable(current)) {
-    focus(all[0] ?? null);
+    focus(sideHome(all) ?? all[0] ?? null);
     return;
   }
   const el = current;
+
+  if (inSide(el)) {
+    if (press === "select" || press === "right") {
+      const first = all.find((c) => !inSide(c) && !c.closest("footer")) ?? all.find((c) => !inSide(c)) ?? null;
+      if (!first) return play("edge");
+      play(press === "select" ? "select" : "move");
+      return focus(first);
+    }
+    const to = press === "left" ? null : nearest(el.getBoundingClientRect(), press, all.filter((c) => c !== el && inSide(c)));
+    if (!to) return play("edge");
+    play("move");
+    focus(to);
+    to.click(); // the category is shown as soon as it is reached
+    return;
+  }
 
   if (press === "select") {
     play("select");
@@ -279,14 +306,17 @@ function page(press: Press) {
   // reached by going down from the last control, not from wherever it happens
   // to be nearest.
   const inBar = (c: HTMLElement) => !!c.closest("footer");
-  const others = all.filter((c) => c !== el);
+  const others = all.filter((c) => c !== el && !inSide(c));
   let next: HTMLElement | null;
   if (inBar(el)) {
-    next = press === "up" ? (all.filter((c) => !inBar(c)).pop() ?? null) : nearest(el.getBoundingClientRect(), press, others.filter(inBar));
+    next = press === "up" ? (all.filter((c) => !inBar(c) && !inSide(c)).pop() ?? null) : nearest(el.getBoundingClientRect(), press, others.filter(inBar));
   } else {
     next = nearest(el.getBoundingClientRect(), press, others.filter((c) => !inBar(c)));
     if (!next && press === "down") next = all.find(inBar) ?? null;
   }
+  // Left from the left edge leads to the categories, except from a list,
+  // where Left means "the one before".
+  if (!next && press === "left" && !(el instanceof HTMLSelectElement)) next = sideHome(all);
   if (next) {
     play("move");
     focus(next);

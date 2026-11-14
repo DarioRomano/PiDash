@@ -178,6 +178,26 @@ func (c *Controller) activate(ctx context.Context, a adapter) error {
 	return err
 }
 
+// Announce registers the Pi with the TV, so that the TV's remote reaches it,
+// and has a TV that is on show the Pi's input. A TV in standby is left in
+// standby: this is for when the dashboard starts, which says nothing about
+// anyone wanting to watch. It reports whether the TV was told to show the Pi.
+func (c *Controller) Announce(ctx context.Context) (bool, error) {
+	a, err := c.ready(ctx)
+	if err != nil {
+		return false, err
+	}
+	if power, _ := c.PowerStatus(ctx); power == PowerStandby {
+		return false, nil
+	}
+	// "Active source" on its own: unlike "image view on" it wakes no TV.
+	if _, err := c.run(ctx, "-d", a.dev, "--to", "15", "--active-source", "phys-addr="+a.phys); err != nil {
+		return false, err
+	}
+	c.active.Store(true)
+	return true, nil
+}
+
 // Wake switches the TV on and to the Pi's input.
 func (c *Controller) Wake(ctx context.Context) error { return c.Setup(ctx) }
 

@@ -34,6 +34,7 @@ export class Slideshow {
   private version = -1;
   private intervalMs = 30_000;
   private timer = 0;
+  private stepsPerSecond = MOTION_STEPS_PER_SECOND;
   private paused = false;
   private suspended = false;
   private showing = false;
@@ -116,6 +117,11 @@ export class Slideshow {
    * While the Pi is hot, photos stand still: the one on screen stops where
    * it is and the next ones do not start moving. Photos keep changing.
    */
+  /** How many times a second a moving photo is redrawn; takes effect from the next photo. */
+  setMotionRate(perSecond: number) {
+    this.stepsPerSecond = Math.max(1, Math.min(60, perSecond));
+  }
+
   setCalm(calm: boolean) {
     if (calm === this.calm) return;
     this.calm = calm;
@@ -344,7 +350,7 @@ export class Slideshow {
     img.animate([{ transform: css(from) }, { transform: css(to) }], {
       duration,
       // In small steps rather than on every frame: see MOTION_STEPS_PER_SECOND.
-      easing: `steps(${Math.max(1, Math.round((duration / 1000) * MOTION_STEPS_PER_SECOND))}, end)`,
+      easing: `steps(${Math.max(1, Math.round((duration / 1000) * this.stepsPerSecond))}, end)`,
       fill: "both",
     });
   }

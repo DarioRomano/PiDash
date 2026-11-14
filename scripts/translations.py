@@ -515,6 +515,34 @@ ROWS = [
 # --- games as tiles
 ("Show games as tiles of their own", "Spiele als eigene Kacheln zeigen", "Afficher les jeux comme des tuiles à part", "Mostra i giochi come riquadri a sé"),
 ("With Moonlight in the list above, paired with the PC: the games of the PC. One press wakes the PC and starts the game; open the PC once in Moonlight to fill or refresh the list. With RetroArch in the list: the games marked as favourites there, and the ones played last. The game played last comes first.", "Mit Moonlight in der Liste oben, gekoppelt mit dem PC: die Spiele des PCs. Ein Druck weckt den PC und startet das Spiel; den PC einmal in Moonlight öffnen, um die Liste zu füllen oder aufzufrischen. Mit RetroArch in der Liste: die dort als Favoriten markierten Spiele und die zuletzt gespielten. Das zuletzt gespielte Spiel steht vorn.", "Avec Moonlight dans la liste ci-dessus, associé au PC : les jeux du PC. Un appui réveille le PC et lance le jeu ; ouvrez le PC une fois dans Moonlight pour remplir ou actualiser la liste. Avec RetroArch dans la liste : les jeux marqués comme favoris et les derniers joués. Le dernier jeu joué vient en premier.", "Con Moonlight nell’elenco qui sopra, abbinato al PC: i giochi del PC. Una pressione sveglia il PC e avvia il gioco; apri il PC una volta in Moonlight per riempire o aggiornare l’elenco. Con RetroArch nell’elenco: i giochi segnati lì come preferiti e gli ultimi giocati. L’ultimo gioco giocato viene per primo."),
+# --- settings in categories, Bluetooth on the dashboard
+("▲ ▼ choose a category, ▶ or OK goes into it · OK chooses or opens the keyboard · Back returns. Long entries are easier on a phone or computer: open this TV's address followed by", "▲ ▼ wählen eine Kategorie, ▶ oder OK öffnet sie · OK wählt oder öffnet die Tastatur · Zurück führt zurück. Lange Eingaben gehen am Telefon oder Computer leichter: die Adresse dieses Fernsehers öffnen, gefolgt von", "▲ ▼ choisissent une catégorie, ▶ ou OK y entre · OK choisit ou ouvre le clavier · Retour revient. Les longues saisies sont plus faciles sur un téléphone ou un ordinateur : ouvrez l’adresse de cette TV suivie de", "▲ ▼ scelgono una categoria, ▶ o OK la apre · OK sceglie o apre la tastiera · Indietro torna. I testi lunghi sono più comodi da telefono o computer: apri l’indirizzo di questa TV seguito da"),
+("Weather and calendar", "Wetter und Kalender", "Météo et calendrier", "Meteo e calendario"),
+("Apps and radio", "Apps und Radio", "Applis et radio", "App e radio"),
+("Sound and Bluetooth", "Ton und Bluetooth", "Son et Bluetooth", "Audio e Bluetooth"),
+("Home and guests", "Zuhause und Gäste", "Maison et invités", "Casa e ospiti"),
+("System", "System", "Système", "Sistema"),
+("Connected", "Verbunden", "Connecté", "Connesso"),
+("Not connected", "Nicht verbunden", "Non connecté", "Non connesso"),
+("Connecting…", "Verbindet…", "Connexion…", "Connessione…"),
+("Disconnecting…", "Trennt…", "Déconnexion…", "Disconnessione…"),
+("battery {n} %", "Akku {n} %", "batterie {n} %", "batteria {n} %"),
+("OK connects", "OK verbindet", "OK connecte", "OK connette"),
+("OK disconnects", "OK trennt", "OK déconnecte", "OK disconnette"),
+("Pair a new device…", "Neues Gerät koppeln…", "Associer un nouvel appareil…", "Abbina un nuovo dispositivo…"),
+("Opens the settings, where devices are also forgotten.", "Öffnet die Einstellungen; dort werden Geräte auch entfernt.", "Ouvre les réglages, où l’on peut aussi oublier des appareils.", "Apre le impostazioni, dove si possono anche dimenticare i dispositivi."),
+# --- performance
+("Performance", "Leistung", "Performances", "Prestazioni"),
+("How much work the Pi does for the picture, and so how much power it draws and how warm it gets.", "Wie viel der Pi für das Bild arbeitet, und damit wie viel Strom er braucht und wie warm er wird.", "Le travail que le Pi fournit pour l’image, et donc sa consommation et sa température.", "Quanto lavora il Pi per l’immagine, e quindi quanta corrente consuma e quanto si scalda."),
+("Preset", "Voreinstellung", "Préréglage", "Profilo"),
+("Smooth: everything moves as fluidly as it can", "Flüssig: alles bewegt sich so geschmeidig wie möglich", "Fluide : tout bouge aussi souplement que possible", "Fluido: tutto si muove nel modo più scorrevole possibile"),
+("Balanced", "Ausgewogen", "Équilibré", "Bilanciato"),
+("Power saver: little movement, the least work", "Stromsparend: wenig Bewegung, am wenigsten Arbeit", "Économie d’énergie : peu de mouvement, le moins de travail", "Risparmio energetico: poco movimento, il minimo lavoro"),
+("The moving background and moving photos are drawn 30 times a second, the background 60 times while it reacts to the remote. Most work for the Pi.", "Der bewegte Hintergrund und bewegte Fotos werden 30-mal pro Sekunde gezeichnet, der Hintergrund 60-mal, während er auf die Fernbedienung reagiert. Am meisten Arbeit für den Pi.", "Le fond animé et les photos en mouvement sont dessinés 30 fois par seconde, le fond 60 fois quand il réagit à la télécommande. Le plus de travail pour le Pi.", "Lo sfondo animato e le foto in movimento vengono disegnati 30 volte al secondo, lo sfondo 60 mentre reagisce al telecomando. Il massimo lavoro per il Pi."),
+("The moving background is drawn 12 times a second, and 30 times while it reacts to the remote.", "Der bewegte Hintergrund wird 12-mal pro Sekunde gezeichnet, und 30-mal, während er auf die Fernbedienung reagiert.", "Le fond animé est dessiné 12 fois par seconde, et 30 fois quand il réagit à la télécommande.", "Lo sfondo animato viene disegnato 12 volte al secondo, e 30 mentre reagisce al telecomando."),
+("The moving background is drawn 5 times a second and less finely, photos stand still instead of drifting, and video clips are left out.", "Der bewegte Hintergrund wird 5-mal pro Sekunde und gröber gezeichnet, Fotos stehen still, statt sich zu bewegen, und Videoclips werden ausgelassen.", "Le fond animé est dessiné 5 fois par seconde et moins finement, les photos restent immobiles et les clips vidéo sont laissés de côté.", "Lo sfondo animato viene disegnato 5 volte al secondo e con meno dettaglio, le foto restano ferme e i video vengono tralasciati."),
+("Moving background: pictures a second", "Bewegter Hintergrund: Bilder pro Sekunde", "Fond animé : images par seconde", "Sfondo animato: immagini al secondo"),
+("As the preset says", "Wie die Voreinstellung", "Selon le préréglage", "Come da profilo"),
 ]
 
 def tidy(s): return re.sub(r"\s+", " ", s).strip()

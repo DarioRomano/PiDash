@@ -34,6 +34,11 @@ export class Menu {
     return this.opened;
   }
 
+  /** The item the highlight is on. */
+  get selected() {
+    return this.at;
+  }
+
   /** Shows the list with one item selected; onChoose gets the index of the one chosen. */
   open(title: string, items: MenuItem[], selected: number, onChoose: (index: number) => void) {
     this.items = items;

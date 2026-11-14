@@ -280,7 +280,98 @@ const POWER_ID = "__power";
 const POWER_GLYPH =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
   '<path d="M12 3.500v8"/><path d="M7 6.800a7.500 7.500 0 1 0 10 0"/></svg>';
-const menu: Menu = new Menu($("#menu"), () => {});
+let menuShows = "";
+const menu: Menu = new Menu($("#menu"), (open) => {
+  if (!open) menuShows = "";
+});
+
+// --- Bluetooth, quickly ------------------------------------------------------------
+// The devices the Pi knows, to connect or disconnect one without a trip
+// through the settings. Pairing a new one is done there.
+
+interface BluetoothDevice {
+  address: string;
+  name: string;
+  paired: boolean;
+  connected: boolean;
+  battery?: number;
+}
+interface BluetoothStatus {
+  available: boolean;
+  on: boolean;
+  devices: BluetoothDevice[];
+}
+
+const BLUETOOTH_ID = "__bluetooth";
+const BLUETOOTH_GLYPH =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M7 7.500l10 9-5 4.500V3l5 4.500-10 9"/></svg>';
+let bluetooth: BluetoothStatus | null = null;
+let bluetoothAsked = 0;
+/** The address of the device that is being connected or disconnected right now. */
+let bluetoothBusy = "";
+
+const pairedDevices = () => (bluetooth?.devices ?? []).filter((d) => d.paired);
+
+/** Asks the Pi for its Bluetooth devices, at most every few seconds. */
+async function lookAtBluetooth(force = false) {
+  if (!force && Date.now() - bluetoothAsked < 8000) return;
+  bluetoothAsked = Date.now();
+  try {
+    const res = await fetch("/api/bluetooth", { cache: "no-store" });
+    if (!res.ok) return;
+    const before = JSON.stringify(bluetooth);
+    bluetooth = (await res.json()) as BluetoothStatus;
+    if (JSON.stringify(bluetooth) !== before) rail.setItems(railItems());
+  } catch {
+    /* the next look will tell */
+  }
+}
+
+function openBluetoothMenu(selected = 0) {
+  const busy = bluetoothBusy;
+  const st = bluetooth;
+  if (!st) return;
+  // More than fit on the screen are found in the settings.
+  const devices = pairedDevices().slice(0, 5);
+  const items = devices.map((d) => ({
+    label: d.name,
+    hint:
+      d.address === busy
+        ? t(d.connected ? "Disconnecting…" : "Connecting…")
+        : d.connected
+          ? t("Connected") + (d.battery !== undefined ? "  ·  " + t("battery {n} %", { n: d.battery }) : "") + "  ·  " + t("OK disconnects")
+          : t("Not connected") + "  ·  " + t("OK connects"),
+  }));
+  if (!st.on) items.push({ label: t("Switch Bluetooth on"), hint: "" });
+  items.push({ label: t("Pair a new device…"), hint: t("Opens the settings, where devices are also forgotten.") });
+  menuShows = "bluetooth";
+  menu.open(t("Bluetooth"), items, selected, async (i) => {
+    if (i === items.length - 1) return openSettings("sound");
+    const device = devices[i];
+    if (bluetoothBusy) return openBluetoothMenu(i); // one thing at a time
+    // Shown again at once, so that it is plain something is happening.
+    bluetoothBusy = device ? device.address : "power";
+    openBluetoothMenu(i);
+    try {
+      const res = device
+        ? await postJSON(`/api/bluetooth/${device.connected ? "disconnect" : "connect"}`, { address: device.address })
+        : await postJSON("/api/bluetooth/power", { on: true });
+      if (res.status === 401 || res.status === 429) toast("The settings are locked: this needs the PIN, under Settings.", 8000);
+      else if (!res.ok) {
+        const said = t((await res.text()).trim());
+        toast(said.charAt(0).toUpperCase() + said.slice(1), 10000);
+      } else {
+        bluetooth = (await res.json()) as BluetoothStatus;
+        rail.setItems(railItems());
+      }
+    } catch {
+      toast("The PiDash backend is not reachable.", 6000);
+    }
+    bluetoothBusy = "";
+    if (menuShows === "bluetooth") openBluetoothMenu(menu.selected);
+  });
+}
 
 function openPowerMenu() {
   const choices = [
@@ -336,8 +427,9 @@ const GEAR_GLYPH =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
   '<circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.8 1.8M16.7 16.7l1.8 1.8M18.5 5.5l-1.8 1.8M7.3 16.7l-1.8 1.8"/></svg>';
 
-function openSettings() {
-  location.href = "/settings?from=tv";
+/** Opens the settings on the TV, at a category if one is named. */
+function openSettings(category = "") {
+  location.href = "/settings?from=tv" + (category ? "#" + category : "");
 }
 
 // --- Panel rail and apps ------------------------------------------------------
@@ -556,6 +648,8 @@ const rail = new Rail(
     ambient.setLifted(open);
     railActivity();
     if (open) tellAboutUpdate();
+    // A controller may have connected since the row was last looked at.
+    if (open) void lookAtBluetooth();
   },
 );
 
@@ -594,6 +688,7 @@ function tellAboutUpdate() {
 }
 
 void lookForUpdate();
+void lookAtBluetooth();
 window.setInterval(() => void lookForUpdate(), 60 * 60 * 1000);
 
 // Each tile glows in the main colour of its icon.
@@ -726,6 +821,10 @@ function railItems(): RailItem[] {
     const n = photosNow?.favourites ?? 0;
     items.push({ id: ONLY_FAV_ID, label: "Only favourites", glyph: ONLY_FAV_GLYPH, sub: t(n === 1 ? "1 photo" : "{n} photos", { n }) });
   }
+  if (bluetooth?.available) {
+    const on = pairedDevices().filter((d) => d.connected).map((d) => d.name);
+    items.push({ id: BLUETOOTH_ID, label: "Bluetooth", glyph: BLUETOOTH_GLYPH, sub: !bluetooth.on ? t("Off") : on.length ? on.join(", ") : undefined });
+  }
   if (soundOutputs.length > 1) {
     items.push({ id: SOUND_ID, label: "Sound", glyph: SOUND_GLYPH, sub: soundOutputs.find((o) => o.active)?.name ?? "" });
   }
@@ -779,6 +878,14 @@ async function activateRailItem(item: RailItem) {
   if (item.id === POWER_ID) {
     rail.close();
     openPowerMenu();
+    return;
+  }
+  if (item.id === BLUETOOTH_ID) {
+    rail.close();
+    openBluetoothMenu();
+    void lookAtBluetooth(true).then(() => {
+      if (menuShows === "bluetooth" && !bluetoothBusy) openBluetoothMenu(menu.selected);
+    });
     return;
   }
   if (item.id === STOP_ID) {
@@ -919,6 +1026,16 @@ let pixelShiftTimer = 0;
 // time: the flowing background and the movement of photos.
 let hot = false;
 let stillBackground = false;
+/** Power saver: photos stand still, as while the Pi is hot. */
+let saving = false;
+// What each performance setting means for the moving background: milliseconds
+// between pictures while it drifts, while it reacts to a button, and the
+// finest picture it may use (0: as fine as the screen calls for).
+const PACES: Record<string, [number, number, number]> = {
+  smooth: [33, 16, 0],
+  balanced: [83, 33, 0],
+  saver: [200, 66, 3],
+};
 
 let runningVersion = "";
 let shownNotice = "";
@@ -951,6 +1068,14 @@ function applyConfig(cfg: ClientConfig) {
   }
   stillBackground = d.background === "still";
   ambient.setStill(stillBackground || hot);
+  let [calmMs, stirredMs, floor] = PACES[d.performance ?? ""] ?? PACES.balanced;
+  if ((d.background_fps ?? 0) > 0) calmMs = 1000 / (d.background_fps ?? 1);
+  ambient.setPace(calmMs, Math.min(stirredMs, calmMs), floor);
+  saving = d.performance === "saver";
+  slideshow.setCalm(hot || saving);
+  // Moving photos: redrawn twice as often when smoothness is what is wanted.
+  slideshow.setMotionRate(d.performance === "smooth" ? 30 : 15);
+  stage.dataset.performance = d.performance || "balanced";
   stage.dataset.clock = d.clock_position || "bottom-left";
   stage.dataset.clockSize = d.clock_size || "large";
   stage.dataset.clockStyle = d.clock_style || "bold";
@@ -1092,7 +1217,7 @@ function renderSystem(s: SystemState | null) {
   if (!!s.hot !== hot) {
     hot = !!s.hot;
     ambient.setStill(stillBackground || hot);
-    slideshow.setCalm(hot);
+    slideshow.setCalm(hot || saving);
     stage.dataset.hot = String(hot);
   }
   lanAddress = s.addresses[0] ?? "";

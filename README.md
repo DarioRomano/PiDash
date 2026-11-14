@@ -190,10 +190,17 @@ the settings page.
 
 - **On the TV:** choose **Settings** in the app row, or press **S**. The page
   opens on the TV and works with the remote alone: arrows move, OK presses a
-  button, opens a list, or opens an on-screen keyboard for text, and Back
-  leaves, offering to save first.
+  button, opens a list, or opens an on-screen keyboard for text.
 - **On a phone or computer:** open `http://<pi-ip>:8080/settings`. Long
   entries such as an address are quicker to type there.
+
+The settings are sorted into categories: Screen, Photos, Weather and
+calendar, Apps and radio, Sound and Bluetooth, Home and guests, System. On
+the TV they are a bar at the left. ▲ ▼ move along it and show each category
+at once; ▶ or OK goes into the one that is shown, and **Back** comes out to
+the bar again. **Back** on the bar leaves the settings, offering to save
+first. On a phone the bar runs along the top. One **Save** saves everything,
+whichever category it was changed in.
 
 What it covers:
 
@@ -470,8 +477,15 @@ installer adds if it is missing.
 
 ### Bluetooth
 
-**Settings → Bluetooth** manages the Pi's Bluetooth devices with the TV
-remote, so pairing a controller does not need a mouse and the desktop:
+**Quickly, from the dashboard.** The **Bluetooth** tile in the app row lists
+the devices the Pi knows, with whether each is connected and its battery.
+**OK** on one connects or disconnects it; the list stays open, so headphones
+can be swapped for a speaker in two presses. The tile itself names what is
+connected. **Pair a new device…** at the end opens the settings at the right
+place.
+
+**Settings → Sound and Bluetooth** manages the devices with the TV remote, so
+pairing a controller does not need a mouse and the desktop:
 
 - The devices the Pi knows are listed with **Connect** / **Disconnect** and
   **Forget**.
@@ -520,6 +534,32 @@ downloads one file with everything set up there, the chosen photo folders
 and the hidden photos. **Load a backup file** puts it back, on this Pi or
 another one. The file contains the passwords and links stored on the Pi, so
 keep it to yourself.
+
+### Performance
+
+**Settings → Screen → Performance** chooses how much work the Pi does for the
+picture, which is what decides how much power it draws and how warm it gets:
+
+| Preset | Moving background | Photos | Video clips |
+|--------|-------------------|--------|-------------|
+| **Smooth** | 30 pictures a second, 60 while it reacts to the remote | move as set, redrawn 30 times a second | shown |
+| **Balanced** (default) | 12 a second, 30 while it reacts | move as set, redrawn 15 times a second | shown |
+| **Power saver** | 5 a second, 15 while it reacts, drawn less finely | stand still | left out |
+
+*Moving background: pictures a second* sets that one number by hand, whatever
+the preset says: from 5 for a background that barely costs anything to 60 for
+one as fluid as the TV can show. In `config.toml`:
+
+```toml
+[display]
+performance = "saver"    # "smooth", "balanced" or "saver"
+background_fps = 0       # 1 to 60, or 0 to leave it to the preset
+```
+
+Other things that save more than any preset: a background that does not move
+at all (*Background without photos: Still picture*), photos that stand still
+(Photos, *Movement: off*), and [night mode](#night-mode), during which
+nothing is drawn but a clock. While the TV is off nothing is drawn at all.
 
 ### Keeping the Pi cool
 
@@ -1127,6 +1167,22 @@ on = "06:30"
 
 Either time can be left out. With only `off`, the TV is never switched on by
 itself.
+
+**What switches the TV on, and what does not.** The TV is switched on by the
+schedule above, by **TV on** or **Show on TV** on the phone remote, and by a
+[game controller being switched on](#game-controller). The dashboard starting
+does not switch it on: that also happens after a fault, after an update, or
+while someone works on the Pi from afar (a remote shell, screen sharing with
+Raspberry Pi Connect), none of which means anyone wants to watch. A TV that is
+on when the dashboard starts is switched to the Pi's input; a TV in standby
+stays in standby. Likewise a controller that a program creates (game streams
+and remote desktops do) does not count as one being switched on. If you want
+the old behaviour, where starting the Pi switches the TV on:
+
+```toml
+[tv]
+wake_on_start = true
+```
 
 - The TV is **not switched off while an app is open**, so a film is never cut
   short. It goes off once you are back on the dashboard.

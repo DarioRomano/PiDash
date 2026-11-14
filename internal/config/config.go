@@ -166,6 +166,13 @@ type Display struct {
 	// (default) drifts and reacts to the remote; "still" is painted once and
 	// costs the Pi no work.
 	Background string `toml:"background" json:"background"`
+	// Performance trades smoothness for the work the Pi has to do, and so
+	// for the power it draws and the heat it makes: "smooth", "balanced"
+	// (default) or "saver".
+	Performance string `toml:"performance" json:"performance"`
+	// BackgroundFPS sets how many pictures a second the moving background
+	// is drawn with, from 1 to 60; 0 leaves it to Performance.
+	BackgroundFPS int `toml:"background_fps" json:"background_fps"`
 	// Sounds plays a small sound when the remote moves the highlight or
 	// chooses something.
 	Sounds bool `toml:"sounds" json:"sounds"`
@@ -236,6 +243,10 @@ type TV struct {
 	// Off and On are times of day like "23:30"; empty means "do not".
 	Off string `toml:"off"`
 	On  string `toml:"on"`
+	// WakeOnStart switches the TV on whenever the dashboard starts: when
+	// the Pi is switched on, but also when the dashboard is started again
+	// after a fault or from afar. Off by default: a TV in standby stays so.
+	WakeOnStart bool `toml:"wake_on_start"`
 	// WakeOnController switches the TV on, and to the Pi, when a game
 	// controller is switched on while the TV is in standby.
 	WakeOnController bool `toml:"wake_on_controller"`
@@ -443,7 +454,7 @@ func (d Duration) MarshalText() ([]byte, error) { return []byte(d.String()), nil
 func Default() Config {
 	return Config{
 		Server:  Server{Listen: ":8080"},
-		Display: Display{Sounds: true, SafeArea: 0.03, DebugKeys: true, PixelShift: 4, AppRowTimeout: 30, Clock24h: true},
+		Display: Display{Sounds: true, SafeArea: 0.03, DebugKeys: true, PixelShift: 4, AppRowTimeout: 30, Clock24h: true, Performance: "balanced"},
 		Input: Input{PadInWebsites: true, AppExitKeys: []string{}, AppExitHold: Duration{2 * time.Second}, Keys: map[string]string{
 			"ArrowUp":        "up",
 			"ArrowDown":      "down",
@@ -679,10 +690,14 @@ func (c Config) validate() error {
 		{"evening_dim", &c.Display.EveningDim, []string{"off", "light", "strong"}},
 		{"view", &c.Display.View, []string{"clock", "details", "photo"}},
 		{"background", &c.Display.Background, []string{"moving", "still"}},
+		{"performance", &c.Display.Performance, []string{"smooth", "balanced", "saver"}},
 	} {
 		if *choice.value != "" && !slices.Contains(choice.of, *choice.value) {
 			return fmt.Errorf("display.%s must be one of %s, got %q", choice.name, strings.Join(choice.of, ", "), *choice.value)
 		}
+	}
+	if c.Display.BackgroundFPS < 0 || c.Display.BackgroundFPS > 60 {
+		return fmt.Errorf("display.background_fps must be between 1 and 60, or 0 to leave it to display.performance; got %d", c.Display.BackgroundFPS)
 	}
 	if v := c.TV.VolumeTo; v != "" && v != "tv" && v != "audio" {
 		return fmt.Errorf("tv.volume_to must be \"tv\" or \"audio\", got %q", v)

@@ -11,9 +11,11 @@ After=pidash.service
 [Service]
 Type=simple
 ExecStart=%h/.local/share/pidash/kiosk.sh
-# Ask the TV to forward remote-control keys to the Pi. Failure is not fatal
-# (TV off, CEC disabled): the dashboard still works with keyboard/phone.
-ExecStartPost=-%h/.local/share/pidash/pidash -cec setup
+# Ask the TV to forward remote-control keys to the Pi, and to show the Pi if
+# the TV is on. A TV in standby stays in standby: the dashboard also starts
+# after a fault or while someone works on the Pi from afar. Failure is not
+# fatal (CEC disabled): the dashboard still works with keyboard/phone.
+ExecStartPost=-%h/.local/share/pidash/pidash -cec start
 # Restart after a crash, but a clean exit (Alt+F4, "Exit to desktop") stays stopped.
 Restart=on-failure
 RestartSec=3
