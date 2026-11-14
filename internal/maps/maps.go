@@ -12,8 +12,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -39,9 +41,23 @@ type Tiles struct {
 	Keep time.Duration
 	HTTP *http.Client
 
+	// Most is how many tiles are fetched in any ten minutes (default 400),
+	// and Keeps how many are kept on disk (default 4000). Anyone on the home
+	// network can ask for a tile; these keep that from being used to hammer
+	// the map service in the Pi's name or to fill its disk.
+	Most  int
+	Keeps int
+
 	// slots keeps to the two downloads at a time the map service allows.
 	slots chan struct{}
+
+	mu      sync.Mutex
+	fetched []time.Time // when the last tiles were fetched
+	written int         // tiles written since the store was last tidied
 }
+
+// ErrBusy is returned when too many tiles were asked for in a short time.
+var ErrBusy = errors.New("too many pieces of map were asked for; try again in a few minutes")
 
 // New returns a store. An empty address means OpenStreetMap.
 func New(rawURL, dir, agent string) *Tiles {
@@ -49,7 +65,7 @@ func New(rawURL, dir, agent string) *Tiles {
 		rawURL = DefaultURL
 	}
 	return &Tiles{
-		URL: rawURL, Dir: dir, Agent: agent, Keep: 30 * 24 * time.Hour,
+		URL: rawURL, Dir: dir, Agent: agent, Keep: 30 * 24 * time.Hour, Most: 400, Keeps: 4000,
 		HTTP:  &http.Client{Timeout: 15 * time.Second},
 		slots: make(chan struct{}, 2),
 	}
@@ -101,6 +117,9 @@ func (t *Tiles) fetch(ctx context.Context, z, x, y int, path string) error {
 	if fi, err := os.Stat(path); err == nil && time.Since(fi.ModTime()) < t.Keep {
 		return nil
 	}
+	if !t.mayFetch(time.Now()) {
+		return ErrBusy
+	}
 	address := strings.NewReplacer("{z}", strconv.Itoa(z), "{x}", strconv.Itoa(x), "{y}", strconv.Itoa(y)).Replace(t.URL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
 	if err != nil {
@@ -141,5 +160,66 @@ func (t *Tiles) fetch(ctx context.Context, z, x, y int, path string) error {
 		os.Remove(tmp.Name())
 		return err
 	}
-	return os.Rename(tmp.Name(), path)
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return err
+	}
+	t.tidy()
+	return nil
+}
+
+// mayFetch counts a fetch against the limit and reports whether it may go ahead.
+func (t *Tiles) mayFetch(now time.Time) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.Most <= 0 {
+		return true
+	}
+	recent := t.fetched[:0]
+	for _, at := range t.fetched {
+		if now.Sub(at) < 10*time.Minute {
+			recent = append(recent, at)
+		}
+	}
+	t.fetched = recent
+	if len(t.fetched) >= t.Most {
+		return false
+	}
+	t.fetched = append(t.fetched, now)
+	return true
+}
+
+// tidy removes the tiles that were not used for the longest time once there
+// are more than are kept. It looks only now and then: listing the store is
+// work.
+func (t *Tiles) tidy() {
+	t.mu.Lock()
+	t.written++
+	due := t.Keeps > 0 && t.written >= max(1, t.Keeps/20)
+	if due {
+		t.written = 0
+	}
+	t.mu.Unlock()
+	if !due {
+		return
+	}
+	type tile struct {
+		path string
+		at   time.Time
+	}
+	var all []tile
+	_ = filepath.WalkDir(t.Dir, func(path string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && strings.HasSuffix(path, ".png") {
+			if fi, err := d.Info(); err == nil {
+				all = append(all, tile{path, fi.ModTime()})
+			}
+		}
+		return nil
+	})
+	if len(all) <= t.Keeps {
+		return
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].at.Before(all[j].at) })
+	for _, old := range all[:len(all)-t.Keeps] {
+		_ = os.Remove(old.path)
+	}
 }

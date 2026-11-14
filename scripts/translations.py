@@ -548,6 +548,20 @@ ROWS = [
 ("drawn only {n} times a second", "nur {n}-mal pro Sekunde gezeichnet", "dessiné seulement {n} fois par seconde", "disegnato solo {n} volte al secondo"),
 ("the Pi cannot keep up at this size: set its screen to 1920 × 1080 for fluid menus", "der Pi kommt bei dieser Größe nicht mit: seinen Bildschirm für flüssige Menüs auf 1920 × 1080 stellen", "le Pi ne suit pas à cette taille : réglez son écran sur 1920 × 1080 pour des menus fluides", "il Pi non ce la fa a questa risoluzione: imposta lo schermo su 1920 × 1080 per menu fluidi"),
 ("the TV or its cable limits this, or the Pi is busy", "der Fernseher oder sein Kabel begrenzt das, oder der Pi ist beschäftigt", "la TV ou son câble limite cela, ou le Pi est occupé", "la TV o il suo cavo lo limitano, oppure il Pi è occupato"),
+# --- the photo's bar, fixed detail levels, security
+("What can be done with the photo: favourite, hide, where it was taken", "Was sich mit dem Foto machen lässt: Favorit, ausblenden, Aufnahmeort", "Ce que l’on peut faire de la photo : favori, masquer, lieu de prise de vue", "Cosa si può fare con la foto: preferito, nascondi, dove è stata scattata"),
+("Show more, or only the photo", "Mehr zeigen, oder nur das Foto", "Afficher plus, ou seulement la photo", "Mostra di più, o solo la foto"),
+("Under a photo", "Unter einem Foto", "Sous une photo", "Sotto una foto"),
+("Nothing", "Nichts", "Rien", "Niente"),
+("Its album, place and date", "Album, Ort und Datum", "Son album, son lieu et sa date", "Album, luogo e data"),
+("Weather on the dashboard", "Wetter auf dem Dashboard", "Météo sur le tableau de bord", "Meteo sulla dashboard"),
+("Temperature and conditions", "Temperatur und Wetterlage", "Température et conditions", "Temperatura e condizioni"),
+("Also the place, what it feels like and the chance of rain", "Auch Ort, gefühlte Temperatur und Regenwahrscheinlichkeit", "Aussi le lieu, le ressenti et le risque de pluie", "Anche luogo, temperatura percepita e probabilità di pioggia"),
+("Keep it like this: ▼ on the remote does not change what is shown", "So lassen: ▼ auf der Fernbedienung ändert die Anzeige nicht", "Garder ainsi : ▼ sur la télécommande ne change pas l’affichage", "Lascia così: ▼ sul telecomando non cambia ciò che si vede"),
+("Unless kept, ▼ steps from what is set here to everything, to only the photo, and back. ▲ opens what can be done with the photo on screen: mark it as a favourite, hide it, see where it was taken.", "Sonst wechselt ▼ von dem, was hier eingestellt ist, zu allem, zu nur dem Foto und zurück. ▲ öffnet, was sich mit dem Foto auf dem Bildschirm machen lässt: als Favorit markieren, ausblenden, den Aufnahmeort ansehen.", "Sinon, ▼ passe de ce qui est réglé ici à tout, à la photo seule, puis revient. ▲ ouvre ce que l’on peut faire de la photo à l’écran : la marquer comme favorite, la masquer, voir où elle a été prise.", "Altrimenti ▼ passa da ciò che è impostato qui a tutto, alla sola foto, e ritorno. ▲ apre ciò che si può fare con la foto sullo schermo: segnarla come preferita, nasconderla, vedere dove è stata scattata."),
+("this request was made by another website, not by PiDash's own pages", "diese Anfrage kam von einer anderen Website, nicht von PiDashs eigenen Seiten", "cette demande venait d’un autre site web, pas des pages de PiDash", "questa richiesta veniva da un altro sito web, non dalle pagine di PiDash"),
+("the Wi-Fi for visitors is shown on the TV only", "das WLAN für Gäste wird nur auf dem Fernseher gezeigt", "le Wi-Fi des invités n’est affiché que sur la TV", "il Wi-Fi per gli ospiti viene mostrato solo sulla TV"),
+("too many pieces of map were asked for; try again in a few minutes", "zu viele Kartenteile wurden angefragt; in ein paar Minuten erneut versuchen", "trop de morceaux de carte ont été demandés ; réessayez dans quelques minutes", "sono stati richiesti troppi pezzi di mappa; riprova tra qualche minuto"),
 ]
 
 def tidy(s): return re.sub(r"\s+", " ", s).strip()

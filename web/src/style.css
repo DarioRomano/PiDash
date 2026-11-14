@@ -206,7 +206,7 @@ html, body {
   justify-content: flex-end;
   align-items: flex-start;
 }
-#overlay[data-density="photo"] { opacity: 0; }
+#overlay[data-view="photo"] { opacity: 0; }
 
 #clock { line-height: 1; text-shadow: 0 2px 24px rgba(0, 0, 0, 0.45); }
 #time {
@@ -267,7 +267,8 @@ html, body {
   opacity: 0;
   transition: opacity 0.4s ease;
 }
-#overlay[data-density="detailed"] .w-extra { opacity: 1; }
+#overlay[data-weather="full"] .w-extra { opacity: 1; }
+#overlay[data-weather="off"] #weather { display: none; }
 /* Rain about to start, bad air: said in every layout, since it is news. */
 .w-soon { margin-top: 10px; font-size: 28px; font-weight: 600; color: var(--fg); white-space: pre; }
 
@@ -281,7 +282,7 @@ html, body {
   opacity: 0;
   transition: opacity 0.4s ease;
 }
-#overlay[data-density="detailed"] #caption { opacity: 1; }
+#overlay[data-caption="on"] #caption { opacity: 1; }
 
 #status {
   position: absolute;
@@ -673,6 +674,62 @@ html.pointer-active #toast { top: calc(var(--safe) + 92px); }
 .wifi-label { font-size: 26px; color: var(--fg-dim); margin-bottom: 6px; }
 .wifi-value { font-size: 54px; font-weight: 600; letter-spacing: 0.01em; margin-bottom: 36px; overflow-wrap: anywhere; font-variant-ligatures: none; }
 
+/* --- What can be done with the photo: the bar that Up opens ------------------------- */
+
+#photo-bar {
+  position: absolute;
+  left: 50%;
+  bottom: var(--safe);
+  transform: translate(-50%, 28px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.25s ease;
+  pointer-events: none;
+}
+#photo-bar.open { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.pb-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 70px;
+  justify-content: flex-end;
+  font-size: 30px;
+  font-weight: 600;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
+}
+.pb-label small { font-size: 22px; font-weight: 400; color: var(--fg-dim); }
+.pb-row {
+  display: flex;
+  gap: 18px;
+  padding: 14px 18px;
+  border-radius: 60px;
+  background: rgba(19, 23, 34, 0.86);
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+.pb-item {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--fg-dim);
+  border: 3px solid transparent;
+  transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.pb-item svg { width: 44px; height: 44px; display: block; }
+.pb-item.on { color: var(--fg); }
+.pb-item.focused { color: var(--fg); border-color: var(--fg); background: rgba(255, 255, 255, 0.12); transform: scale(1.1); }
+html.pointer-active .pb-item { cursor: pointer; }
+/* The bar takes the middle of the bottom edge: the caption makes room. */
+#stage.photo-bar-open #caption { opacity: 0 !important; }
+#stage.panel-open #photo-bar, #stage.rail-open #photo-bar, #stage.night #photo-bar { opacity: 0; pointer-events: none; }
+
 /* --- About this photo -------------------------------------------------------------- */
 
 #photo-info {
@@ -715,7 +772,7 @@ html.pointer-active #toast { top: calc(var(--safe) + 92px); }
 .pi-map { position: relative; flex: 1; min-width: 0; border-radius: 24px; overflow: hidden; background: #1b2130; }
 .pi-map-note { position: absolute; inset: 0; display: grid; place-items: center; font-size: 26px; color: var(--fg-dim); }
 .pi-tiles { position: absolute; inset: 0; }
-.pi-tiles img { position: absolute; width: 512px; height: 512px; opacity: 0; transition: opacity 0.3s ease; }
+.pi-tiles img { position: absolute; width: 256px; height: 256px; opacity: 0; transition: opacity 0.3s ease; }
 .pi-tiles img.loaded { opacity: 1; }
 .pi-pin { position: absolute; width: 54px; height: 72px; margin: -72px 0 0 -27px; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.45)); }
 .pi-pin svg { display: block; width: 100%; height: 100%; }

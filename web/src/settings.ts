@@ -66,7 +66,7 @@ interface Info {
     synology: { url: string; username: string; passwordSet: boolean; insecureTls: boolean; quality: string };
     folderPath: string;
   };
-  screen: { nightStart: string; nightEnd: string; language: string; clockPosition: string; clockSize: string; clockStyle?: string; eveningDim?: string; view: string; background: string; performance?: string; backgroundFps?: number; sounds?: boolean };
+  screen: { nightStart: string; nightEnd: string; language: string; clockPosition: string; clockSize: string; clockStyle?: string; eveningDim?: string; view: string; caption?: string; weatherDetail?: string; lockView?: boolean; background: string; performance?: string; backgroundFps?: number; sounds?: boolean };
   calendar: { links: CalendarLink[] };
   home: { url: string; tokenSet: boolean; entities: string[] };
   system: { autoUpdate: boolean; cooling?: boolean; soundFollows?: boolean; games?: boolean };
@@ -187,7 +187,9 @@ function readForm() {
       clockSize: val("d-size"),
       clockStyle: val("d-style"),
       eveningDim: val("d-dim"),
-      view: val("d-view"),
+      caption: val("d-caption"),
+      weatherDetail: val("d-weather"),
+      lockView: $<HTMLInputElement>("d-lock").checked,
       background: val("d-background"),
       performance: val("d-performance"),
       backgroundFps: Number(val("d-fps")) || 0,
@@ -267,7 +269,10 @@ function fill(i: Info) {
   $<HTMLSelectElement>("d-position").value = i.screen.clockPosition || "bottom-left";
   $<HTMLSelectElement>("d-size").value = i.screen.clockSize || "large";
   $<HTMLSelectElement>("d-style").value = i.screen.clockStyle || "bold";
-  $<HTMLSelectElement>("d-view").value = i.screen.view || "clock";
+  // Settings from before these existed said it with one word, "view".
+  $<HTMLSelectElement>("d-caption").value = i.screen.caption || (i.screen.view === "details" ? "on" : "off");
+  $<HTMLSelectElement>("d-weather").value = i.screen.weatherDetail || (i.screen.view === "details" ? "full" : "short");
+  $<HTMLInputElement>("d-lock").checked = !!i.screen.lockView;
   $<HTMLSelectElement>("d-background").value = i.screen.background || "moving";
   $<HTMLSelectElement>("d-performance").value = i.screen.performance || "balanced";
   const fps = $<HTMLSelectElement>("d-fps");
@@ -894,7 +899,7 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
-for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "p-map", "n-start", "n-end", "h-url", "h-token", "sys-auto", "sys-cool", "snd-follow", "sys-games", "l-pin", "wf-name", "wf-pass", "wf-open", "wf-hidden", "d-language", "d-position", "d-size", "d-style", "d-dim", "d-view", "d-background", "d-performance", "d-fps", "d-sounds"]) {
+for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "p-map", "n-start", "n-end", "h-url", "h-token", "sys-auto", "sys-cool", "snd-follow", "sys-games", "l-pin", "wf-name", "wf-pass", "wf-open", "wf-hidden", "d-language", "d-position", "d-size", "d-style", "d-dim", "d-caption", "d-weather", "d-lock", "d-background", "d-performance", "d-fps", "d-sounds"]) {
   $(id).addEventListener("input", refresh);
   $(id).addEventListener("change", refresh);
 }

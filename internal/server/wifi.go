@@ -9,7 +9,13 @@ import (
 // handleWifi returns the network for visitors with the code to scan. This is
 // the one place a password is given out, because showing it is the point: it
 // is what a visitor in the living room is meant to see on the TV.
-func (s *Server) handleWifi(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleWifi(w http.ResponseWriter, r *http.Request) {
+	// The password is for the TV to show to whoever is in the room, not for
+	// every device on the network to fetch.
+	if !fromThisPi(r) {
+		http.Error(w, "the Wi-Fi for visitors is shown on the TV only", http.StatusForbidden)
+		return
+	}
 	net := s.cfg.Wifi
 	if net.Name == "" {
 		http.Error(w, "no Wi-Fi for visitors is set up", http.StatusNotFound)

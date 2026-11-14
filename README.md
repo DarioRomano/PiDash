@@ -115,14 +115,16 @@ What the installer does:
 | See every control | Press **H** or **F1**, or click **Help** on the control bar |
 | See the full forecast | Press **OK**, then **OK** again on the **Weather** tile. **Back** closes it |
 | Choose the background photos | Open `http://<pi-ip>:8080/photos`, or tap **Background photos** on the phone remote |
-| Flip through photos | ◀ ▶ on the dashboard. Play/pause holds the current photo. ▲ shows its folder and date |
+| Flip through photos | ◀ ▶ on the dashboard. Play/pause holds the current photo |
+| Do something with the photo on screen | ▲ opens a small bar: favourite, where it was taken, more from its album, hide it. See [The photo's bar](#the-photos-bar) |
+| Show more, or only the photo | ▼ steps through: as set, everything, only the photo. See [Language and layout](#language-and-layout) |
 | Change settings | Choose **Settings** in the app row, press **S**, or open `http://<pi-ip>:8080/settings` on your phone. See [Settings](#settings) |
 | Launch an app | Press **OK** on the dashboard to open the app row, choose with ◀ ▶ and press OK. Or tap the app on the phone remote |
 | Move an app in the app row | Select it, press ▲, carry it with ◀ ▶, press **OK**. **Back** leaves it where it was |
 | Let a visitor onto the Wi-Fi | **Guest Wi-Fi** in the app row. See [Wi-Fi for visitors](#wi-fi-for-visitors) |
 | Start a game on your PC, or one of RetroArch's | Its tile in the app row. See [Games as tiles](#games-as-tiles) |
-| Mark a photo as a favourite | **Add to favourites** in the app row. See [Favourites](#favourites) |
-| See where and when a photo was taken | **About this photo** in the app row. See [About this photo](#about-this-photo) |
+| Mark a photo as a favourite | ▲, then **OK** on the star. See [Favourites](#favourites) |
+| See where and when a photo was taken | ▲, then **About this photo**. See [About this photo](#about-this-photo) |
 | Restart or shut down the Pi | **Power** in the app row. See [Restart and shut down](#restart-and-shut-down) |
 | Change the TV's volume from a controller | Hold its logo button and press up or down |
 | See how PiDash is doing | Choose **Status** in the app row. See [Status page](#status-page) |
@@ -157,7 +159,8 @@ TV; it lists the keys as they are currently set.
 | Esc, Backspace | Close, go back. Hold 2 seconds to exit to the desktop |
 | ← → | Previous / next photo, or move along the app row |
 | Tab, Shift+Tab | Move along the app row |
-| ↑ ↓ | Show more / less information |
+| ↑ | What can be done with the photo on screen |
+| ↓ | Show more, or only the photo |
 | A | App row |
 | W | Weather details |
 | P | Hold or resume the slideshow |
@@ -284,8 +287,10 @@ location = "Zurich"
 ```
 
 The current temperature, conditions and today's high and low then appear in the
-bottom right corner of the screen. Pressing ▲ adds the place name, the "feels
-like" temperature and the chance of rain.
+bottom right corner of the screen. The place name, the "feels like"
+temperature and the chance of rain can be added to it, or the weather taken
+off the dashboard altogether: see *Weather on the dashboard* under
+[Language and layout](#language-and-layout).
 
 For more, press **OK** to open the app row and **OK** again on the **Weather**
 tile, which is first in the row. The detail view shows:
@@ -381,9 +386,14 @@ Under **Screen** on the settings page:
   calendar takes the bottom corner the clock leaves free.
 - **Clock style:** bold numbers, slim numbers, or a clock with hands. The
   hands move once a minute, like the numbers.
-- **Shown at start:** the clock with date and calendar, the same plus weather
-  and the photo's caption, or nothing but the photo. Up and Down on the
-  remote switch between these three at any time.
+- **Under a photo:** nothing, or its caption: album, place and date.
+- **Weather on the dashboard:** none, the temperature and conditions, or also
+  the place, what it feels like and the chance of rain. (Rain about to start
+  and bad air are said in every setting but "none".)
+- **Keep it like this:** normally ▼ on the remote steps on from what is set
+  to everything, to only the photo, and back. With this ticked, ▼ does
+  nothing and the dashboard always looks as set. In `config.toml` these are
+  `caption = "on"`, `weather_detail = "short"` and `lock_view = true`.
 - **Small sounds when using the remote:** a tick when the highlight moves, two
   rising notes when something is chosen, a low note where there is nowhere
   further to go. They are quiet, made by the page itself, and come out of
@@ -775,27 +785,37 @@ photo means slower movement. After changing the setting, photos are prepared
 again as they come up. If the system is set to reduce motion, photos stand
 still.
 
-**More from this album.** While a photo is showing, the **More from this
-album** tile in the app row makes the slideshow stay with that folder or
-album: the next up to 30 pictures come from it, in the order they were taken.
-Then the usual mix returns.
+#### The photo's bar
+
+▲ on the dashboard opens a small bar at the bottom of the picture with what
+can be done with the photo on screen. ◀ ▶ move along it, **OK** chooses, and
+any other button closes it; it also goes away by itself after a few seconds.
+While it is open the photo stays. From left to right:
+
+- ★ **Add to favourites** / **Remove from favourites** (see [Favourites](#favourites))
+- **About this photo**: when and where it was taken (see [About this photo](#about-this-photo))
+- **More from this album**: the slideshow stays with that folder or album.
+  The next up to 30 pictures come from it, in the order they were taken; then
+  the usual mix returns.
+- **Hide this photo**; of two side by side, the left or the right one
+- **Only favourites** / **Show all photos**, once there is a favourite
 
 #### Favourites
 
-While a photo is showing, **Add to favourites** in the app row marks it; the
-tile then reads **Remove from favourites**, and the photo's caption carries a
-★. Of two upright photos side by side, both are marked. Favourites come round
+**Add to favourites** in [the photo's bar](#the-photos-bar) (▲, then **OK**:
+the star is first) marks the photo on screen; the button then reads **Remove
+from favourites**, and the photo's caption carries a ★. Of two upright photos side by side, both are marked. Favourites come round
 more often: about every eighth picture is one of them, however large the
 library.
 
-Once there is a favourite, the **Only favourites** tile makes the slideshow
+Once there is a favourite, **Only favourites** in the same bar makes the slideshow
 show those and nothing else, and **Show all photos** brings the rest back.
 Taking the mark off the last favourite does the same. Favourites are part of
 the [backup](#backup).
 
 #### About this photo
 
-**About this photo** in the app row opens a page about the photo on screen:
+**About this photo** in [the photo's bar](#the-photos-bar) opens a page about the photo on screen:
 the day and time it was taken and how many years ago that was, the place, its
 album and its file name. The slideshow waits while the page is open. Any
 button closes it.
@@ -826,11 +846,13 @@ remembered and the clip is not tried again. Live photos are shown as stills.
 years** (`on_this_day = true`), each round of the slideshow begins with the
 photos from today's date in past years, when there are any.
 
-**Captions.** Press Up on the dashboard for the caption: the folder or album,
-the place where the photo was taken when the NAS knows it, and the date.
+**Captions.** With *Under a photo: its album, place and date* on the settings
+page, a photo has its caption: the folder or album, the place where it was
+taken when the NAS knows it, and the date. ▼ on the dashboard shows it for the
+moment.
 
-**Hiding a photo.** While a photo is showing, the app row has a **Hide this
-photo** tile (for two side by side, one tile each). A hidden photo never comes
+**Hiding a photo.** [The photo's bar](#the-photos-bar) (▲) has **Hide this
+photo** (for two side by side, one button each). A hidden photo never comes
 up again; **Show them again** on the settings page brings all of them back.
 Nothing is deleted or changed on the NAS.
 
@@ -1135,7 +1157,44 @@ You do not need to configure icons. PiDash picks one for each app in this order:
    else that appears in the desktop menu, including Flatpak apps.
 4. A globe for other websites, or the first letter of the name.
 
-#### Troubleshooting
+#### Security
+
+PiDash is made for a home network, and trusts the people on it: anyone who
+can reach the Pi can open the phone remote, start an app or switch the TV off.
+What it guards against, and what it does not:
+
+- **Web pages cannot give it orders.** A page open in a browser at home, or
+  inside a website app on the Pi itself, could otherwise quietly send PiDash
+  requests. Every request that changes something must come from PiDash's own
+  pages, and PiDash only answers when addressed by the Pi's address or a home
+  network's kind of name (`raspberrypi.local`, `pi.lan`, a single word). If
+  you reach it by a name of your own, allow it:
+
+  ```toml
+  [server]
+  names = ["tv.example.org"]
+  ```
+- **The settings can be locked with a PIN** (see [Lock](#lock)). Wrong PINs
+  lock everything PIN-protected for a minute, then two, four and so on up to
+  an hour. The PIN covers the settings, typing and the mouse from the phone,
+  Bluetooth, the backup, updates and shutting down. It does not cover the
+  everyday remote: starting apps, switching the TV, choosing photo folders.
+- **Passwords stay on the Pi.** The settings page never shows a saved
+  password, the files that hold them can be read by your user only, and the
+  Wi-Fi password for visitors is handed out to the TV alone.
+- **Nothing is encrypted on the way.** Like most things on a home network
+  PiDash speaks plain HTTP, so a password or PIN typed into the settings page
+  on a phone crosses your network readable. Type it on the TV itself if that
+  matters to you.
+- **Do not put it on the internet.** No port forwarding, no public address:
+  the points above are for a network of people you live with.
+- **Updates** are downloaded from this project's releases on GitHub over
+  HTTPS and checked against the release's checksums before anything is
+  installed.
+
+To report a security problem, open an issue on GitHub.
+
+## Troubleshooting
 
 If an app does not start, the TV shows a message. Details are in the logs:
 

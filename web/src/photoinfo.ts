@@ -37,9 +37,11 @@ function plain(className: string, text: string): HTMLElement {
 }
 
 // How close the map looks: a continent, a country, a region, a town. A piece
-// of map is drawn at twice its size, to be readable from the sofa.
-const ZOOMS = [4, 7, 10, 13];
-const TILE = 512;
+// of map is drawn at its own size, not enlarged: enlarging is what made the
+// map look soft. The same stretch of country therefore takes four times as
+// many pieces, each from one step closer.
+const ZOOMS = [5, 8, 11, 14];
+const TILE = 256;
 
 /** Where a spot lies on the map of the whole world at a zoom level, in tiles. */
 function tileOf(lat: number, lon: number, zoom: number): { x: number; y: number } {

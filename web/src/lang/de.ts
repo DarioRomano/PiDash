@@ -631,5 +631,18 @@ const list: Record<string, string> = {
   "drawn only {n} times a second": "nur {n}-mal pro Sekunde gezeichnet",
   "the Pi cannot keep up at this size: set its screen to 1920 × 1080 for fluid menus": "der Pi kommt bei dieser Größe nicht mit: seinen Bildschirm für flüssige Menüs auf 1920 × 1080 stellen",
   "the TV or its cable limits this, or the Pi is busy": "der Fernseher oder sein Kabel begrenzt das, oder der Pi ist beschäftigt",
+  "What can be done with the photo: favourite, hide, where it was taken": "Was sich mit dem Foto machen lässt: Favorit, ausblenden, Aufnahmeort",
+  "Show more, or only the photo": "Mehr zeigen, oder nur das Foto",
+  "Under a photo": "Unter einem Foto",
+  "Nothing": "Nichts",
+  "Its album, place and date": "Album, Ort und Datum",
+  "Weather on the dashboard": "Wetter auf dem Dashboard",
+  "Temperature and conditions": "Temperatur und Wetterlage",
+  "Also the place, what it feels like and the chance of rain": "Auch Ort, gefühlte Temperatur und Regenwahrscheinlichkeit",
+  "Keep it like this: ▼ on the remote does not change what is shown": "So lassen: ▼ auf der Fernbedienung ändert die Anzeige nicht",
+  "Unless kept, ▼ steps from what is set here to everything, to only the photo, and back. ▲ opens what can be done with the photo on screen: mark it as a favourite, hide it, see where it was taken.": "Sonst wechselt ▼ von dem, was hier eingestellt ist, zu allem, zu nur dem Foto und zurück. ▲ öffnet, was sich mit dem Foto auf dem Bildschirm machen lässt: als Favorit markieren, ausblenden, den Aufnahmeort ansehen.",
+  "this request was made by another website, not by PiDash's own pages": "diese Anfrage kam von einer anderen Website, nicht von PiDashs eigenen Seiten",
+  "the Wi-Fi for visitors is shown on the TV only": "das WLAN für Gäste wird nur auf dem Fernseher gezeigt",
+  "too many pieces of map were asked for; try again in a few minutes": "zu viele Kartenteile wurden angefragt; in ein paar Minuten erneut versuchen",
 };
 export default list;

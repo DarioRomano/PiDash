@@ -10,6 +10,10 @@
 
 [server]
 listen = ":8080"
+# PiDash answers when it is addressed by the Pi's address or by the kind of
+# name a home network gives (raspberrypi.local, pi.lan, a single word). A
+# name of your own must be listed here, or requests under it are refused:
+# names = ["tv.example.org"]
 
 [display]
 # Inset on every edge as a fraction of the screen, for TVs that overscan.
@@ -35,10 +39,22 @@ language = "en"
 clock_position = "bottom-left"
 # "large", "medium" or "small".
 clock_size = "large"
-# What the dashboard shows when it starts: "clock", "details" (also weather
-# and the photo's caption) or "photo" (nothing but the photo). Up and Down on
-# the remote switch between them.
-view = "clock"
+# What the dashboard shows beside the clock.
+#   caption         "on": a photo has its caption (album, place and date);
+#                   "off": it has none
+#   weather_detail  "off": no weather on the dashboard; "short": temperature
+#                   and conditions; "full": also the place, what it feels
+#                   like and the chance of rain
+# Down on the remote steps on from this to everything, to only the photo, and
+# back; lock_view = true keeps the dashboard as it is set. Up opens what can
+# be done with the photo on screen.
+caption = "off"
+weather_detail = "short"
+lock_view = false
+# From before the three above existed, and used where they are left out:
+# "clock", "details" (caption and full weather) or "photo" (start with
+# nothing but the photo).
+# view = "clock"
 # The background shown while there is no photo: "moving" drifts slowly and
 # reacts to the remote; "still" is painted once, which keeps the Pi cooler.
 background = "moving"

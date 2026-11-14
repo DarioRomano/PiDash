@@ -92,6 +92,9 @@ func (s *Server) handleMapTile(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, maps.ErrNoTile):
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
+	case errors.Is(err, maps.ErrBusy):
+		http.Error(w, err.Error(), http.StatusTooManyRequests)
+		return
 	case err != nil:
 		s.log.Debug("map tile", "err", err)
 		http.Error(w, err.Error(), http.StatusBadGateway)

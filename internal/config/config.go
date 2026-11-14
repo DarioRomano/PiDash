@@ -126,6 +126,10 @@ func (c *Config) validateExtras() error {
 // Server holds HTTP settings.
 type Server struct {
 	Listen string `toml:"listen"`
+	// Names lists further names PiDash may be opened by, beyond the Pi's
+	// addresses and the names home networks give (ending in .local, .lan
+	// and the like): a name of your own, such as "tv.example.org".
+	Names []string `toml:"names"`
 }
 
 // Display holds settings that are forwarded to the browser.
@@ -162,6 +166,16 @@ type Display struct {
 	// "details" (also the weather and the photo's caption) or "photo" (only
 	// the photo). Up and Down switch between them at any time.
 	View string `toml:"view" json:"view"`
+	// Caption says whether a photo has its caption (album, place and date):
+	// "on" or "off". WeatherDetail says how much of the weather the dashboard
+	// shows: "off", "short" (temperature and conditions) or "full" (also the
+	// place, what it feels like and the chance of rain). Empty leaves either
+	// to View, as before they existed.
+	Caption       string `toml:"caption" json:"caption"`
+	WeatherDetail string `toml:"weather_detail" json:"weather_detail"`
+	// LockView keeps the dashboard as it is set: Down on the remote does not
+	// step on to "everything" and "only the photo".
+	LockView bool `toml:"lock_view" json:"lock_view"`
 	// Background is how the background without photos behaves: "moving"
 	// (default) drifts and reacts to the remote; "still" is painted once and
 	// costs the Pi no work.
@@ -693,6 +707,8 @@ func (c Config) validate() error {
 		{"clock_style", &c.Display.ClockStyle, []string{"bold", "slim", "analog"}},
 		{"evening_dim", &c.Display.EveningDim, []string{"off", "light", "strong"}},
 		{"view", &c.Display.View, []string{"clock", "details", "photo"}},
+		{"caption", &c.Display.Caption, []string{"on", "off"}},
+		{"weather_detail", &c.Display.WeatherDetail, []string{"off", "short", "full"}},
 		{"background", &c.Display.Background, []string{"moving", "still"}},
 		{"performance", &c.Display.Performance, []string{"smooth", "balanced", "saver"}},
 	} {

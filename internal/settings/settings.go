@@ -135,8 +135,12 @@ type Screen struct {
 	ClockStyle    string `json:"clockStyle,omitempty"`
 	EveningDim    string `json:"eveningDim,omitempty"`
 	View          string `json:"view,omitempty"`
-	Background    string `json:"background,omitempty"`
-	Performance   string `json:"performance,omitempty"`
+	Caption       string `json:"caption,omitempty"`
+	WeatherDetail string `json:"weatherDetail,omitempty"`
+	// LockView keeps the dashboard as set; absent leaves config.toml in charge.
+	LockView    *bool  `json:"lockView,omitempty"`
+	Background  string `json:"background,omitempty"`
+	Performance string `json:"performance,omitempty"`
 	// BackgroundFPS is how many pictures a second the moving background
 	// gets; 0 leaves it to Performance, absent leaves config.toml in charge.
 	BackgroundFPS *int `json:"backgroundFps,omitempty"`
@@ -540,6 +544,7 @@ func apply(base config.Config, f File, installed []desktop.Entry) (config.Config
 			{sc.ClockSize, &cfg.Display.ClockSize}, {sc.View, &cfg.Display.View}, {sc.Background, &cfg.Display.Background},
 			{sc.ClockStyle, &cfg.Display.ClockStyle}, {sc.EveningDim, &cfg.Display.EveningDim},
 			{sc.Performance, &cfg.Display.Performance},
+			{sc.Caption, &cfg.Display.Caption}, {sc.WeatherDetail, &cfg.Display.WeatherDetail},
 		} {
 			if choice.from != "" {
 				*choice.to = choice.from
@@ -550,6 +555,9 @@ func apply(base config.Config, f File, installed []desktop.Entry) (config.Config
 		}
 		if sc.BackgroundFPS != nil {
 			cfg.Display.BackgroundFPS = *sc.BackgroundFPS
+		}
+		if sc.LockView != nil {
+			cfg.Display.LockView = *sc.LockView
 		}
 	}
 
@@ -840,6 +848,7 @@ func (s *Store) View() View {
 		Screen: Screen{NightStart: cfg.Display.NightStart, NightEnd: cfg.Display.NightEnd, Language: cfg.Display.Language,
 			ClockPosition: cfg.Display.ClockPosition, ClockSize: cfg.Display.ClockSize, ClockStyle: cfg.Display.ClockStyle, EveningDim: cfg.Display.EveningDim, View: cfg.Display.View, Background: cfg.Display.Background,
 			Performance: cfg.Display.Performance, BackgroundFPS: &cfg.Display.BackgroundFPS,
+			Caption: cfg.Display.Caption, WeatherDetail: cfg.Display.WeatherDetail, LockView: &cfg.Display.LockView,
 			Sounds: boolPtr(cfg.Display.Sounds)},
 		Calendar: Calendar{Links: []Link{}},
 		Home:     Home{URL: cfg.Home.URL, TokenSet: cfg.Home.Token != "", Entities: append([]string{}, cfg.Home.Entities...)},

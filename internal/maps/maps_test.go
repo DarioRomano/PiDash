@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -112,5 +113,45 @@ func TestCheckURL(t *testing.T) {
 		if CheckURL(bad) == nil {
 			t.Errorf("%q should be refused", bad)
 		}
+	}
+}
+
+func TestTilesCannotBeUsedToHammerTheMapServiceOrFillTheDisk(t *testing.T) {
+	var asked atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked.Add(1)
+		png.Encode(w, image.NewGray(image.Rect(0, 0, 2, 2)))
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	tiles := New(srv.URL+"/{z}/{x}/{y}.png", dir, "PiDash/test")
+	tiles.Most, tiles.Keeps = 30, 20
+	ctx := context.Background()
+
+	var refused int
+	for x := 0; x < 50; x++ {
+		if _, err := tiles.Tile(ctx, 12, x, 7); err == ErrBusy {
+			refused++
+		} else if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if asked.Load() != 30 || refused != 20 {
+		t.Errorf("%d tiles fetched and %d refused, want 30 and 20", asked.Load(), refused)
+	}
+	// What is kept already is still handed out.
+	if _, err := tiles.Tile(ctx, 12, 29, 7); err != nil {
+		t.Errorf("a kept tile while over the limit: %v", err)
+	}
+	// And no more is kept than was said, give or take what one tidying leaves.
+	var kept int
+	filepath.WalkDir(dir, func(_ string, d os.DirEntry, _ error) error {
+		if !d.IsDir() {
+			kept++
+		}
+		return nil
+	})
+	if kept > 21 {
+		t.Errorf("%d tiles kept, want about 20", kept)
 	}
 }

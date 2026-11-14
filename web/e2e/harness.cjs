@@ -66,6 +66,10 @@ async function openPage(base, where = "/") {
   const page = await context.newPage();
   page.problems = [];
   page.on("pageerror", (e) => page.problems.push(String(e)));
+  // Something the pages' own rules about what they may load refused.
+  page.on("console", (m) => {
+    if (m.type() === "error" && /Content Security Policy/i.test(m.text())) page.problems.push(m.text());
+  });
   await page.goto(base + where);
   return page;
 }

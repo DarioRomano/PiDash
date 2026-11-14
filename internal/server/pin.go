@@ -15,6 +15,7 @@ type pinGuard struct {
 
 	mu          sync.Mutex
 	failures    int
+	lockouts    int // in a row, without a right PIN in between
 	lockedUntil time.Time
 }
 
@@ -22,6 +23,9 @@ const (
 	pinHeader      = "X-PiDash-PIN"
 	pinMaxFailures = 5
 	pinLockout     = time.Minute
+	// Each lockout in a row lasts twice as long as the one before, up to
+	// this: trying all four-digit PINs then takes months instead of a day.
+	pinLockoutMax = time.Hour
 )
 
 // allow reports whether the request may proceed, and answers it otherwise:
@@ -38,7 +42,7 @@ func (g *pinGuard) allow(w http.ResponseWriter, r *http.Request) bool {
 	}
 	got := r.Header.Get(pinHeader)
 	if subtle.ConstantTimeCompare([]byte(got), []byte(g.pin)) == 1 {
-		g.failures = 0
+		g.failures, g.lockouts = 0, 0
 		return true
 	}
 	// A request without a PIN is the phone asking for the first time, not a guess.
@@ -46,7 +50,12 @@ func (g *pinGuard) allow(w http.ResponseWriter, r *http.Request) bool {
 		g.failures++
 		if g.failures >= pinMaxFailures {
 			g.failures = 0
-			g.lockedUntil = time.Now().Add(pinLockout)
+			wait := pinLockout << min(g.lockouts, 10)
+			if wait > pinLockoutMax {
+				wait = pinLockoutMax
+			}
+			g.lockouts++
+			g.lockedUntil = time.Now().Add(wait)
 		}
 	}
 	http.Error(w, "PIN required", http.StatusUnauthorized)

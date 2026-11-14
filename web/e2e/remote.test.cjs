@@ -28,7 +28,29 @@ after(async () => {
   await pi.stop();
 });
 
-const view = (page) => page.evaluate(() => document.getElementById("overlay").dataset.density);
+// What the dashboard shows: "set" (as the settings say), "all" or "photo";
+// and with it whether the caption and how much of the weather.
+const view = (page) => page.evaluate(() => document.getElementById("overlay").dataset.view);
+const shows = (page) => page.evaluate(() => { const o = document.getElementById("overlay").dataset; return [o.view, o.caption, o.weather]; });
+// The bar that Up opens, with what can be done with the photo on screen.
+const bar = (page) =>
+  page.evaluate(() => {
+    const b = document.getElementById("photo-bar");
+    if (!b.classList.contains("open")) return null;
+    const items = [...b.querySelectorAll(".pb-item")];
+    return { items: items.map((e) => e.getAttribute("aria-label")), at: items.findIndex((e) => e.classList.contains("focused")), label: b.querySelector(".pb-label span").textContent, sub: b.querySelector(".pb-label small")?.textContent ?? "" };
+  });
+async function focusBar(page, remote, label) {
+  for (let i = 0; i < 12; i++) {
+    const now = await bar(page);
+    assert.ok(now, "the photo bar is open");
+    const want = now.items.indexOf(label);
+    assert.ok(want >= 0, `the photo bar has no "${label}": ${now.items}`);
+    if (now.at === want) return;
+    await remote.press(now.at < want ? "right" : "left");
+  }
+  assert.fail(`the highlight never reached ${label}`);
+}
 const rowOpen = (page) => page.evaluate(() => document.getElementById("rail").classList.contains("open"));
 const tile = (page) => page.evaluate(() => [...document.querySelectorAll(".tile")].findIndex((t) => t.classList.contains("focused")));
 const photo = (page) =>
@@ -48,16 +70,30 @@ async function dashboard() {
 for (const how of ["press", "keyboard", "both"]) {
   const name = { press: "read by the backend only", keyboard: "as keys in the browser only", both: "reported twice, by browser and backend" }[how];
 
-  test(`dashboard: Up and Down change what is shown (${name})`, async () => {
+  test(`dashboard: Down steps through what is shown, Up opens the photo's bar (${name})`, async () => {
     const page = await dashboard();
     const remote = remoteFor(page, pi.base);
-    assert.equal(await view(page), "compact");
+    assert.deepEqual(await shows(page), ["set", "off", "short"], "as the settings say: no caption, the weather in short");
+    await remote[how]("down");
+    assert.deepEqual(await shows(page), ["all", "on", "full"], "Down shows everything");
+    await remote[how]("down");
+    assert.equal(await view(page), "photo", "Down again leaves only the photo, by exactly one step");
+    await remote[how]("down");
+    assert.deepEqual(await shows(page), ["set", "off", "short"], "and round to what is set");
+
+    // Up: what can be done with the photo. One press opens it, and it stays.
     await remote[how]("up");
-    assert.equal(await view(page), "detailed", "Up shows more");
+    const opened = await bar(page);
+    assert.deepEqual([opened?.items, opened?.at, opened?.label], [["Add to favourites", "About this photo", "More from this album", "Hide this photo"], 0, "Add to favourites"]);
+    assert.equal(await rowOpen(page), false, "the app row stays shut");
+    await remote[how]("right");
+    assert.deepEqual([(await bar(page)).at, (await bar(page)).label], [1, "About this photo"], "Right moves by exactly one");
+    await remote[how]("left");
+    await remote[how]("left"); // the end is the end
+    assert.equal((await bar(page)).at, 0);
     await remote[how]("down");
-    assert.equal(await view(page), "compact", "one Down goes back exactly one step");
-    await remote[how]("down");
-    assert.equal(await view(page), "photo", "Down again leaves only the photo");
+    assert.equal(await bar(page), null, "any other button closes it");
+    assert.equal(await view(page), "set", "and is not taken for a step through the views");
     assert.deepEqual(page.problems, []);
     await page.context().close();
   });
@@ -384,7 +420,8 @@ test("app row: OK on Status shows how PiDash is doing; arrows leave it open, Bac
   assert.equal(await open(), true, "arrows leave the status page open");
   await remote.press("back");
   assert.equal(await open(), false, "Back closes it");
-  assert.equal(await view(page), "compact", "the arrows pressed meanwhile changed nothing underneath");
+  assert.equal(await view(page), "set", "the arrows pressed meanwhile changed nothing underneath");
+  assert.equal(await bar(page), null);
   assert.deepEqual(page.problems, []);
   await page.context().close();
 });
@@ -526,9 +563,9 @@ test("a held direction runs along the app row, but does not race through photos"
   await held(page, pi.base, "right", 3);
   await page.waitForTimeout(600);
   assert.equal(await photo(page), before, "holding Right on the dashboard must not flip through photos");
-  assert.equal(await view(page), "compact");
-  await held(page, pi.base, "up", 2);
-  assert.equal(await view(page), "compact", "holding Up changes nothing either");
+  assert.equal(await view(page), "set");
+  await held(page, pi.base, "down", 2);
+  assert.equal(await view(page), "set", "holding Down changes nothing either");
 
   await remote.press("select");
   const start = await tile(page);
@@ -573,8 +610,8 @@ test("the remote is answered with small sounds, unless they are switched off", a
   const remote = remoteFor(page, pi.base);
   await page.evaluate(() => (window.pidashSounds = []));
   for (const action of ["select", "right", "left", "left", "back", "down", "down"]) await remote.press(action);
-  // Open the row, move, move back, bump into its start, close; less detail, and no less than that.
-  assert.equal(await sounds(page), "open move move edge back move edge");
+  // Open the row, move, move back, bump into its start, close; then two steps through what is shown.
+  assert.equal(await sounds(page), "open move move edge back move move");
   assert.deepEqual(page.problems, []);
   await page.context().close();
 
@@ -1059,7 +1096,7 @@ test("the Power tile asks twice before the Pi is shut down", async () => {
   await remote.press("select");
   await remote.press("back");
   assert.equal(await menu(), null);
-  assert.equal(await view(page) !== undefined, true);
+  assert.equal(await view(page), "set");
 
   // And yes means yes.
   await remote.press("select");
@@ -1089,30 +1126,42 @@ test("a favourite photo is marked, and the slideshow can show favourites only", 
     const shown = () => decodeURIComponent(new URL(photoNow).pathname.split("/").pop());
     let photoNow = await photo(page);
 
+    // The photo's actions are in the bar that Up opens, not among the apps.
     await remote.press("select");
-    assert.ok(!(await tiles(page)).includes("Only favourites"), "no such tile without favourites");
-    await focusTile(page, remote, "Add to favourites");
-    await remote.press("select");
-    await page.waitForFunction(() => [...document.querySelectorAll(".tile .tile-label")].some((t) => t.textContent === "Remove from favourites"));
+    const row = await tiles(page);
+    for (const gone of ["Add to favourites", "Hide this photo", "About this photo", "More from this album"]) assert.ok(!row.includes(gone), `"${gone}" is no longer in the app row: ${row}`);
+    await remote.press("back");
+
+    await remote.press("up");
+    assert.ok(!(await bar(page)).items.includes("Only favourites"), "not offered without favourites");
+    await remote.press("select"); // the star is first
+    await page.waitForFunction(() => document.querySelector("#photo-bar .pb-item")?.getAttribute("aria-label") === "Remove from favourites");
     assert.equal((await status()).favourites, 1);
     assert.match(await page.evaluate(() => document.getElementById("caption").textContent), /^★/, "a star before the caption");
-    assert.equal(await rowOpen(page), true, "the row stays, to take it back at once");
+    assert.equal((await bar(page))?.at, 0, "the bar stays, to take it back at once");
+    assert.equal(await photo(page), photoNow, "and the photo waits while the bar is open");
 
     // Only favourites: the slideshow has that one photo and nothing else.
-    await focusTile(page, remote, "Only favourites");
-    assert.equal(await page.evaluate(() => document.querySelector(".tile.focused .tile-sub")?.textContent), "1 photo");
+    await focusBar(page, remote, "Only favourites");
+    assert.equal((await bar(page)).sub, "1 photo");
     await remote.press("select");
+    assert.equal(await bar(page), null, "choosing something else closes the bar");
     await page.waitForFunction(() => /Showing only your favourites/.test(document.getElementById("toast").textContent));
     let list = (await (await fetch(own.base + "/api/photos/playlist?limit=50")).json()).items;
     assert.deepEqual(list.map((i) => [i.key, i.favourite]), [[shown(), true]]);
     assert.equal((await status()).onlyFavourites, true);
 
     // Taking the last favourite away brings all photos back.
+    await page.waitForFunction(() => document.getElementById("backdrop").classList.contains("has-photo"));
+    for (let i = 0; i < 40 && !(await bar(page))?.items.includes("Remove from favourites"); i++) {
+      if (await bar(page)) await remote.press("back");
+      await page.waitForTimeout(250);
+      await remote.press("up");
+    }
+    assert.deepEqual((await bar(page)).items.slice(-1), ["Show all photos"], "the bar says the slideshow is narrowed");
+    await focusBar(page, remote, "Remove from favourites");
     await remote.press("select");
-    await page.waitForFunction(() => [...document.querySelectorAll(".tile .tile-label")].some((t) => t.textContent === "Remove from favourites"));
-    await focusTile(page, remote, "Remove from favourites");
-    await remote.press("select");
-    await page.waitForFunction(() => [...document.querySelectorAll(".tile .tile-label")].some((t) => t.textContent === "Add to favourites"));
+    await page.waitForFunction(() => document.querySelector("#photo-bar .pb-item")?.getAttribute("aria-label") === "Add to favourites");
     const st = await status();
     assert.deepEqual([st.favourites, st.onlyFavourites], [0, false]);
     list = (await (await fetch(own.base + "/api/photos/playlist?limit=50")).json()).items;
@@ -1147,15 +1196,15 @@ test("About this photo says when and where it was taken, with a map", async () =
     await page.waitForFunction(() => document.getElementById("backdrop").classList.contains("has-photo"), null, { timeout: 20000 });
     await page.waitForTimeout(2000);
     const remote = remoteFor(page, own.base);
-    await remote.press("select");
-    await focusTile(page, remote, "About this photo");
+    await remote.press("up");
+    await focusBar(page, remote, "About this photo");
     return { page, remote };
   };
   try {
     // Photos from the coast know where they were taken.
     await choose("Holidays/Coast");
     let { page, remote } = await open();
-    assert.equal(await page.evaluate(() => document.querySelector(".tile.focused .tile-sub")?.textContent), "Cascais, Portugal");
+    assert.equal((await bar(page)).sub, "Cascais, Portugal");
     await remote.press("select");
     await page.waitForSelector("#photo-info.open .pi-map img.loaded");
     const text = await page.evaluate(() => document.getElementById("photo-info").innerText);
@@ -1166,8 +1215,8 @@ test("About this photo says when and where it was taken, with a map", async () =
     assert.equal(await page.evaluate(() => document.getElementById("stage").classList.contains("panel-open")), true);
     // The map: pieces at the regional zoom around Cascais (38.70° N, 9.42° W), fetched by the Pi.
     await page.waitForFunction(() => [...document.querySelectorAll(".pi-map img")].every((i) => i.classList.contains("loaded")));
-    assert.ok(map.asked.length >= 4 && map.asked.every((u) => u.startsWith("/10/")), `tiles asked for: ${map.asked}`);
-    assert.ok(map.asked.includes("/10/485/392.png"), `the tile with Cascais on it: ${map.asked}`);
+    assert.ok(map.asked.length >= 12 && map.asked.every((u) => u.startsWith("/11/")), `tiles asked for: ${map.asked}`);
+    assert.ok(map.asked.includes("/11/970/784.png"), `the tile with Cascais on it: ${map.asked}`);
     assert.ok([...map.agents].every((a) => /^PiDash\//.test(a)), `the map service is told who asks: ${[...map.agents]}`);
     const pin = await page.evaluate(() => {
       const box = document.querySelector(".pi-map").getBoundingClientRect();
@@ -1179,11 +1228,13 @@ test("About this photo says when and where it was taken, with a map", async () =
     // Up looks closer, Down from further away, and no further than there is.
     const zoom = () => page.evaluate(() => document.querySelector(".pi-map").dataset.zoom);
     await remote.press("up");
-    assert.equal(await zoom(), "13");
+    assert.equal(await zoom(), "14");
     await remote.press("up");
-    assert.equal(await zoom(), "13");
+    assert.equal(await zoom(), "14");
     for (let i = 0; i < 4; i++) await remote.press("down");
-    assert.equal(await zoom(), "4");
+    assert.equal(await zoom(), "5");
+    // A piece of map is drawn at its own size, which is what keeps it sharp.
+    assert.deepEqual(await page.evaluate(() => { const i = document.querySelector(".pi-map img"); return [i.offsetWidth, i.naturalWidth]; }), [256, 256]);
     // A second look at the same place asks the map service for nothing new.
     await page.waitForFunction(() => [...document.querySelectorAll(".pi-map img")].every((i) => i.classList.contains("loaded")));
     const before = map.asked.length;
@@ -1441,4 +1492,101 @@ test("power saver: photos stand still; the settings offer the presets", async ()
   } finally {
     await own.stop();
   }
+});
+
+// --- What the dashboard shows, set and kept --------------------------------------------
+
+test("the caption and the weather's detail are settings, and can be kept from the remote", async () => {
+  const own = await startPiDash('caption = "on"\nweather_detail = "off"\nlock_view = true\n' + APPS);
+  try {
+    const page = await openPage(own.base);
+    await page.waitForFunction(() => document.getElementById("backdrop").classList.contains("has-photo"), null, { timeout: 20000 });
+    await page.waitForTimeout(2000);
+    const remote = remoteFor(page, own.base);
+    const seen = () =>
+      page.evaluate(() => ({
+        caption: Number(getComputedStyle(document.getElementById("caption")).opacity) > 0.5 && document.getElementById("caption").textContent.length > 3,
+        weather: document.getElementById("weather").getClientRects().length > 0,
+        clock: Number(getComputedStyle(document.getElementById("overlay")).opacity) > 0.5,
+      }));
+    assert.deepEqual(await shows(page), ["set", "on", "off"]);
+    assert.deepEqual(await seen(), { caption: true, weather: false, clock: true }, "the caption is there, the weather is not");
+    // Kept: Down changes nothing, however often.
+    for (let i = 0; i < 3; i++) await remote.press("down");
+    assert.deepEqual(await shows(page), ["set", "on", "off"]);
+    assert.deepEqual(await seen(), { caption: true, weather: false, clock: true });
+    // Up still opens the photo's bar, which makes room where the caption was.
+    await remote.press("up");
+    assert.ok(await bar(page));
+    await remote.press("back");
+    await page.context().close();
+
+    // The settings page has the three, as they are; and saves them.
+    const settings = await openPage(own.base, "/settings#screen");
+    await settings.waitForSelector("#main:not([hidden])");
+    assert.deepEqual([await settings.inputValue("#d-caption"), await settings.inputValue("#d-weather"), await settings.isChecked("#d-lock")], ["on", "off", true]);
+    await settings.selectOption("#d-weather", "full");
+    await settings.uncheck("#d-lock");
+    await settings.click("#save");
+    let display = {};
+    for (let i = 0; i < 50 && !(display.weather_detail === "full" && display.lock_view === false); i++) {
+      await new Promise((r) => setTimeout(r, 200));
+      try {
+        display = (await (await fetch(own.base + "/api/config")).json()).display ?? {};
+      } catch {
+        /* restarting */
+      }
+    }
+    assert.deepEqual([display.caption, display.weather_detail, display.lock_view], ["on", "full", false]);
+    assert.deepEqual(settings.problems, []);
+    await settings.context().close();
+
+    // No longer kept: Down goes straight to "only the photo", since everything is what is set.
+    const again = await openPage(own.base);
+    await again.waitForFunction(() => document.getElementById("overlay").dataset.weather === "full");
+    await remoteFor(again, own.base).press("down");
+    assert.equal(await view(again), "photo");
+    await again.context().close();
+  } finally {
+    await own.stop();
+  }
+});
+
+// --- Other websites -------------------------------------------------------------------
+
+test("requests from other websites, and under names that are not the Pi's, are refused", async () => {
+  const http = require("node:http");
+  const call = (method, path, headers) =>
+    new Promise((resolve, reject) => {
+      const u = new URL(pi.base);
+      const req = http.request({ host: u.hostname, port: u.port, method, path, headers: { "Content-Type": "application/json", ...headers } }, (res) => {
+        let body = "";
+        res.on("data", (d) => (body += d));
+        res.on("end", () => resolve({ status: res.statusCode, body, headers: res.headers }));
+      });
+      req.on("error", reject);
+      req.end(method === "GET" ? undefined : "{}");
+    });
+  const running = async () => (await (await fetch(pi.base + "/api/apps")).json()).running;
+
+  // A page somewhere else tries to start an app, the way a hidden form or script would.
+  for (const headers of [{ Origin: "https://evil.example" }, { Origin: "null" }, { "Sec-Fetch-Site": "cross-site" }, { Origin: "https://www.youtube.com", "Sec-Fetch-Site": "cross-site" }]) {
+    const res = await call("POST", "/api/apps/start", { ...headers });
+    assert.equal(res.status, 403, `refused: ${JSON.stringify(headers)}`);
+    assert.match(res.body, /another website/);
+  }
+  assert.equal(await running(), "", "nothing was started");
+  // A name from the internet, pointed at the Pi's address.
+  const rebound = await call("GET", "/api/config", { Host: "pi.evil.example:8080" });
+  assert.equal(rebound.status, 403);
+  assert.match(rebound.body, /does not answer to this name/);
+  // PiDash's own pages, and programs that are no browser, are served; and the
+  // pages say what they may load.
+  const own = await call("GET", "/", {});
+  assert.equal(own.status, 200);
+  assert.match(own.headers["content-security-policy"], /script-src 'self'/);
+  assert.equal(own.headers["x-frame-options"], "DENY");
+  const u = new URL(pi.base);
+  const started = await call("POST", "/api/apps/start", { Origin: pi.base, "Sec-Fetch-Site": "same-origin", Host: u.host, "Content-Length": "2" });
+  assert.equal(started.status, 404, "its own page gets through to the handler (which knows no app without a name)");
 });

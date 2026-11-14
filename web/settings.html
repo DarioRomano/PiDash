@@ -193,14 +193,25 @@
           </select>
         </label>
         <label class="field">
-          <span>Shown at start</span>
-          <select id="d-view">
-            <option value="clock">Clock, date and calendar</option>
-            <option value="details">Also the weather and the photo's caption</option>
-            <option value="photo">Only the photo</option>
+          <span>Under a photo</span>
+          <select id="d-caption">
+            <option value="off">Nothing</option>
+            <option value="on">Its album, place and date</option>
           </select>
         </label>
-        <p class="hint">Up and Down on the remote switch between these three at any time.</p>
+        <label class="field">
+          <span>Weather on the dashboard</span>
+          <select id="d-weather">
+            <option value="off">None</option>
+            <option value="short">Temperature and conditions</option>
+            <option value="full">Also the place, what it feels like and the chance of rain</option>
+          </select>
+        </label>
+        <label class="check"><input id="d-lock" type="checkbox" /><span>Keep it like this: ▼ on the remote does not change what is shown</span></label>
+        <p class="hint">
+          Unless kept, ▼ steps from what is set here to everything, to only the photo, and back. ▲ opens what can be
+          done with the photo on screen: mark it as a favourite, hide it, see where it was taken.
+        </p>
         <label class="field">
           <span>Background without photos</span>
           <select id="d-background">

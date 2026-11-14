@@ -17,6 +17,12 @@ export interface DisplayConfig {
   view: string;
   /** "moving" or "still": the background shown without photos. */
   background: string;
+  /** "on" or "off": whether a photo has its caption; empty leaves it to view. */
+  caption?: string;
+  /** "off", "short" or "full": how much of the weather the dashboard shows. */
+  weather_detail?: string;
+  /** Down on the remote does not change what is shown. */
+  lock_view?: boolean;
   /** "smooth", "balanced" or "saver": how much work the Pi does for the picture. */
   performance?: string;
   /** Pictures a second for the moving background; 0 leaves it to performance. */

@@ -631,5 +631,18 @@ const list: Record<string, string> = {
   "drawn only {n} times a second": "disegnato solo {n} volte al secondo",
   "the Pi cannot keep up at this size: set its screen to 1920 × 1080 for fluid menus": "il Pi non ce la fa a questa risoluzione: imposta lo schermo su 1920 × 1080 per menu fluidi",
   "the TV or its cable limits this, or the Pi is busy": "la TV o il suo cavo lo limitano, oppure il Pi è occupato",
+  "What can be done with the photo: favourite, hide, where it was taken": "Cosa si può fare con la foto: preferito, nascondi, dove è stata scattata",
+  "Show more, or only the photo": "Mostra di più, o solo la foto",
+  "Under a photo": "Sotto una foto",
+  "Nothing": "Niente",
+  "Its album, place and date": "Album, luogo e data",
+  "Weather on the dashboard": "Meteo sulla dashboard",
+  "Temperature and conditions": "Temperatura e condizioni",
+  "Also the place, what it feels like and the chance of rain": "Anche luogo, temperatura percepita e probabilità di pioggia",
+  "Keep it like this: ▼ on the remote does not change what is shown": "Lascia così: ▼ sul telecomando non cambia ciò che si vede",
+  "Unless kept, ▼ steps from what is set here to everything, to only the photo, and back. ▲ opens what can be done with the photo on screen: mark it as a favourite, hide it, see where it was taken.": "Altrimenti ▼ passa da ciò che è impostato qui a tutto, alla sola foto, e ritorno. ▲ apre ciò che si può fare con la foto sullo schermo: segnarla come preferita, nasconderla, vedere dove è stata scattata.",
+  "this request was made by another website, not by PiDash's own pages": "questa richiesta veniva da un altro sito web, non dalle pagine di PiDash",
+  "the Wi-Fi for visitors is shown on the TV only": "il Wi-Fi per gli ospiti viene mostrato solo sulla TV",
+  "too many pieces of map were asked for; try again in a few minutes": "sono stati richiesti troppi pezzi di mappa; riprova tra qualche minuto",
 };
 export default list;

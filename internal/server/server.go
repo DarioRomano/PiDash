@@ -59,10 +59,15 @@ type Server struct {
 	bluetooth bluetooth.Manager
 	sound     sound.Manager
 	watchdog  *kiosk.Watchdog
-	maps      *maps.Tiles
-	player    Player
-	games     *games.Library
-	power     power.Control
+	// ownNames are names this Pi is known by, beyond a home network's usual ones.
+	ownNames []string
+	// dev is set while developing (-mock): the pages may then be served by
+	// a development server on this machine.
+	dev    bool
+	maps   *maps.Tiles
+	player Player
+	games  *games.Library
+	power  power.Control
 	// lastSound is what the dashboard was last told about the sound outputs,
 	// for pages that connect later.
 	soundMu    sync.Mutex
@@ -270,6 +275,8 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.updater = d.Updater
 	s.remote, s.problems, s.bluetooth, s.sound, s.watchdog = d.Remote, d.Problems, d.Bluetooth, d.Sound, d.Watchdog
 	s.maps = d.Maps
+	s.ownNames = namesOfThisPi(cfg.Server.Names)
+	s.dev = d.TestHooks
 	s.player, s.games, s.power = d.Playing, d.Games, d.Power
 	s.mux.HandleFunc("GET /api/update", s.handleUpdate)
 	s.mux.HandleFunc("POST /api/update/check", s.handleUpdate)
@@ -303,7 +310,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 	srv := &http.Server{
 		Addr:              s.cfg.Server.Listen,
-		Handler:           s.withLogging(s.mux),
+		Handler:           s.withLogging(s.guarded(s.mux)),
 		ReadHeaderTimeout: 5 * time.Second,
 		// Requests end when the server is asked to stop. Without this the
 		// dashboard's open event stream would hold up every restart.
@@ -821,6 +828,9 @@ func (s *Server) handleHomeActivate(w http.ResponseWriter, r *http.Request) {
 
 // handleTestCalendar reads a calendar link, to confirm it before saving.
 func (s *Server) handleTestCalendar(w http.ResponseWriter, r *http.Request) {
+	if !s.pin.allow(w, r) {
+		return
+	}
 	var req struct {
 		URL string `json:"url"`
 	}
@@ -844,6 +854,9 @@ func (s *Server) handleTestCalendar(w http.ResponseWriter, r *http.Request) {
 
 // handleTestWeather looks a place name up, to confirm it before saving.
 func (s *Server) handleTestWeather(w http.ResponseWriter, r *http.Request) {
+	if !s.pin.allow(w, r) {
+		return
+	}
 	var req struct {
 		Location string `json:"location"`
 	}

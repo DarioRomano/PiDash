@@ -6,6 +6,7 @@ import { StatusPanel } from "./status";
 import { WifiPanel } from "./wifi";
 import { Menu } from "./menu";
 import { PhotoInfo } from "./photoinfo";
+import { PhotoBar } from "./photobar";
 import { evening, sunToday, timeOf, within } from "./sun";
 import { play, setSounds } from "./sfx";
 import { reportAlive } from "./alive";
@@ -33,8 +34,22 @@ const conn = $("#conn");
 const stale = $("#stale");
 const debug = $("#debug");
 
-const DENSITIES = ["photo", "compact", "detailed"] as const;
-let density = 1;
+// What the dashboard shows beside the clock is set once, in the settings:
+// whether a photo has its caption, and how much of the weather there is.
+// Down on the remote steps on from that to "everything" and to "only the
+// photo", unless the settings lock it.
+const VIEWS = ["set", "all", "photo"] as const;
+let view = 0;
+let captionSet = "off";
+let weatherSet = "short";
+let viewLocked = false;
+
+function applyView() {
+  const now = VIEWS[view];
+  overlay.dataset.view = now;
+  overlay.dataset.caption = now === "all" ? "on" : captionSet;
+  overlay.dataset.weather = now === "all" ? "full" : weatherSet;
+}
 /** True once Up or Down was used: the configured start view no longer applies. */
 let viewChosen = false;
 
@@ -143,7 +158,7 @@ const slideshow = new Slideshow($("#backdrop"), (item) => {
   shownPhoto = item;
   updateAmbient();
   showCaption(item);
-  rail.setItems(railItems()); // the "hide this photo" tile follows the photo
+  photoBar.setItems(photoItems()); // what can be done follows the photo
 });
 let photosHintShown = false;
 
@@ -153,7 +168,7 @@ function onPhotos(st: PhotosStatus) {
   const before = photosNow;
   photosNow = st;
   // The "only favourites" tile comes and goes with the favourites.
-  if (before?.favourites !== st.favourites || before?.onlyFavourites !== st.onlyFavourites) rail.setItems(railItems());
+  if (before?.favourites !== st.favourites || before?.onlyFavourites !== st.onlyFavourites) photoBar.setItems(photoItems());
   slideshow.setStatus(st);
   // First run: a source is configured but no folders have been chosen yet.
   if (st.enabled && !st.indexing && st.count === 0 && st.selection.folders.length === 0 && !st.error && !photosHintShown) {
@@ -167,7 +182,8 @@ let tvAsleep = false;
 function updateSuspended() {
   // Do not load photos while an app covers the dashboard, the page is hidden,
   // the TV has been switched off for the night, or night mode shows only a clock.
-  slideshow.setSuspended(appsStatus.running !== "" || document.visibilityState !== "visible" || tvAsleep || nightNow || photoInfo.isOpen);
+  // And while a photo is being read about, or something is being done with it, it stays.
+  slideshow.setSuspended(appsStatus.running !== "" || document.visibilityState !== "visible" || tvAsleep || nightNow || photoInfo.isOpen || photoBar.isOpen);
   // An app brings its own sound, and a TV that is off needs none.
   if (appsStatus.running !== "" || tvAsleep) stopRadio();
   updateAmbient();
@@ -266,6 +282,21 @@ const photoInfo: PhotoInfo = new PhotoInfo($("#photo-info"), () => {
   syncPanels();
   updateSuspended(); // the photo stays while it is being read about
 });
+
+// The bar that Up opens: what can be done with the photo on screen.
+const photoBar: PhotoBar = new PhotoBar(
+  $("#photo-bar"),
+  (item) => {
+    // Marking a favourite leaves the bar open, to take it back at once;
+    // everything else leads somewhere.
+    if (item.id !== FAV_ID) photoBar.close();
+    void activateRailItem(item);
+  },
+  (open) => {
+    stage.classList.toggle("photo-bar-open", open);
+    updateSuspended();
+  },
+);
 
 /** Whatever covers the whole screen hides the clock, the weather and the rest. */
 function syncPanels() {
@@ -767,6 +798,36 @@ function railActivity() {
   }, railTimeoutMs);
 }
 
+/** What can be done with the photo on screen: the buttons of the bar that Up opens. */
+function photoItems(): RailItem[] {
+  const items: RailItem[] = [];
+  if (shownPhoto) {
+    items.push(
+      shownPhoto.favourite
+        ? { id: FAV_ID, label: "Remove from favourites", glyph: FAV_ON_GLYPH, running: true }
+        : { id: FAV_ID, label: "Add to favourites", glyph: FAV_GLYPH },
+    );
+    items.push({ id: INFO_ID, label: "About this photo", glyph: INFO_GLYPH, sub: shownPhoto.place });
+    items.push({ id: MORE_ID, label: "More from this album", glyph: MORE_GLYPH, sub: shownPhoto.folder.split(" / ").pop() });
+    // A photo that should not come up again can be hidden; of two side by
+    // side, either one.
+    const keys = shownPhoto.key.split("+");
+    if (keys.length === 2) {
+      items.push({ id: HIDE_ID + keys[0], label: "Hide left photo", glyph: HIDE_GLYPH });
+      items.push({ id: HIDE_ID + keys[1], label: "Hide right photo", glyph: HIDE_GLYPH });
+    } else {
+      items.push({ id: HIDE_ID + keys[0], label: "Hide this photo", glyph: HIDE_GLYPH });
+    }
+  }
+  if (photosNow?.onlyFavourites) {
+    items.push({ id: ONLY_FAV_ID, label: "Show all photos", glyph: ONLY_FAV_GLYPH, running: true });
+  } else if ((photosNow?.favourites ?? 0) > 0) {
+    const n = photosNow?.favourites ?? 0;
+    items.push({ id: ONLY_FAV_ID, label: "Only favourites", glyph: ONLY_FAV_GLYPH, sub: t(n === 1 ? "1 photo" : "{n} photos", { n }) });
+  }
+  return items;
+}
+
 function railItems(): RailItem[] {
   const items: RailItem[] = [];
   const w = weather.tile;
@@ -796,30 +857,6 @@ function railItems(): RailItem[] {
   }
   for (const e of homeEntities) {
     items.push({ id: HOME_ID + e.id, label: e.name, sub: e.text, glyph: homeGlyph(e), running: e.on });
-  }
-  // A photo that should not come up again can be hidden; of two side by
-  // side, either one. Or the slideshow can stay with its album for a while.
-  if (shownPhoto) {
-    items.push({ id: MORE_ID, label: "More from this album", glyph: MORE_GLYPH, sub: shownPhoto.folder.split(" / ").pop() });
-    const keys = shownPhoto.key.split("+");
-    if (keys.length === 2) {
-      items.push({ id: HIDE_ID + keys[0], label: "Hide left photo", glyph: HIDE_GLYPH });
-      items.push({ id: HIDE_ID + keys[1], label: "Hide right photo", glyph: HIDE_GLYPH });
-    } else {
-      items.push({ id: HIDE_ID + keys[0], label: "Hide this photo", glyph: HIDE_GLYPH });
-    }
-    items.push({ id: INFO_ID, label: "About this photo", glyph: INFO_GLYPH, sub: shownPhoto.place });
-    items.push(
-      shownPhoto.favourite
-        ? { id: FAV_ID, label: "Remove from favourites", glyph: FAV_ON_GLYPH }
-        : { id: FAV_ID, label: "Add to favourites", glyph: FAV_GLYPH },
-    );
-  }
-  if (photosNow?.onlyFavourites) {
-    items.push({ id: ONLY_FAV_ID, label: "Show all photos", glyph: ONLY_FAV_GLYPH, running: true });
-  } else if ((photosNow?.favourites ?? 0) > 0) {
-    const n = photosNow?.favourites ?? 0;
-    items.push({ id: ONLY_FAV_ID, label: "Only favourites", glyph: ONLY_FAV_GLYPH, sub: t(n === 1 ? "1 photo" : "{n} photos", { n }) });
   }
   if (bluetooth?.available) {
     const on = pairedDevices().filter((d) => d.connected).map((d) => d.name);
@@ -917,7 +954,7 @@ async function activateRailItem(item: RailItem) {
       if (!res.ok) throw new Error(String(res.status));
       photo.favourite = on;
       if (shownPhoto === photo) showCaption(photo);
-      rail.setItems(railItems());
+      photoBar.setItems(photoItems());
       toast(on ? "Added to favourites. Favourites come round more often." : "Removed from favourites.", 5000);
     } catch {
       toast("The PiDash backend is not reachable.", 5000);
@@ -1083,10 +1120,13 @@ function applyConfig(cfg: ClientConfig) {
   stage.dataset.clock = d.clock_position || "bottom-left";
   stage.dataset.clockSize = d.clock_size || "large";
   stage.dataset.clockStyle = d.clock_style || "bold";
-  if (!viewChosen) {
-    density = d.view === "details" ? 2 : d.view === "photo" ? 0 : 1;
-    overlay.dataset.density = DENSITIES[density];
-  }
+  // Settings from before these two existed said it all with one word.
+  captionSet = d.caption || (d.view === "details" ? "on" : "off");
+  weatherSet = d.weather_detail || (d.view === "details" ? "full" : "short");
+  viewLocked = !!d.lock_view;
+  if (viewLocked) view = 0;
+  else if (!viewChosen && d.view === "photo") view = 2;
+  applyView();
   weather.configure(d.clock_24h, locale);
   photoInfo.configure(d.clock_24h, locale || undefined);
   dateLocale = locale || undefined;
@@ -1269,7 +1309,7 @@ function stirAmbient(action: Action) {
 input.on((action, ev) => {
   // A held direction runs along the app row. Everywhere else on the dashboard
   // one press is one step: nobody wants to race through photos.
-  if (ev.repeat && !(rail.isOpen && (action === "left" || action === "right"))) return;
+  if (ev.repeat && !((rail.isOpen || photoBar.isOpen) && (action === "left" || action === "right"))) return;
   // In night mode the first press only brings the dashboard back.
   if (wakeFromNight() && action !== "exit") return;
   railActivity();
@@ -1312,6 +1352,7 @@ input.on((action, ev) => {
     return;
   }
   if (rail.handle(action)) return;
+  if (photoBar.handle(action)) return;
   switch (action) {
     case "select":
     case "menu":
@@ -1319,17 +1360,28 @@ input.on((action, ev) => {
       rail.open();
       break;
     case "up":
+      // What can be done with the photo on screen.
+      if (photoBar.open()) play("open");
+      else play("edge");
+      break;
     case "down": {
+      if (viewLocked) {
+        play("edge");
+        break;
+      }
       viewChosen = true;
-      const to = Math.max(0, Math.min(DENSITIES.length - 1, density + (action === "up" ? 1 : -1)));
-      play(to === density ? "edge" : "move");
-      density = to;
-      overlay.dataset.density = DENSITIES[density];
+      // On from what is set, to everything, to only the photo, and round
+      // again; "everything" is left out where that is what is set.
+      const everything = captionSet === "on" && weatherSet === "full";
+      do view = (view + 1) % VIEWS.length;
+      while (VIEWS[view] === "all" && everything);
+      play("move");
+      applyView();
       break;
     }
     case "home":
-      density = 1;
-      overlay.dataset.density = DENSITIES[density];
+      view = 0;
+      applyView();
       break;
     case "left":
       play("move");
