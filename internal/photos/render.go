@@ -2,7 +2,6 @@ package photos
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"image"
@@ -342,56 +341,13 @@ func darken(img *image.RGBA, r image.Rectangle, factor float64) {
 // returns 1 when there is none. Cameras and phones store photos unrotated and
 // record how to turn them here.
 func exifOrientation(data []byte) int {
-	if len(data) < 4 || data[0] != 0xFF || data[1] != 0xD8 {
+	t, first, ok := openTIFF(exifSegment(data))
+	if !ok {
 		return 1
 	}
-	for i := 2; i+4 <= len(data); {
-		if data[i] != 0xFF {
-			return 1
-		}
-		marker := data[i+1]
-		if marker == 0xDA || marker == 0xD9 { // image data starts; no EXIF before it
-			return 1
-		}
-		size := int(binary.BigEndian.Uint16(data[i+2:]))
-		if size < 2 || i+2+size > len(data) {
-			return 1
-		}
-		seg := data[i+4 : i+2+size]
-		if marker == 0xE1 && len(seg) > 14 && string(seg[:6]) == "Exif\x00\x00" {
-			return tiffOrientation(seg[6:])
-		}
-		i += 2 + size
-	}
-	return 1
-}
-
-func tiffOrientation(t []byte) int {
-	if len(t) < 8 {
-		return 1
-	}
-	var bo binary.ByteOrder
-	switch string(t[:2]) {
-	case "II":
-		bo = binary.LittleEndian
-	case "MM":
-		bo = binary.BigEndian
-	default:
-		return 1
-	}
-	off := int(bo.Uint32(t[4:]))
-	if off < 8 || off+2 > len(t) {
-		return 1
-	}
-	n := int(bo.Uint16(t[off:]))
-	for e := 0; e < n; e++ {
-		p := off + 2 + e*12
-		if p+12 > len(t) {
-			return 1
-		}
-		if bo.Uint16(t[p:]) == 0x0112 { // Orientation
-			v := int(bo.Uint16(t[p+8:]))
-			if v >= 1 && v <= 8 {
+	for _, e := range t.entries(first) {
+		if e.tag == 0x0112 { // Orientation
+			if v := int(t.bo.Uint16(e.value)); v >= 1 && v <= 8 {
 				return v
 			}
 			return 1

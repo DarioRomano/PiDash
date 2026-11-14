@@ -120,7 +120,10 @@ What the installer does:
 | Launch an app | Press **OK** on the dashboard to open the app row, choose with ◀ ▶ and press OK. Or tap the app on the phone remote |
 | Move an app in the app row | Select it, press ▲, carry it with ◀ ▶, press **OK**. **Back** leaves it where it was |
 | Let a visitor onto the Wi-Fi | **Guest Wi-Fi** in the app row. See [Wi-Fi for visitors](#wi-fi-for-visitors) |
-| Start a game on your PC | Its tile in the app row. See [Games from your PC](#games-from-your-pc) |
+| Start a game on your PC, or one of RetroArch's | Its tile in the app row. See [Games as tiles](#games-as-tiles) |
+| Mark a photo as a favourite | **Add to favourites** in the app row. See [Favourites](#favourites) |
+| See where and when a photo was taken | **About this photo** in the app row. See [About this photo](#about-this-photo) |
+| Restart or shut down the Pi | **Power** in the app row. See [Restart and shut down](#restart-and-shut-down) |
 | Change the TV's volume from a controller | Hold its logo button and press up or down |
 | See how PiDash is doing | Choose **Status** in the app row. See [Status page](#status-page) |
 | Choose where the sound comes out, and how loud | **Settings** in the app row, then **Sound**. See [Sound](#sound) |
@@ -283,6 +286,8 @@ tile, which is first in the row. The detail view shows:
 - the current temperature and conditions, with what it feels like
 - wind with direction and gusts, humidity, chance and amount of rain today,
   UV index, sunrise and sunset
+- the air quality as a number and a word, the pollen that is flying, and the
+  fine dust (see below)
 - the next 24 hours in two-hour steps, with the chance of rain where it matters
 - the next seven days, each as a bar from its low to its high on one shared
   scale, so warm and cold days are easy to compare. The dot on today's bar is
@@ -290,6 +295,17 @@ tile, which is first in the row. The detail view shows:
 
 **Back** or **OK** closes it. With a mouse, clicking the weather in the corner
 opens it too.
+
+**Rain soon.** When rain or snow is about to begin, the corner of the
+dashboard says so: "Rain in 20 min". While it rains it says when it stops.
+This looks two hours ahead, in quarters of an hour, so read it as "about".
+
+**Air and pollen.** The detail view has the air quality (the European index,
+or the US one with `units = "imperial"`), the strongest pollen and the fine
+dust (PM2.5, with PM10 as "coarser dust"). On the dashboard itself they appear
+only when they matter: air that is poor or worse, or a lot of some pollen.
+Pollen is known for Europe only, and only in season. Where the weather service
+has no air data, the three tiles are simply not there.
 
 Options:
 
@@ -569,6 +585,44 @@ button brings the dashboard back for a minute; the press that wakes it does
 nothing else. This is separate from the [TV power schedule](#tv-power-schedule),
 which switches the TV itself off.
 
+Either time can follow the sun instead of the clock: night mode can begin at
+sunset, or one to three hours after it, and end at sunrise or an hour either
+side. The times are those of the town set under [Weather](#weather), in its
+own time zone, and move with the seasons; without the weather set up, a night
+that follows the sun does not begin. In `config.toml` any distance in minutes
+works:
+
+```toml
+[display]
+night_start = "sunset+90"   # or a time of day, such as "22:30"
+night_end = "sunrise-30"
+```
+
+**Dimming in the evening.** Under **Screen**, *Dim the picture in the evening*
+lays a dark sheet over the whole dashboard, a little or a lot. It comes
+gradually over the hour after sunset and is gone again at sunrise, so the TV
+is less of a lamp in a dark room. Without the weather set up it runs from
+eight in the evening to seven in the morning. (`evening_dim = "off"`,
+`"light"` or `"strong"`.)
+
+### Restart and shut down
+
+The **Power** tile, last in the app row, offers three things: restart PiDash
+(back in a few seconds), restart the Pi, and shut the Pi down. Whichever you
+choose is asked about a second time, with **No** selected, so a press too many
+does no harm. If a [PIN](#lock) is set, these need it: unlock under
+**Settings** first.
+
+Restarting and shutting down the Pi need the Pi's permission. On Raspberry Pi
+OS as it comes, the user who is logged in on the desktop has it. If the TV
+says the Pi does not let PiDash do that, allow it once in a terminal:
+
+```sh
+echo "$USER ALL=(root) NOPASSWD: /usr/bin/systemctl reboot, /usr/bin/systemctl poweroff" | sudo tee /etc/sudoers.d/pidash-power
+```
+
+A Pi that was shut down starts again when its power is switched off and on.
+
 ### Background without photos
 
 While no photo is on screen (no photo source, nothing chosen yet, or the NAS is
@@ -668,6 +722,41 @@ still.
 album** tile in the app row makes the slideshow stay with that folder or
 album: the next up to 30 pictures come from it, in the order they were taken.
 Then the usual mix returns.
+
+#### Favourites
+
+While a photo is showing, **Add to favourites** in the app row marks it; the
+tile then reads **Remove from favourites**, and the photo's caption carries a
+★. Of two upright photos side by side, both are marked. Favourites come round
+more often: about every eighth picture is one of them, however large the
+library.
+
+Once there is a favourite, the **Only favourites** tile makes the slideshow
+show those and nothing else, and **Show all photos** brings the rest back.
+Taking the mark off the last favourite does the same. Favourites are part of
+the [backup](#backup).
+
+#### About this photo
+
+**About this photo** in the app row opens a page about the photo on screen:
+the day and time it was taken and how many years ago that was, the place, its
+album and its file name. The slideshow waits while the page is open. Any
+button closes it.
+
+If the photo knows where it was taken, the page has a map with a pin on the
+spot; ▲ looks closer and ▼ from further away. Photos from Synology Photos
+bring their position and place name from the NAS. For photos from a folder
+PiDash reads the position and the time the camera wrote into the file; these
+have no place name, so the page shows the coordinates.
+
+The map is drawn by [OpenStreetMap](https://www.openstreetmap.org/copyright).
+To show it, the Pi fetches the pieces of map around the spot from
+OpenStreetMap's servers, which thereby learn the rough area: a square of some
+tens of kilometres at the first look, a few kilometres if you look closer.
+Neither the photo nor the exact position is sent. Each piece is fetched once
+and kept on the Pi for a month. *Show a map of where a photo was taken* under
+**Settings**, Photos switches the map off (`map = false` under `[photos]`);
+`map_tiles` points it at another map service.
 
 **Video clips.** With **Also show video clips, without sound**
 (`videos = true`), clips from the chosen folders and albums take their turn in
@@ -894,9 +983,22 @@ Inside an emulator the [game controller](#game-controller) belongs to the
 game. **Holding its logo button for two seconds** returns to PiDash, as does
 holding Back on the TV remote.
 
-#### Games from your PC
+#### Games as tiles
 
-With **Moonlight** in the app row and paired with your PC, the games the PC
+Games can have tiles of their own, after the apps. The one played last comes
+first, so the game of the moment is always where the row begins. One switch
+under Settings, Apps turns all of this on or off (`moonlight` and `retroarch`
+under `[games]`).
+
+**From RetroArch.** With **RetroArch** in the app row, the games you marked as
+favourites in RetroArch get a tile each, followed by the ones played last, up
+to 24. **OK** starts the game directly, with the core it was last played
+with, and shows RetroArch's own cover where it has downloaded one. To give a
+game a tile, play it once in RetroArch, or add it to RetroArch's favourites
+(in RetroArch's quick menu, *Add to Favorites*). A game whose file or core
+has gone gets no tile.
+
+**From your PC.** With **Moonlight** in the app row and paired with your PC, the games the PC
 offers get tiles of their own, after the apps. **OK** on one wakes the PC if
 it is asleep, waits for it, and starts that game; the TV says "Waking …"
 meanwhile. A PC that does not come up within a minute and a half is reported
@@ -905,8 +1007,7 @@ as such.
 The list is Moonlight's own: PiDash reads it from Moonlight's settings, with
 the covers Moonlight has fetched. Open the PC once in Moonlight to fill it,
 and again after adding a game on the PC. Games you hid in Moonlight stay
-hidden. They keep Moonlight's order and cannot be moved; the switch for all
-of this is under Settings, Apps (`moonlight = false` under `[games]`).
+hidden. Game tiles cannot be moved by hand.
 
 Waking needs the PC to be set up for it (Wake-on-LAN, a network cable), and
 Moonlight to have seen the PC at least once, which is how its network card
@@ -1338,7 +1439,9 @@ internal/tv/         daily TV power schedule
 internal/bluetooth/  Bluetooth devices: list, search, pair, connect, forget
 internal/sound/      sound output and volume, through pactl
 internal/playing/    what music is playing, from the players on the session bus
-internal/games/      the games of a PC, read from Moonlight's settings
+internal/games/      games as tiles: a PC's from Moonlight's settings, RetroArch's from its lists
+internal/maps/       the map beside a photo: pieces fetched from OpenStreetMap and kept
+internal/power/      restarting and shutting down the Pi
 internal/wifi/       the code a phone scans to join the Wi-Fi for visitors
 deploy/              the installer run on the Pi, uninstaller, systemd units, kiosk launcher
 install.sh           one-line installer and updater: downloads a release and runs deploy/install.sh

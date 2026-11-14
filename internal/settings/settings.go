@@ -102,7 +102,8 @@ type System struct {
 	// SoundFollows moves the sound to Bluetooth headphones when they
 	// connect. Absent leaves config.toml in charge.
 	SoundFollows *bool `json:"soundFollows,omitempty"`
-	// Games shows the games of the PC, from Moonlight, as tiles.
+	// Games shows the games of the PC, from Moonlight, and the favourite
+	// and last played games of RetroArch as tiles.
 	Games *bool `json:"games,omitempty"`
 }
 
@@ -132,6 +133,7 @@ type Screen struct {
 	ClockPosition string `json:"clockPosition,omitempty"`
 	ClockSize     string `json:"clockSize,omitempty"`
 	ClockStyle    string `json:"clockStyle,omitempty"`
+	EveningDim    string `json:"eveningDim,omitempty"`
 	View          string `json:"view,omitempty"`
 	Background    string `json:"background,omitempty"`
 	// Sounds switches the small sounds of the remote; absent leaves config.toml in charge.
@@ -165,7 +167,9 @@ type Photos struct {
 	// OnThisDay prefers photos taken on today's date in earlier years.
 	OnThisDay *bool `json:"onThisDay,omitempty"`
 	// Videos also shows short video clips.
-	Videos   *bool    `json:"videos,omitempty"`
+	Videos *bool `json:"videos,omitempty"`
+	// Map shows a map beside a photo that knows where it was taken.
+	Map      *bool    `json:"map,omitempty"`
 	Synology Synology `json:"synology"`
 }
 
@@ -471,6 +475,9 @@ func apply(base config.Config, f File, installed []desktop.Entry) (config.Config
 		if p.Videos != nil {
 			cfg.Photos.Videos = *p.Videos
 		}
+		if p.Map != nil {
+			cfg.Photos.Map = *p.Map
+		}
 		if p.Source == config.PhotoSourceSynology {
 			cfg.Photos.Synology.URL = p.Synology.URL
 			cfg.Photos.Synology.Username = p.Synology.Username
@@ -496,7 +503,7 @@ func apply(base config.Config, f File, installed []desktop.Entry) (config.Config
 	if sys := f.System; sys != nil {
 		cfg.Update.Auto = sys.AutoUpdate
 		if sys.Games != nil {
-			cfg.Games.Moonlight = *sys.Games
+			cfg.Games.Moonlight, cfg.Games.RetroArch = *sys.Games, *sys.Games
 		}
 		if sys.SoundFollows != nil {
 			cfg.Sound.FollowBluetooth = *sys.SoundFollows
@@ -527,7 +534,7 @@ func apply(base config.Config, f File, installed []desktop.Entry) (config.Config
 		}{
 			{sc.Language, &cfg.Display.Language}, {sc.ClockPosition, &cfg.Display.ClockPosition},
 			{sc.ClockSize, &cfg.Display.ClockSize}, {sc.View, &cfg.Display.View}, {sc.Background, &cfg.Display.Background},
-			{sc.ClockStyle, &cfg.Display.ClockStyle},
+			{sc.ClockStyle, &cfg.Display.ClockStyle}, {sc.EveningDim, &cfg.Display.EveningDim},
 		} {
 			if choice.from != "" {
 				*choice.to = choice.from
@@ -779,6 +786,7 @@ type PhotosView struct {
 	PairPortraits   bool         `json:"pairPortraits"`
 	OnThisDay       bool         `json:"onThisDay"`
 	Videos          bool         `json:"videos"`
+	Map             bool         `json:"map"`
 	Synology        SynologyView `json:"synology"`
 	// FolderPath is the folder configured in config.toml, if any.
 	FolderPath string `json:"folderPath"`
@@ -816,17 +824,17 @@ func (s *Store) View() View {
 			Coordinates: cfg.Weather.Latitude != nil},
 		Photos: PhotosView{
 			Source: cfg.Photos.Source, IntervalSeconds: int(cfg.Photos.Interval.Duration / time.Second),
-			Motion: cfg.Photos.Motion, PairPortraits: cfg.Photos.PairPortraits, OnThisDay: cfg.Photos.OnThisDay, Videos: cfg.Photos.Videos,
+			Motion: cfg.Photos.Motion, PairPortraits: cfg.Photos.PairPortraits, OnThisDay: cfg.Photos.OnThisDay, Videos: cfg.Photos.Videos, Map: cfg.Photos.Map,
 			Synology: SynologyView{URL: cfg.Photos.Synology.URL, Username: cfg.Photos.Synology.Username,
 				PasswordSet: cfg.Photos.Synology.Password != "", InsecureTLS: cfg.Photos.Synology.InsecureTLS,
 				Quality: cfg.Photos.Synology.Quality},
 		},
 		Screen: Screen{NightStart: cfg.Display.NightStart, NightEnd: cfg.Display.NightEnd, Language: cfg.Display.Language,
-			ClockPosition: cfg.Display.ClockPosition, ClockSize: cfg.Display.ClockSize, ClockStyle: cfg.Display.ClockStyle, View: cfg.Display.View, Background: cfg.Display.Background,
+			ClockPosition: cfg.Display.ClockPosition, ClockSize: cfg.Display.ClockSize, ClockStyle: cfg.Display.ClockStyle, EveningDim: cfg.Display.EveningDim, View: cfg.Display.View, Background: cfg.Display.Background,
 			Sounds: boolPtr(cfg.Display.Sounds)},
 		Calendar: Calendar{Links: []Link{}},
 		Home:     Home{URL: cfg.Home.URL, TokenSet: cfg.Home.Token != "", Entities: append([]string{}, cfg.Home.Entities...)},
-		System:   System{AutoUpdate: cfg.Update.Auto, Cooling: boolPtr(cfg.System.CoolAbove > 0), SoundFollows: boolPtr(cfg.Sound.FollowBluetooth), Games: boolPtr(cfg.Games.Moonlight)},
+		System:   System{AutoUpdate: cfg.Update.Auto, Cooling: boolPtr(cfg.System.CoolAbove > 0), SoundFollows: boolPtr(cfg.Sound.FollowBluetooth), Games: boolPtr(cfg.Games.Moonlight || cfg.Games.RetroArch)},
 		Lock:     Lock{Set: cfg.Remote.PIN != ""},
 		Wifi:     Wifi{Name: cfg.Wifi.Name, Hidden: cfg.Wifi.Hidden, PasswordSet: cfg.Wifi.Password != "", Open: cfg.Wifi.Name != "" && cfg.Wifi.Password == ""},
 		Radio:    append([]config.RadioStation{}, cfg.Radio...),

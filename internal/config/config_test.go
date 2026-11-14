@@ -245,3 +245,32 @@ KEY_GREEN = "weather"
 		t.Error("client config leaks the PIN")
 	}
 }
+
+func TestNightBySunDimmingAndMap(t *testing.T) {
+	cfg, err := load(t, "[display]\nnight_start = \"sunset+90\"\nnight_end = \"sunrise-30\"\nevening_dim = \"strong\"\n[photos]\nmap_tiles = \"https://tiles.example.org/{z}/{x}/{y}.png\"\n[games]\nretroarch = false\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Display.NightStart != "sunset+90" || cfg.Display.NightEnd != "sunrise-30" || cfg.Display.EveningDim != "strong" {
+		t.Errorf("display = %+v", cfg.Display)
+	}
+	if !cfg.Photos.Map || !cfg.ForClient().PhotoMap || cfg.Games.RetroArch || !cfg.Games.Moonlight {
+		t.Errorf("photos.map = %v, games = %+v", cfg.Photos.Map, cfg.Games)
+	}
+	// A clock time and a sun time mix; the map can be switched off, and then
+	// its address does not matter.
+	if _, err := load(t, "[display]\nnight_start = \"sunset\"\nnight_end = \"07:00\"\n[photos]\nmap = false\nmap_tiles = \"\"\n"); err != nil {
+		t.Error(err)
+	}
+	for _, bad := range []string{
+		"[display]\nnight_start = \"dusk\"\nnight_end = \"07:00\"\n",
+		"[display]\nnight_start = \"sunset+1000\"\nnight_end = \"07:00\"\n",
+		"[display]\nnight_start = \"sunset\"\n",
+		"[display]\nevening_dim = \"dark\"\n",
+		"[photos]\nmap_tiles = \"https://tiles.example.org/{z}/{x}.png\"\n",
+	} {
+		if _, err := load(t, bad); err == nil {
+			t.Errorf("accepted: %s", bad)
+		}
+	}
+}

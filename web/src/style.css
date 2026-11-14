@@ -55,7 +55,7 @@ html, body {
 }
 /* Pages that cover the screen move with the rest, so their background
    reaches a little past their edges. */
-#help, #status-panel, #wifi-panel { box-shadow: 0 0 0 24px rgba(12, 14, 20, 0.95); }
+#help, #status-panel, #wifi-panel, #photo-info { box-shadow: 0 0 0 24px rgba(12, 14, 20, 0.95); }
 #weather-panel { box-shadow: 0 0 0 24px rgba(12, 14, 20, 0.93); }
 
 #backdrop {
@@ -268,6 +268,8 @@ html, body {
   transition: opacity 0.4s ease;
 }
 #overlay[data-density="detailed"] .w-extra { opacity: 1; }
+/* Rain about to start, bad air: said in every layout, since it is news. */
+.w-soon { margin-top: 10px; font-size: 28px; font-weight: 600; color: var(--fg); white-space: pre; }
 
 /* Photo caption: only in the "detailed" overlay. */
 #caption {
@@ -485,6 +487,11 @@ html, body {
 .wp-cond { margin-top: 10px; font-size: 48px; font-weight: 500; }
 .wp-sub { margin-top: 10px; font-size: 30px; color: var(--fg-dim); white-space: pre; }
 
+.wp-soon { margin-top: 14px; font-size: 30px; font-weight: 600; color: var(--accent); }
+/* Three rows of tiles need the room two rows left over. */
+.wp-tiles.nine { margin-top: 36px; gap: 14px; }
+.wp-tiles.nine .wp-tile { min-height: 148px; padding: 18px 22px 14px; }
+.wp-tiles.nine .wp-value { font-size: 42px; margin-top: 4px; }
 .wp-tiles { margin-top: 60px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
 .wp-tile { padding: 24px 24px 20px; border-radius: 18px; background: rgba(255, 255, 255, 0.06); min-height: 172px; }
 .wp-label { font-size: 23px; color: var(--fg-dim); }
@@ -599,6 +606,47 @@ html.pointer-active #toast { top: calc(var(--safe) + 92px); }
 #help.open { opacity: 1; transform: translateY(0); pointer-events: auto; }
 #help h2 { font-size: 50px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 22px; }
 #help h3 { font-size: 26px; font-weight: 500; color: var(--fg-dim); margin-bottom: 12px; }
+/* --- A short list to choose from ------------------------------------------------ */
+
+#menu {
+  position: absolute;
+  inset: -24px;
+  display: grid;
+  place-items: center;
+  background: rgba(8, 9, 13, 0.72);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+#menu.open { opacity: 1; pointer-events: auto; }
+.menu-box {
+  width: 880px;
+  padding: 44px 44px 30px;
+  border-radius: 34px;
+  background: rgba(19, 23, 34, 0.98);
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 40px 90px rgba(0, 0, 0, 0.6);
+}
+.menu-box h2 { font-size: 42px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 26px; }
+.menu-list { display: flex; flex-direction: column; gap: 12px; }
+.menu-item { padding: 20px 26px; border-radius: 20px; border: 3px solid transparent; background: rgba(255, 255, 255, 0.05); }
+.menu-item.focused { border-color: var(--fg); background: rgba(255, 255, 255, 0.11); }
+.menu-label { font-size: 32px; font-weight: 600; }
+.menu-hint { margin-top: 4px; font-size: 23px; color: var(--fg-dim); line-height: 1.3; }
+.menu-foot { margin-top: 24px; font-size: 21px; color: var(--fg-dim); }
+
+/* The evening: one dark, slightly warm sheet over everything, whose
+   strength follows the sun. It changes over minutes, so the Pi has nothing
+   to do in between. */
+#dim {
+  position: absolute;
+  inset: -24px;
+  background: rgb(22, 9, 0);
+  opacity: 0;
+  transition: opacity 20s linear;
+  pointer-events: none;
+}
+
 /* --- Wi-Fi for visitors ---------------------------------------------------------- */
 
 #wifi-panel {
@@ -624,6 +672,54 @@ html.pointer-active #toast { top: calc(var(--safe) + 92px); }
 .wifi-how { font-size: 32px; line-height: 1.35; color: var(--fg-dim); max-width: 18em; margin-bottom: 54px; }
 .wifi-label { font-size: 26px; color: var(--fg-dim); margin-bottom: 6px; }
 .wifi-value { font-size: 54px; font-weight: 600; letter-spacing: 0.01em; margin-bottom: 36px; overflow-wrap: anywhere; font-variant-ligatures: none; }
+
+/* --- About this photo -------------------------------------------------------------- */
+
+#photo-info {
+  position: absolute;
+  inset: 0;
+  padding: 60px 110px 40px;
+  background: rgba(12, 14, 20, 0.95);
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.25s ease, transform 0.3s ease;
+  pointer-events: none;
+}
+#photo-info.open { opacity: 1; transform: translateY(0); pointer-events: auto; }
+#photo-info h2 { font-size: 48px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 26px; }
+.pi-note { font-size: 28px; color: var(--fg-dim); }
+.pi-body { flex: 1; min-height: 0; display: flex; gap: 64px; }
+.pi-left { flex: 0 0 600px; min-width: 0; display: flex; flex-direction: column; gap: 28px; }
+.pi-picture { border-radius: 20px; overflow: hidden; aspect-ratio: 16 / 9; background: #000; flex: none; }
+.pi-picture img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.pi-words { min-width: 0; display: flex; flex-direction: column; gap: 22px; }
+.pi-which { font-size: 22px; color: var(--accent); margin-bottom: 4px; }
+.pi-date { font-size: 38px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.15; }
+.pi-line { margin-top: 4px; font-size: 26px; color: var(--fg-dim); white-space: pre; min-height: 1.2em; }
+.pi-label { margin-top: 14px; font-size: 21px; color: var(--fg-dim); }
+.pi-value { font-size: 30px; line-height: 1.25; overflow-wrap: anywhere; }
+.pi-file { margin-top: 14px; font-size: 21px; color: var(--fg-dim); overflow-wrap: anywhere; white-space: pre-wrap; }
+.pi-nowhere { font-size: 24px; color: var(--fg-dim); }
+/* Two photos side by side: each gets less room. */
+.pi-photo + .pi-photo { padding-top: 18px; border-top: 2px solid rgba(255, 255, 255, 0.08); }
+.pi-words:has(.pi-photo + .pi-photo) .pi-date { font-size: 30px; }
+.pi-words:has(.pi-photo + .pi-photo) .pi-value { font-size: 25px; }
+.pi-words:has(.pi-photo + .pi-photo) .pi-label { margin-top: 8px; }
+.pi-words:has(.pi-photo + .pi-photo) .pi-file { display: none; }
+/* Without a map the photo itself is the picture on the page. */
+.pi-body.no-map .pi-left { flex: 1; flex-direction: row; gap: 64px; align-items: flex-start; }
+.pi-body.no-map .pi-picture { flex: 0 0 980px; }
+.pi-body.no-map .pi-words { flex: 1; }
+.pi-map { position: relative; flex: 1; min-width: 0; border-radius: 24px; overflow: hidden; background: #1b2130; }
+.pi-map-note { position: absolute; inset: 0; display: grid; place-items: center; font-size: 26px; color: var(--fg-dim); }
+.pi-tiles { position: absolute; inset: 0; }
+.pi-tiles img { position: absolute; width: 512px; height: 512px; opacity: 0; transition: opacity 0.3s ease; }
+.pi-tiles img.loaded { opacity: 1; }
+.pi-pin { position: absolute; width: 54px; height: 72px; margin: -72px 0 0 -27px; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.45)); }
+.pi-pin svg { display: block; width: 100%; height: 100%; }
+.pi-credit { position: absolute; right: 0; bottom: 0; padding: 5px 12px; font-size: 17px; color: #222; background: rgba(255, 255, 255, 0.8); border-top-left-radius: 10px; }
 
 /* --- Status --------------------------------------------------------------------- */
 

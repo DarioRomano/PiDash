@@ -44,8 +44,14 @@ view = "clock"
 background = "moving"
 # Night mode: between these times the TV shows only a dim clock on black. Any
 # button brings the dashboard back for a minute. Leave both empty for none.
+# A time is "22:30", or follows the sun: "sunset", "sunrise", and either moved
+# by minutes, as in "sunset+120" or "sunrise-30". The sun's times are those of
+# the town under [weather], so following the sun needs the weather set up.
 night_start = ""
 night_end = ""
+# Darken the picture as the evening comes: it dims over the hour after sunset
+# and is back to normal at sunrise. "off", "light" or "strong".
+evening_dim = "off"
 clock_24h = true
 # BCP 47 locale for the date, e.g. "en-GB", "it-IT". Empty = browser default.
 locale = ""
@@ -56,6 +62,10 @@ locale = ""
 # tiles of their own: one press wakes the PC and starts that game. The list
 # is Moonlight's own; open the PC once in Moonlight to fill or refresh it.
 moonlight = true
+# The same for RetroArch: the games marked as favourites there, and the ones
+# played last, get tiles that start them directly. Needs RetroArch among the
+# apps.
+retroarch = true
 
 # --- Wi-Fi for visitors ----------------------------------------------------------
 # With a name set, the app row has a "Guest Wi-Fi" tile that shows a code to
@@ -170,6 +180,13 @@ on_this_day = false
 # to 45 seconds each. Clips over 90 MB, and ones the Pi's browser cannot play
 # (many phone videos in the HEVC format), are left out.
 videos = false
+# "About this photo" in the app row shows a map when the photo knows where it
+# was taken. The map is fetched from OpenStreetMap, which thereby learns the
+# rough area (not the photo, and not the exact spot); each piece of map is
+# fetched once and kept on the Pi. Set to false for no map.
+map = true
+# Where the map comes from: any service with tiles in the usual scheme.
+# map_tiles = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 # How often the chosen folders are checked for new photos.
 refresh = "6h"
 # Disk space for prepared photos, in MB. The oldest are removed first.

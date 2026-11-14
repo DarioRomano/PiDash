@@ -103,4 +103,64 @@ function remoteFor(page, base) {
   };
 }
 
-module.exports = { startPiDash, openPage, closeBrowser, remoteFor };
+/**
+ * A map service for the tests: every tile is a pale square with a frame, so a
+ * screenshot shows where the pieces lie. asked lists the tiles requested.
+ */
+async function startTileServer() {
+  const http = require("node:http");
+  const zlib = require("node:zlib");
+  const crc = (buf) => {
+    let c = ~0;
+    for (const b of buf) {
+      c ^= b;
+      for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
+    }
+    return ~c >>> 0;
+  };
+  const chunk = (type, data) => {
+    const head = Buffer.alloc(4);
+    head.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const sum = Buffer.alloc(4);
+    sum.writeUInt32BE(crc(body));
+    return Buffer.concat([head, body, sum]);
+  };
+  const size = 256;
+  const tile = (x, y) => {
+    const rows = Buffer.alloc(size * (1 + size * 3));
+    for (let py = 0; py < size; py++) {
+      const row = py * (1 + size * 3);
+      for (let px = 0; px < size; px++) {
+        const edge = px < 2 || py < 2;
+        const road = Math.abs(px - py) < 3 || Math.abs(px + py - size) < 2;
+        const water = (x + y) % 3 === 0 && px > 150 && py > 120;
+        const [r, g, b] = edge ? [150, 160, 170] : road ? [255, 255, 255] : water ? [170, 211, 223] : [(x + y) % 2 ? 226 : 236, 234, 214];
+        rows.set([r, g, b], row + 1 + px * 3);
+      }
+    }
+    const header = Buffer.alloc(13);
+    header.writeUInt32BE(size, 0);
+    header.writeUInt32BE(size, 4);
+    header.set([8, 2, 0, 0, 0], 8);
+    return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", header), chunk("IDAT", zlib.deflateSync(rows)), chunk("IEND", Buffer.alloc(0))]);
+  };
+  const asked = [];
+  const agents = new Set();
+  const server = http.createServer((req, res) => {
+    const m = /^\/(\d+)\/(\d+)\/(\d+)\.png$/.exec(req.url);
+    if (!m) return res.writeHead(404).end();
+    asked.push(req.url);
+    agents.add(req.headers["user-agent"]);
+    res.writeHead(200, { "Content-Type": "image/png" }).end(tile(Number(m[2]), Number(m[3])));
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  return {
+    url: `http://127.0.0.1:${server.address().port}/{z}/{x}/{y}.png`,
+    asked,
+    agents,
+    stop: () => new Promise((r) => server.close(r)),
+  };
+}
+
+module.exports = { startPiDash, openPage, closeBrowser, remoteFor, startTileServer };

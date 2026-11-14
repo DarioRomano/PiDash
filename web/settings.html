@@ -97,6 +97,8 @@
         <label class="check" id="p-pairs-row"><input id="p-pairs" type="checkbox" /><span>Show two upright photos side by side</span></label>
         <label class="check" id="p-today-row"><input id="p-today" type="checkbox" /><span>Start with photos taken on this day in earlier years</span></label>
         <label class="check" id="p-videos-row"><input id="p-videos" type="checkbox" /><span>Also show video clips, without sound</span></label>
+        <label class="check" id="p-map-row"><input id="p-map" type="checkbox" /><span>Show a map of where a photo was taken</span></label>
+        <p class="hint" id="p-map-hint">Under “About this photo” in the app row. The map comes from OpenStreetMap, which learns the rough area of the photo, nothing else.</p>
         <div id="p-hidden-row" class="pair" hidden>
           <p id="p-hidden" class="hint"></p>
           <button id="p-unhide" type="button" class="secondary">Show them again</button>
@@ -224,7 +226,10 @@
 
       <section class="card">
         <h2>Night</h2>
-        <p class="hint">Between these times the TV shows only a dim clock on black. Any button brings the dashboard back for a minute.</p>
+        <p class="hint">
+          Between these times the TV shows only a dim clock on black. Any button brings the dashboard back for a
+          minute. Times that follow the sun are those of the town under Weather, and need the weather set up.
+        </p>
         <div class="pair">
           <label class="field">
             <span>From</span>
@@ -235,16 +240,26 @@
             <select id="n-end"></select>
           </label>
         </div>
+        <label class="field">
+          <span>Dim the picture in the evening</span>
+          <select id="d-dim">
+            <option value="off">Not at all</option>
+            <option value="light">A little</option>
+            <option value="strong">A lot</option>
+          </select>
+        </label>
+        <p class="hint">The picture darkens over the hour after sunset and is back to normal at sunrise.</p>
       </section>
 
       <section class="card">
         <h2>Apps</h2>
         <p class="hint">These appear in the app row on the TV, in this order.</p>
         <ul id="app-list"></ul>
-        <label class="check"><input id="sys-games" type="checkbox" /><span>Show the games of my PC, from Moonlight, as tiles of their own</span></label>
+        <label class="check"><input id="sys-games" type="checkbox" /><span>Show games as tiles of their own</span></label>
         <p class="hint">
-          Needs Moonlight in the list above, paired with the PC. One press on a game wakes the PC and starts it.
-          The list is Moonlight's: open the PC once in Moonlight to fill or refresh it.
+          With Moonlight in the list above, paired with the PC: the games of the PC. One press wakes the PC and
+          starts the game; open the PC once in Moonlight to fill or refresh the list. With RetroArch in the list:
+          the games marked as favourites there, and the ones played last. The game played last comes first.
         </p>
 
         <div class="add">

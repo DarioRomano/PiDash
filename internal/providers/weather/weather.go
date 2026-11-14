@@ -38,9 +38,9 @@ type Options struct {
 	// StatePath remembers the looked-up place between restarts.
 	StatePath string
 
-	// ForecastURL and GeocodeURL override the Open-Meteo endpoints (tests).
-	ForecastURL, GeocodeURL string
-	HTTP                    *http.Client
+	// ForecastURL, GeocodeURL and AirURL override the Open-Meteo endpoints (tests).
+	ForecastURL, GeocodeURL, AirURL string
+	HTTP                            *http.Client
 	// Now overrides the clock (tests).
 	Now func() time.Time
 }
@@ -51,6 +51,14 @@ type Provider struct {
 
 	mu    sync.Mutex
 	place *place
+
+	// What the service turned out not to offer, so it is not asked every time.
+	noQuarters bool
+	noIndex    bool
+	// The air changes slowly and comes from a second service: asked for less
+	// often than the weather, and kept for a while when that service is away.
+	air   *Air
+	airAt time.Time
 }
 
 // place is a resolved location.
@@ -79,6 +87,9 @@ func Lookup(ctx context.Context, location string) (string, error) {
 func New(opt Options) *Provider {
 	if opt.ForecastURL == "" {
 		opt.ForecastURL = "https://api.open-meteo.com/v1/forecast"
+	}
+	if opt.AirURL == "" {
+		opt.AirURL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 	}
 	if opt.GeocodeURL == "" {
 		opt.GeocodeURL = "https://geocoding-api.open-meteo.com/v1/search"
@@ -117,6 +128,46 @@ type State struct {
 	Hourly []Hour `json:"hourly"`
 	// Daily starts today.
 	Daily []Day `json:"daily"`
+	// Rain says whether it rains in the next two hours, and from when to when.
+	// Nil when the service has nothing that fine for the place.
+	Rain *Rain `json:"rain,omitempty"`
+	// Air is the air quality and the pollen. Nil when it is not known.
+	Air *Air `json:"air,omitempty"`
+}
+
+// Rain is the next two hours in quarters of an hour.
+type Rain struct {
+	// Now is whether it is raining (or snowing) at the moment.
+	Now bool `json:"now"`
+	// Starts is when it begins, while it is dry; empty when it stays dry.
+	Starts string `json:"starts,omitempty"`
+	// Stops is when it ends, while it rains; empty when it goes on.
+	Stops string `json:"stops,omitempty"`
+	// Snow is whether what falls is snow.
+	Snow bool `json:"snow,omitempty"`
+}
+
+// Air is the air quality now.
+type Air struct {
+	// Index is the number of the scale in use: the European index ("eu",
+	// 0 to 100 and beyond) or the US one ("us", 0 to 500).
+	Index int    `json:"index"`
+	Scale string `json:"scale"`
+	// Level runs from 0 (good) to 5 (as bad as the scale goes).
+	Level int     `json:"level"`
+	PM25  float64 `json:"pm25"`
+	PM10  float64 `json:"pm10"`
+	// Pollen lists what is in the air, strongest first; empty out of season
+	// and outside Europe, where the service has no pollen.
+	Pollen []Pollen `json:"pollen"`
+}
+
+// Pollen is one kind of pollen.
+type Pollen struct {
+	// Kind is alder, birch, olive, grass, mugwort or ragweed.
+	Kind string `json:"kind"`
+	// Level is 1 (a little), 2 (moderate) or 3 (a lot).
+	Level int `json:"level"`
 }
 
 // Units are the unit labels matching the numbers in State.
@@ -170,7 +221,13 @@ func (p *Provider) Fetch(ctx context.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return p.forecast(ctx, pl)
+	st, err := p.forecast(ctx, pl)
+	if err != nil {
+		return nil, err
+	}
+	// The weather stands on its own: no air, no harm.
+	st.Air = p.airNow(ctx, pl)
+	return st, nil
 }
 
 // resolve returns the coordinates to ask the forecast for.
@@ -215,6 +272,10 @@ func (p *Provider) resolve(ctx context.Context) (place, error) {
 	return pl, nil
 }
 
+// errRefused is a request the service understood and said no to, such as one
+// asking for something it does not know.
+var errRefused = errors.New("refused")
+
 func (p *Provider) getJSON(ctx context.Context, rawURL string, query url.Values, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL+"?"+query.Encode(), nil)
 	if err != nil {
@@ -238,7 +299,7 @@ func (p *Provider) getJSON(ctx context.Context, rawURL string, query url.Values,
 			Reason string `json:"reason"`
 		}
 		if json.Unmarshal(body, &apiErr) == nil && apiErr.Reason != "" {
-			return fmt.Errorf("the weather service refused the request: %s", apiErr.Reason)
+			return fmt.Errorf("the weather service %w the request: %s", errRefused, apiErr.Reason)
 		}
 		return fmt.Errorf("the weather service answered HTTP %d", resp.StatusCode)
 	}
@@ -326,6 +387,10 @@ type apiForecast struct {
 		UVIndexMax   []*float64 `json:"uv_index_max"`
 		WindSpeedMax []*float64 `json:"wind_speed_10m_max"`
 	} `json:"daily"`
+	Quarters struct {
+		Time          []string   `json:"time"`
+		Precipitation []*float64 `json:"precipitation"`
+	} `json:"minutely_15"`
 }
 
 func at(vals []*float64, i int) (float64, bool) {
@@ -368,8 +433,27 @@ func (p *Provider) forecast(ctx context.Context, pl place) (State, error) {
 		"wind_speed_unit":    {windUnit},
 		"precipitation_unit": {precipUnit},
 	}
+	p.mu.Lock()
+	quarters := !p.noQuarters
+	p.mu.Unlock()
+	if quarters {
+		q.Set("minutely_15", "precipitation")
+		q.Set("forecast_minutely_15", strconv.Itoa(quartersAhead))
+	}
 	var api apiForecast
-	if err := p.getJSON(ctx, p.opt.ForecastURL, q, &api); err != nil {
+	err := p.getJSON(ctx, p.opt.ForecastURL, q, &api)
+	if quarters && errors.Is(err, errRefused) {
+		// Rather the weather without the quarter-hours than no weather.
+		q.Del("minutely_15")
+		q.Del("forecast_minutely_15")
+		api = apiForecast{}
+		if err = p.getJSON(ctx, p.opt.ForecastURL, q, &api); err == nil {
+			p.mu.Lock()
+			p.noQuarters = true
+			p.mu.Unlock()
+		}
+	}
+	if err != nil {
 		return State{}, err
 	}
 	if api.Current.Time == "" || len(api.Daily.Time) == 0 {
@@ -444,5 +528,64 @@ func (p *Provider) forecast(ctx context.Context, pl place) (State, error) {
 			WindSpeedMax:             atOr(api.Daily.WindSpeedMax, i),
 		})
 	}
+	st.Rain = rainSoon(&api, st.Hourly, loc, p.opt.Now(), p.opt.Units == Imperial)
 	return st, nil
+}
+
+// quartersAhead is how far "rain soon" looks: two hours.
+const quartersAhead = 8
+
+// rainSoon reads the quarter-hours from now on.
+func rainSoon(api *apiForecast, hours []Hour, loc *time.Location, now time.Time, inches bool) *Rain {
+	// Less than this in a quarter of an hour is not rain anyone would notice.
+	wet := 0.1
+	if inches {
+		wet = 0.004
+	}
+	type quarter struct {
+		at  time.Time
+		wet bool
+	}
+	var ahead []quarter
+	for i, s := range api.Quarters.Time {
+		t, err := time.ParseInLocation(localLayout, s, loc)
+		v, ok := at(api.Quarters.Precipitation, i)
+		if err != nil || !ok || !t.Add(15*time.Minute).After(now) {
+			continue
+		}
+		ahead = append(ahead, quarter{t, v >= wet})
+		if len(ahead) == quartersAhead {
+			break
+		}
+	}
+	// Not without the quarter that is running now: the rest says nothing about "now".
+	if len(ahead) < 4 || ahead[0].at.After(now) {
+		return nil
+	}
+	rain := &Rain{Now: ahead[0].wet}
+	change := time.Time{}
+	for _, q := range ahead[1:] {
+		if q.wet != rain.Now {
+			change = q.at
+			break
+		}
+	}
+	if !change.IsZero() {
+		if rain.Now {
+			rain.Stops = change.Format(time.RFC3339)
+		} else {
+			rain.Starts = change.Format(time.RFC3339)
+		}
+	}
+	// Snow or rain: what the forecast says for the hour in question.
+	when := now
+	if rain.Starts != "" {
+		when = change
+	}
+	for _, h := range hours {
+		if t, err := time.Parse(time.RFC3339, h.Time); err == nil && !t.After(when) && t.Add(time.Hour).After(when) {
+			rain.Snow = (h.Code >= 71 && h.Code <= 77) || h.Code == 85 || h.Code == 86
+		}
+	}
+	return rain
 }

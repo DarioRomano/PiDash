@@ -25,8 +25,10 @@ import (
 	"github.com/DarioRomano/PiDash/internal/input"
 	"github.com/DarioRomano/PiDash/internal/kiosk"
 	"github.com/DarioRomano/PiDash/internal/logring"
+	"github.com/DarioRomano/PiDash/internal/maps"
 	"github.com/DarioRomano/PiDash/internal/photos"
 	"github.com/DarioRomano/PiDash/internal/playing"
+	"github.com/DarioRomano/PiDash/internal/power"
 	"github.com/DarioRomano/PiDash/internal/providers"
 	"github.com/DarioRomano/PiDash/internal/providers/calendar"
 	"github.com/DarioRomano/PiDash/internal/providers/system"
@@ -288,6 +290,13 @@ func main() {
 		audio = &sound.Pactl{}
 	}
 
+	// Restarting the Pi and switching it off, from the app row. In
+	// development the computer is left alone.
+	var powerControl power.Control = &power.Mock{}
+	if !*mock {
+		powerControl = &power.System{Log: log}
+	}
+
 	// What music is playing, for the dashboard.
 	var player server.Player
 	var follow func(context.Context)
@@ -388,7 +397,7 @@ func main() {
 		Kiosk: kioskControl, Apps: appManager, Photos: photoService,
 		Input: phoneInput, TV: tvService, Version: version, NewRunner: newRunner, Updater: updater, PhotoStatePath: photoStatePath(), TestHooks: *mock,
 		Notices: notices, URLFile: server.URLFile(), Settings: store, BaseListen: baseListen,
-		Remote: remote, Problems: problems, Bluetooth: blue, Sound: audio, Watchdog: watchdog, Playing: player, Games: library,
+		Remote: remote, Problems: problems, Bluetooth: blue, Sound: audio, Watchdog: watchdog, Playing: player, Games: library, Power: powerControl, Maps: mapTiles(cfg, version),
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -433,22 +442,30 @@ func main() {
 // runApp replaces this process with the command of the configured app. It is
 // what the systemd units for both launch modes execute, so an app's command
 // lives only in config.toml.
-// gameLibrary returns the games of the PC, if Moonlight is one of the apps
-// and its games are wanted as tiles; nil otherwise.
+// gameLibrary returns the games that get tiles of their own: those of the
+// PC, if Moonlight is one of the apps, and those of RetroArch, if that is.
+// Nil when neither is set up or wanted.
 func gameLibrary(cfg config.Config, log *slog.Logger) *games.Library {
-	if !cfg.Games.Moonlight {
-		return nil
-	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil
 	}
+	library := &games.Library{Home: home, Log: log}
 	for _, a := range cfg.Apps {
-		if games.IsMoonlight(a) {
-			return &games.Library{Home: home, Moonlight: a, Log: log}
+		if cfg.Games.Moonlight && library.Moonlight.Command == "" && games.IsMoonlight(a) {
+			library.Moonlight = a
+		}
+		if cfg.Games.RetroArch && library.RetroArch.Command == "" && games.IsRetroArch(a) {
+			library.RetroArch = a
 		}
 	}
-	return nil
+	if library.Moonlight.Command == "" && library.RetroArch.Command == "" {
+		return nil
+	}
+	if dataDir, err := apps.DataDir(); err == nil {
+		library.PlayedPath = filepath.Join(dataDir, "games-played.json")
+	}
+	return library
 }
 
 func runApp(cfg config.Config, id string, log *slog.Logger) error {
@@ -486,6 +503,20 @@ func runApp(cfg config.Config, id string, log *slog.Logger) error {
 		return syscall.Exec("/bin/sh", []string{"sh", "-c", a.Command}, env)
 	}
 	return fmt.Errorf("no app with id %q in the config", id)
+}
+
+// mapTiles is the store of the map shown beside a photo, or nil when no map
+// is wanted.
+func mapTiles(cfg config.Config, version string) *maps.Tiles {
+	if !cfg.Photos.Map {
+		return nil
+	}
+	cacheRoot, err := os.UserCacheDir()
+	if err != nil {
+		return nil
+	}
+	// The map service asks every program to say what it is.
+	return maps.New(cfg.Photos.MapTiles, filepath.Join(cacheRoot, "pidash", "map"), "PiDash/"+version+" (TV dashboard; https://github.com/DarioRomano/PiDash)")
 }
 
 // photoStatePath is where the slideshow of a real photo source keeps its state.

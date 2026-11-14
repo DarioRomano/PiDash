@@ -50,12 +50,25 @@ func (Mock) Folders(_ context.Context, parent string) ([]Folder, error) {
 // Items implements Source.
 func (Mock) Items(_ context.Context, folder Folder) ([]Item, error) {
 	var out []Item
+	// The samples were "taken" somewhere, except those of the family.
+	where := map[string]struct {
+		place    string
+		lat, lon float64
+	}{
+		"Holidays/Coast":     {"Cascais, Portugal", 38.6968, -9.4215},
+		"Holidays/Mountains": {"Zermatt, Switzerland", 46.0207, 7.7491},
+	}[folder.ID]
 	for i := 0; i < 6; i++ {
 		key := fmt.Sprintf("m-%s-%d", strings.ToLower(strings.ReplaceAll(folder.ID, "/", "-")), i)
 		out = append(out, Item{
 			Key: key, Name: fmt.Sprintf("sample-%d.jpg", i+1), Folder: folder.Path,
 			Taken: time.Date(2024, time.Month(1+i*2), 3+i, 12, 0, 0, 0, time.UTC), Version: "1", ID: key,
+			Place: where.place, WallClock: true,
 		})
+		if where.place != "" {
+			at := &out[len(out)-1]
+			at.Located, at.Latitude, at.Longitude = true, where.lat+float64(i)*0.004, where.lon+float64(i)*0.006
+		}
 	}
 	return out, nil
 }

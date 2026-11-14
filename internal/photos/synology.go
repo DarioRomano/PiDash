@@ -40,6 +40,8 @@ type Synology struct {
 
 	// noAddress is set once the NAS has refused to list place names.
 	noAddress atomic.Bool
+	// noGPS is set once it has refused to list positions.
+	noGPS atomic.Bool
 }
 
 // SynologyOptions configure the connection to the NAS.
@@ -416,8 +418,13 @@ type rawItem struct {
 			CacheKey string `json:"cache_key"`
 			UnitID   int    `json:"unit_id"`
 		} `json:"thumbnail"`
-		// Address is where the photo was taken, when it carries a position.
+		// Address is where the photo was taken, when it carries a position;
+		// GPS the position itself.
 		Address map[string]any `json:"address"`
+		GPS     *struct {
+			Latitude  float64 `json:"latitude"`
+			Longitude float64 `json:"longitude"`
+		} `json:"gps"`
 	} `json:"additional"`
 }
 
@@ -463,17 +470,24 @@ func (s *Synology) listItems(ctx context.Context, api string, where url.Values, 
 			data.List = nil
 			return s.call(ctx, params, &data)
 		}
-		// Place names are a bonus: a NAS that does not offer them for this
-		// list is asked without, from then on.
+		// Places are a bonus: a NAS that does not offer positions, or place
+		// names, for this list is asked without, from then on.
 		err := errors.New("without places")
-		if !s.noAddress.Load() {
-			if err = list(`["thumbnail","address"]`); err != nil {
-				var apiErr *synoError
-				if !errors.As(err, &apiErr) || isSessionError(err) {
-					return out, err
-				}
-				s.noAddress.Store(true)
+		for _, try := range []struct {
+			additional string
+			gave       *atomic.Bool
+		}{{`["thumbnail","address","gps"]`, &s.noGPS}, {`["thumbnail","address"]`, &s.noAddress}} {
+			if try.gave.Load() {
+				continue
 			}
+			if err = list(try.additional); err == nil {
+				break
+			}
+			var apiErr *synoError
+			if !errors.As(err, &apiErr) || isSessionError(err) {
+				return out, err
+			}
+			try.gave.Store(true)
 		}
 		if err != nil {
 			if err = list(`["thumbnail"]`); err != nil {
@@ -496,16 +510,23 @@ func (s *Synology) listItems(ctx context.Context, api string, where url.Values, 
 				name += ".live" // the full file may be a video container: always use the preview
 			}
 			space, suffix := place(it)
+			var lat, lon float64
+			if g := it.Additional.GPS; g != nil && !(g.Latitude == 0 && g.Longitude == 0) {
+				lat, lon = g.Latitude, g.Longitude
+			}
 			out = append(out, Item{
-				Key:     space + "-" + strconv.Itoa(it.ID),
-				Name:    name,
-				Folder:  label,
-				Taken:   time.Unix(it.Time, 0).UTC(),
-				Place:   placeName(it.Additional.Address),
-				Video:   isVideo,
-				Size:    it.Filesize,
-				Version: it.Additional.Thumbnail.CacheKey,
-				ID:      space + ":" + strconv.Itoa(unit) + suffix,
+				Located: lat != 0 || lon != 0, Latitude: lat, Longitude: lon,
+				// The NAS keeps the time on the camera's clock, as if it were UTC.
+				WallClock: true,
+				Key:       space + "-" + strconv.Itoa(it.ID),
+				Name:      name,
+				Folder:    label,
+				Taken:     time.Unix(it.Time, 0).UTC(),
+				Place:     placeName(it.Additional.Address),
+				Video:     isVideo,
+				Size:      it.Filesize,
+				Version:   it.Additional.Thumbnail.CacheKey,
+				ID:        space + ":" + strconv.Itoa(unit) + suffix,
 			})
 		}
 		if len(data.List) < page {

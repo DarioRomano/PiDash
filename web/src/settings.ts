@@ -62,10 +62,11 @@ interface Info {
     pairPortraits: boolean;
     onThisDay: boolean;
     videos: boolean;
+    map: boolean;
     synology: { url: string; username: string; passwordSet: boolean; insecureTls: boolean; quality: string };
     folderPath: string;
   };
-  screen: { nightStart: string; nightEnd: string; language: string; clockPosition: string; clockSize: string; clockStyle?: string; view: string; background: string; sounds?: boolean };
+  screen: { nightStart: string; nightEnd: string; language: string; clockPosition: string; clockSize: string; clockStyle?: string; eveningDim?: string; view: string; background: string; sounds?: boolean };
   calendar: { links: CalendarLink[] };
   home: { url: string; tokenSet: boolean; entities: string[] };
   system: { autoUpdate: boolean; cooling?: boolean; soundFollows?: boolean; games?: boolean };
@@ -169,6 +170,7 @@ function readForm() {
       pairPortraits: $<HTMLInputElement>("p-pairs").checked,
       onThisDay: $<HTMLInputElement>("p-today").checked,
       videos: $<HTMLInputElement>("p-videos").checked,
+      map: $<HTMLInputElement>("p-map").checked,
       synology: {
         url: val("s-url").trim(),
         username: val("s-user").trim(),
@@ -184,6 +186,7 @@ function readForm() {
       clockPosition: val("d-position"),
       clockSize: val("d-size"),
       clockStyle: val("d-style"),
+      eveningDim: val("d-dim"),
       view: val("d-view"),
       background: val("d-background"),
       sounds: $<HTMLInputElement>("d-sounds").checked,
@@ -253,6 +256,7 @@ function fill(i: Info) {
   $<HTMLSelectElement>("p-motion").value = i.photos.motion || "off";
   $<HTMLInputElement>("p-pairs").checked = !!i.photos.pairPortraits;
   $<HTMLInputElement>("p-today").checked = !!i.photos.onThisDay;
+  $<HTMLInputElement>("p-map").checked = !!i.photos.map;
   $<HTMLInputElement>("p-videos").checked = !!i.photos.videos;
   const language = $<HTMLSelectElement>("d-language");
   language.replaceChildren(...Object.entries(LANGUAGES).map(([code, name]) => new Option(name, code)));
@@ -265,8 +269,9 @@ function fill(i: Info) {
   $<HTMLSelectElement>("d-background").value = i.screen.background || "moving";
   $<HTMLInputElement>("d-sounds").checked = i.screen.sounds ?? true;
   setSounds(i.screen.sounds ?? true);
-  fillTimes($<HTMLSelectElement>("n-start"), i.screen.nightStart, "Off");
-  fillTimes($<HTMLSelectElement>("n-end"), i.screen.nightEnd || "07:00");
+  fillTimes($<HTMLSelectElement>("n-start"), i.screen.nightStart, "Off", "start");
+  fillTimes($<HTMLSelectElement>("n-end"), i.screen.nightEnd || "07:00", undefined, "end");
+  $<HTMLSelectElement>("d-dim").value = i.screen.eveningDim || "off";
   void showHidden();
 
   apps = i.apps.map((a) => ({ ...a }));
@@ -586,13 +591,37 @@ $("h-add-btn").addEventListener("click", () => {
 // --- Night hours and hidden photos ------------------------------------------------
 
 /** Fills a list with the times of day in half-hour steps, keeping an odd saved time. */
-function fillTimes(sel: HTMLSelectElement, value: string, off?: string) {
+/** Times that follow the sun, offered before the times of the clock. */
+const SUN_TIMES: Record<"start" | "end", [string, string][]> = {
+  start: [
+    ["sunset", "At sunset"],
+    ["sunset+60", "1 hour after sunset"],
+    ["sunset+120", "2 hours after sunset"],
+    ["sunset+180", "3 hours after sunset"],
+  ],
+  end: [
+    ["sunrise-60", "1 hour before sunrise"],
+    ["sunrise", "At sunrise"],
+    ["sunrise+60", "1 hour after sunrise"],
+  ],
+};
+
+function fillTimes(sel: HTMLSelectElement, value: string, off?: string, sun?: "start" | "end") {
   const times: string[] = [];
   for (let m = 0; m < 24 * 60; m += 30) times.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`);
-  const padded = value && value.length === 4 ? "0" + value : value;
-  if (padded && !times.includes(padded)) times.push(padded);
+  const padded = value && /^\d:\d\d$/.test(value) ? "0" + value : value;
+  const sunTimes = sun ? SUN_TIMES[sun] : [];
+  // A time set by hand in config.toml that is not on the list, such as
+  // "sunset+45", is offered as it is.
+  const known = times.includes(padded) || sunTimes.some(([v]) => v === padded);
+  if (padded && !known && /^\d\d:\d\d$/.test(padded)) times.push(padded);
   times.sort();
-  sel.replaceChildren(...(off ? [new Option(off, "")] : []), ...times.map((t) => new Option(t, t)));
+  sel.replaceChildren(
+    ...(off ? [new Option(off, "")] : []),
+    ...sunTimes.map(([v, label]) => new Option(label, v)),
+    ...(padded && !known && !/^\d\d:\d\d$/.test(padded) ? [new Option(padded, padded)] : []),
+    ...times.map((t) => new Option(t, t)),
+  );
   sel.value = padded;
 }
 
@@ -856,7 +885,7 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
-for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "n-start", "n-end", "h-url", "h-token", "sys-auto", "sys-cool", "snd-follow", "sys-games", "l-pin", "wf-name", "wf-pass", "wf-open", "wf-hidden", "d-language", "d-position", "d-size", "d-style", "d-view", "d-background", "d-sounds"]) {
+for (const id of ["w-location", "w-units", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "p-map", "n-start", "n-end", "h-url", "h-token", "sys-auto", "sys-cool", "snd-follow", "sys-games", "l-pin", "wf-name", "wf-pass", "wf-open", "wf-hidden", "d-language", "d-position", "d-size", "d-style", "d-dim", "d-view", "d-background", "d-sounds"]) {
   $(id).addEventListener("input", refresh);
   $(id).addEventListener("change", refresh);
 }

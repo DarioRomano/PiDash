@@ -50,6 +50,15 @@ type Item struct {
 	Taken  time.Time `json:"taken"`
 	// Place is where the photo was taken, when the source knows: "Lisbon, Portugal".
 	Place string `json:"place,omitempty"`
+	// Located says that Latitude and Longitude hold where the photo was taken.
+	Located   bool    `json:"-"`
+	Latitude  float64 `json:"-"`
+	Longitude float64 `json:"-"`
+	// WallClock says that Taken is the time the camera's clock showed, written
+	// down as if it were UTC, since the camera did not say where it was.
+	WallClock bool `json:"-"`
+	// Favourite is set on the photos handed out in slides.
+	Favourite bool `json:"favourite,omitempty"`
 	// Video marks a video clip; Size is its file size in bytes, when known.
 	Video bool  `json:"video,omitempty"`
 	Size  int64 `json:"-"`
@@ -106,6 +115,10 @@ type Status struct {
 	Pairs int `json:"pairs"`
 	// Hidden is the number of photos the person chose never to see again.
 	Hidden int `json:"hidden"`
+	// Favourites is the number of favourites in the slideshow;
+	// OnlyFavourites whether nothing else is shown.
+	Favourites     int  `json:"favourites"`
+	OnlyFavourites bool `json:"onlyFavourites"`
 }
 
 // Options configure a Service.
@@ -161,6 +174,9 @@ type Service struct {
 
 	// hidden are the keys of photos the person chose never to see again.
 	hidden map[string]bool
+	// favourites are the keys of the photos the person likes best.
+	favourites     map[string]bool
+	onlyFavourites bool
 
 	// shapes records which photos are upright, by shapeKey; pairs counts how
 	// often that knowledge grew. partners is the pairing worked out from it.
@@ -211,6 +227,7 @@ func New(opt Options) *Service {
 	s.selection = sel
 	s.loadShapes()
 	s.loadHidden()
+	s.loadFavourites()
 	return s
 }
 
@@ -246,6 +263,8 @@ func (s *Service) statusLocked() Status {
 		MotionZoom:      WholeZoom,
 		Pairs:           s.pairs,
 		Hidden:          len(s.hidden),
+		Favourites:      s.favouritesLocked(),
+		OnlyFavourites:  s.onlyFavourites,
 	}
 }
 
@@ -537,11 +556,15 @@ type Slide struct {
 func (s *Service) Slides(limit int) (version int, slides []Slide) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	n := len(s.items)
-	if limit <= 0 || limit > n {
+	asked := limit
+	order := rand.Perm(len(s.items))
+	only := s.onlyFavourites && s.favouritesLocked() > 0
+	if only {
+		order = s.favouriteOrderLocked()
+	}
+	if n := len(order); limit <= 0 || limit > n {
 		limit = n
 	}
-	order := rand.Perm(n)
 	if s.opt.OnThisDay {
 		// Photos from this day in earlier years come first, still shuffled
 		// among themselves; the rest follow.
@@ -553,7 +576,11 @@ func (s *Service) Slides(limit int) (version int, slides []Slide) {
 			return onThisDay(s.items[order[a]].Taken, now) && !onThisDay(s.items[order[b]].Taken, now)
 		})
 	}
-	return s.version, s.slidesLocked(order, limit)
+	slides = s.slidesLocked(order, limit)
+	if !only {
+		slides = s.withFavouritesLocked(slides, asked)
+	}
+	return s.version, slides
 }
 
 // SlidesFrom returns the photos of one folder or album in the order they
@@ -616,9 +643,11 @@ func (s *Service) slidesLocked(order []int, limit int) []Slide {
 			continue
 		}
 		used[item.Key] = true
+		item.Favourite = s.favourites[item.Key]
 		if p, ok := partners[item.Key]; ok && !used[p.other.Key] {
 			used[p.other.Key] = true
 			left, right := item, p.other
+			right.Favourite = s.favourites[right.Key]
 			if !p.first {
 				left, right = right, left
 			}
@@ -783,8 +812,9 @@ func (s *Service) ShowHidden() error {
 // State is what a backup keeps of the slideshow: which folders and albums
 // were chosen, and which photos are hidden.
 type State struct {
-	Selection Selection `json:"selection"`
-	Hidden    []string  `json:"hidden"`
+	Selection  Selection `json:"selection"`
+	Hidden     []string  `json:"hidden"`
+	Favourites []string  `json:"favourites,omitempty"`
 }
 
 // Export returns the slideshow's state for a backup.
@@ -796,6 +826,7 @@ func (s *Service) Export() State {
 		st.Hidden = append(st.Hidden, k)
 	}
 	sort.Strings(st.Hidden)
+	st.Favourites = s.favouriteKeysLocked()
 	return st
 }
 
@@ -806,11 +837,17 @@ func WriteState(statePath string, st State) error {
 	if statePath == "" {
 		return nil
 	}
-	tmp := &Service{opt: Options{StatePath: statePath}, hidden: map[string]bool{}}
+	tmp := &Service{opt: Options{StatePath: statePath}, hidden: map[string]bool{}, favourites: map[string]bool{}}
 	for _, k := range st.Hidden {
 		tmp.hidden[k] = true
 	}
+	for _, k := range st.Favourites {
+		tmp.favourites[k] = true
+	}
 	if err := tmp.saveSelection(st.Selection); err != nil {
+		return err
+	}
+	if err := tmp.saveFavouritesLocked(); err != nil {
 		return err
 	}
 	return tmp.saveHiddenLocked()

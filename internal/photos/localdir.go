@@ -157,6 +157,16 @@ func (l *LocalDir) Peek(_ context.Context, item Item) ([]byte, bool, error) {
 	return data, false, err
 }
 
+// Details implements Detailer: the camera wrote the time and, if it knew,
+// the place into the start of the file.
+func (l *LocalDir) Details(ctx context.Context, item Item) (Extra, error) {
+	data, _, err := l.Peek(ctx, item)
+	if err != nil {
+		return Extra{}, err
+	}
+	return readExtra(data), nil
+}
+
 // Fetch implements Source.
 func (l *LocalDir) Fetch(_ context.Context, item Item, _ bool) ([]byte, bool, error) {
 	p, err := l.abs(item.ID)

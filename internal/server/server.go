@@ -29,8 +29,10 @@ import (
 	"github.com/DarioRomano/PiDash/internal/input"
 	"github.com/DarioRomano/PiDash/internal/kiosk"
 	"github.com/DarioRomano/PiDash/internal/logring"
+	"github.com/DarioRomano/PiDash/internal/maps"
 	"github.com/DarioRomano/PiDash/internal/photos"
 	"github.com/DarioRomano/PiDash/internal/playing"
+	"github.com/DarioRomano/PiDash/internal/power"
 	"github.com/DarioRomano/PiDash/internal/providers"
 	"github.com/DarioRomano/PiDash/internal/providers/calendar"
 	"github.com/DarioRomano/PiDash/internal/providers/weather"
@@ -57,8 +59,10 @@ type Server struct {
 	bluetooth bluetooth.Manager
 	sound     sound.Manager
 	watchdog  *kiosk.Watchdog
+	maps      *maps.Tiles
 	player    Player
 	games     *games.Library
+	power     power.Control
 	// lastSound is what the dashboard was last told about the sound outputs,
 	// for pages that connect later.
 	soundMu    sync.Mutex
@@ -107,12 +111,16 @@ type Deps struct {
 	Bluetooth bluetooth.Manager
 	// Sound chooses the sound output and its volume; may be nil.
 	Sound sound.Manager
+	// Maps holds the map shown beside a photo; nil when no map is wanted.
+	Maps *maps.Tiles
 	// Watchdog is told when the dashboard on the TV reports in; may be nil.
 	Watchdog *kiosk.Watchdog
 	// Playing knows what music is playing; may be nil.
 	Playing Player
 	// Games wakes the PC before one of its games is started; may be nil.
 	Games *games.Library
+	// Power restarts the Pi or switches it off; may be nil.
+	Power power.Control
 	// Version is the PiDash version, shown on the phone remote.
 	Version string
 	// Notices are start-up problems to show on the TV.
@@ -145,6 +153,7 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("GET /api/status", s.handleStatus)
 	s.mux.HandleFunc("POST /api/alive", s.handleAlive)
 	s.mux.HandleFunc("GET /api/wifi", s.handleWifi)
+	s.mux.HandleFunc("POST /api/power/{action}", s.handlePower)
 	s.mux.HandleFunc("GET /api/playing", s.handlePlaying)
 	s.mux.HandleFunc("GET /api/playing/art", s.handlePlayingArt)
 	s.mux.HandleFunc("POST /api/playing/{button}", s.handlePlayingControl)
@@ -173,6 +182,12 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 		})
 	}
 	if d.TestHooks {
+		// What the Pi was asked to do with its power, for the end-to-end tests.
+		s.mux.HandleFunc("GET /api/test/power", func(w http.ResponseWriter, _ *http.Request) {
+			if m, ok := s.power.(*power.Mock); ok {
+				fmt.Fprint(w, m.Done())
+			}
+		})
 		// Back held on the remote while an app is open.
 		s.mux.HandleFunc("POST /api/test/leave", func(w http.ResponseWriter, r *http.Request) {
 			if err := s.apps.Leave(r.Context()); err != nil {
@@ -229,6 +244,10 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("POST /api/photos/unplayable", s.handleUnplayable)
 	s.mux.HandleFunc("POST /api/photos/hide", s.handlePhotoHide)
 	s.mux.HandleFunc("POST /api/photos/unhide", s.handlePhotoUnhide)
+	s.mux.HandleFunc("POST /api/photos/favourite", s.handlePhotoFavourite)
+	s.mux.HandleFunc("POST /api/photos/only-favourites", s.handlePhotoOnlyFavourites)
+	s.mux.HandleFunc("GET /api/photos/info", s.handlePhotoInfo)
+	s.mux.HandleFunc("GET /api/map/{z}/{x}/{y}", s.handleMapTile)
 	s.mux.HandleFunc("GET /photos/{key}", s.handlePhotoImage)
 	s.mux.HandleFunc("GET /photos", s.servePage("photos.html"))
 	d.TV.OnChange(func(st tv.Status) { s.hub.broadcast("tv", st) })
@@ -250,7 +269,8 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("POST /api/home/activate", s.handleHomeActivate)
 	s.updater = d.Updater
 	s.remote, s.problems, s.bluetooth, s.sound, s.watchdog = d.Remote, d.Problems, d.Bluetooth, d.Sound, d.Watchdog
-	s.player, s.games = d.Playing, d.Games
+	s.maps = d.Maps
+	s.player, s.games, s.power = d.Playing, d.Games, d.Power
 	s.mux.HandleFunc("GET /api/update", s.handleUpdate)
 	s.mux.HandleFunc("POST /api/update/check", s.handleUpdate)
 	s.mux.HandleFunc("POST /api/update/install", s.handleUpdateInstall)
@@ -519,6 +539,10 @@ func (s *Server) handleAppStart(w http.ResponseWriter, r *http.Request) {
 		s.log.Error("app start", "app", req.ID, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if s.games != nil {
+		// The game played last comes first in the row from now on.
+		s.games.Played(req.ID)
 	}
 	writeJSON(w, s.apps.Status())
 }
@@ -1135,6 +1159,8 @@ type playlistItem struct {
 	Taken  time.Time `json:"taken"`
 	Place  string    `json:"place,omitempty"`
 	Video  bool      `json:"video,omitempty"`
+	// Favourite says that every photo on the slide is a favourite.
+	Favourite bool `json:"favourite,omitempty"`
 	// V changes when the photo is edited, so the browser does not show a stale copy.
 	V string `json:"v"`
 }
@@ -1159,15 +1185,16 @@ func (s *Server) handlePhotoPlaylist(w http.ResponseWriter, r *http.Request) {
 			// A slide is one photo, or two upright ones side by side; the
 			// caption comes from the first.
 			first := slide.Items[0]
-			name, versions := first.Name, ""
+			name, versions, favourite := first.Name, "", true
 			for i, it := range slide.Items {
+				favourite = favourite && it.Favourite
 				versions += it.Version + "|"
 				if i > 0 {
 					name += " + " + it.Name
 				}
 			}
 			sum := sha1.Sum([]byte(versions + s.photos.Variant()))
-			out.Items = append(out.Items, playlistItem{Key: slide.Key, Name: name, Folder: first.Folder, Taken: first.Taken, Place: first.Place, Video: first.Video, V: hex.EncodeToString(sum[:4])})
+			out.Items = append(out.Items, playlistItem{Key: slide.Key, Name: name, Folder: first.Folder, Taken: first.Taken, Place: first.Place, Video: first.Video, Favourite: favourite, V: hex.EncodeToString(sum[:4])})
 		}
 	}
 	writeJSON(w, out)

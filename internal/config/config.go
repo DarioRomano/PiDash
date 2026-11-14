@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"github.com/DarioRomano/PiDash/internal/maps"
 	"net/url"
 	"os"
 	"regexp"
@@ -145,6 +146,9 @@ type Display struct {
 	// dashboard shows only a dim clock on black. Both empty switches it off.
 	NightStart string `toml:"night_start" json:"night_start"`
 	NightEnd   string `toml:"night_end" json:"night_end"`
+	// EveningDim darkens the picture as the evening comes, from sunset on:
+	// "off" (default), "light" or "strong".
+	EveningDim string `toml:"evening_dim" json:"evening_dim"`
 	// Language of everything on screen: "en", "de", "fr" or "it".
 	Language string `toml:"language" json:"language"`
 	// ClockPosition is the corner the clock sits in: "bottom-left" (default),
@@ -206,6 +210,9 @@ type Games struct {
 	// Moonlight shows the games of the PCs Moonlight is paired with as
 	// tiles of their own, next to the apps.
 	Moonlight bool `toml:"moonlight"`
+	// RetroArch shows the games marked as favourites in RetroArch, and the
+	// ones played there last, as tiles of their own.
+	RetroArch bool `toml:"retroarch"`
 }
 
 // Wifi is the network visitors may use. Its name and password are shown on
@@ -241,6 +248,10 @@ type TV struct {
 }
 
 var clockPattern = regexp.MustCompile(`^([01]?\d|2[0-3]):[0-5]\d$`)
+
+// sunPattern matches a time that follows the sun: "sunset", "sunrise", and
+// either moved by minutes, as in "sunset+90" or "sunrise-30".
+var sunPattern = regexp.MustCompile(`^(sunrise|sunset)([+-]\d{1,3})?$`)
 
 // System configures the system-stats provider.
 type System struct {
@@ -324,6 +335,10 @@ type Photos struct {
 	OnThisDay bool `toml:"on_this_day"`
 	// Videos also shows short video clips, without sound.
 	Videos bool `toml:"videos"`
+	// Map shows a map beside a photo that knows where it was taken. The map
+	// comes from MapTiles, a web address with {z}, {x} and {y} in it.
+	Map      bool   `toml:"map"`
+	MapTiles string `toml:"map_tiles"`
 	// CacheMB limits the disk space used for rendered photos.
 	CacheMB  int            `toml:"cache_mb"`
 	Synology SynologyPhotos `toml:"synology"`
@@ -464,13 +479,15 @@ func Default() Config {
 		Kiosk:    Kiosk{Unit: "pidash-kiosk.service", Watchdog: true},
 		TV:       TV{WakeOnController: true, ControllerVolume: true, VolumeTo: "tv"},
 		Sound:    Sound{FollowBluetooth: true},
-		Games:    Games{Moonlight: true},
+		Games:    Games{Moonlight: true, RetroArch: true},
 		Weather:  Weather{Units: "metric", Interval: Duration{15 * time.Minute}},
 		Calendar: Calendar{Days: 14},
 		Photos: Photos{
 			Interval: Duration{30 * time.Second},
 			Refresh:  Duration{6 * time.Hour},
 			CacheMB:  2000,
+			Map:      true,
+			MapTiles: maps.DefaultURL,
 			Synology: SynologyPhotos{Quality: PhotoQualityOriginal},
 		},
 	}
@@ -618,6 +635,9 @@ func (p *Photos) validate() error {
 	if p.Refresh.Duration < time.Minute {
 		return fmt.Errorf("photos.refresh must be at least 1m")
 	}
+	if err := maps.CheckURL(p.MapTiles); p.Map && err != nil {
+		return fmt.Errorf("photos.map_tiles %v", err)
+	}
 	if p.CacheMB < 50 {
 		return fmt.Errorf("photos.cache_mb must be at least 50")
 	}
@@ -656,6 +676,7 @@ func (c Config) validate() error {
 		{"clock_position", &c.Display.ClockPosition, []string{"bottom-left", "bottom-right", "top-left", "top-right"}},
 		{"clock_size", &c.Display.ClockSize, []string{"large", "medium", "small"}},
 		{"clock_style", &c.Display.ClockStyle, []string{"bold", "slim", "analog"}},
+		{"evening_dim", &c.Display.EveningDim, []string{"off", "light", "strong"}},
 		{"view", &c.Display.View, []string{"clock", "details", "photo"}},
 		{"background", &c.Display.Background, []string{"moving", "still"}},
 	} {
@@ -670,8 +691,8 @@ func (c Config) validate() error {
 		return fmt.Errorf("display.night_start and display.night_end must both be set, or both be empty")
 	}
 	for name, v := range map[string]string{"night_start": c.Display.NightStart, "night_end": c.Display.NightEnd} {
-		if v != "" && !clockPattern.MatchString(v) {
-			return fmt.Errorf("display.%s must be a time like 22:30, got %q", name, v)
+		if v != "" && !clockPattern.MatchString(v) && !sunPattern.MatchString(v) {
+			return fmt.Errorf("display.%s must be a time like 22:30, or follow the sun like \"sunset\" or \"sunset+60\"; got %q", name, v)
 		}
 	}
 	if c.Display.AppRowTimeout < 0 || c.Display.AppRowTimeout > 3600 {
@@ -707,6 +728,8 @@ type Client struct {
 	// GuestWifi is the name of the network for visitors; empty when none is
 	// set. Its password is fetched only when the code is shown.
 	GuestWifi string `json:"guest_wifi"`
+	// PhotoMap is whether a map is shown beside a photo's details.
+	PhotoMap bool `json:"photo_map"`
 }
 
 // ForClient returns the browser-facing view of the configuration.
@@ -715,5 +738,5 @@ func (c Config) ForClient() Client {
 	if stations == nil {
 		stations = []RadioStation{}
 	}
-	return Client{Display: c.Display, Keys: c.Input.Keys, Radio: stations, GuestWifi: c.Wifi.Name}
+	return Client{Display: c.Display, Keys: c.Input.Keys, Radio: stations, GuestWifi: c.Wifi.Name, PhotoMap: c.Photos.Map}
 }

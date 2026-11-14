@@ -44,8 +44,10 @@ type fakeNAS struct {
 	logins    int
 	thumbs    int
 	// noPlaces makes the NAS refuse to list where photos were taken.
-	noPlaces     bool
-	placeAsks    int
+	noPlaces  bool
+	placeAsks int
+	// noPositions makes it refuse positions, but not place names.
+	noPositions  bool
 	peeks        int // of the thumbs, the small ones asked for to learn a photo's shape
 	downloads    int
 	breakFolders bool
@@ -245,6 +247,11 @@ func (n *fakeNAS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		wantsPositions := strings.Contains(r.Form.Get("additional"), "gps")
+		if wantsPositions && n.noPositions {
+			fail(120)
+			return
+		}
 		offset, limit := atoi("offset"), atoi("limit")
 		list := []map[string]any{}
 		for i := offset; i < len(all) && i < offset+limit; i++ {
@@ -252,6 +259,9 @@ func (n *fakeNAS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			additional := map[string]any{"thumbnail": map[string]any{"cache_key": fmt.Sprintf("%d_1", it.ID), "unit_id": it.ID, "xl": "ready"}}
 			if wantsPlaces && it.ID == 10 {
 				additional["address"] = map[string]any{"city": "", "town": "Sintra", "country": "Portugal", "country_id": "PT"}
+			}
+			if wantsPositions && it.ID == 10 {
+				additional["gps"] = map[string]any{"latitude": 38.7979, "longitude": -9.3907}
 			}
 			entry := map[string]any{
 				"id": it.ID, "filename": it.Filename, "type": it.Type, "time": 1700000000 + it.ID, "filesize": 5000 + it.ID,
@@ -563,7 +573,20 @@ func TestSynologyPlaceNamesAreABonus(t *testing.T) {
 		t.Errorf("places = %q, %q; want the first photo in Sintra and none for the second", items[0].Place, items[1].Place)
 	}
 
-	// A NAS that does not offer places still lists its photos, and is asked once only.
+	if a, b := items[0], items[1]; !a.Located || a.Latitude != 38.7979 || a.Longitude != -9.3907 || b.Located {
+		t.Errorf("positions = %+v, %+v; want the first photo near Sintra and none for the second", a, b)
+	}
+
+	// A NAS that knows place names but gives no positions keeps the names.
+	nas3, syn3 := newFakeNAS(t)
+	nas3.noPositions = true
+	items, err = syn3.Items(ctx, Folder{ID: "p:3"})
+	if err != nil || len(items) != 3 || items[0].Place != "Sintra, Portugal" || items[0].Located {
+		t.Errorf("without positions: %d items, err %v, first %+v", len(items), err, items)
+	}
+
+	// A NAS that offers neither still lists its photos, and is asked once
+	// for each only.
 	nas2, syn2 := newFakeNAS(t)
 	nas2.noPlaces = true
 	for i := 0; i < 2; i++ {
@@ -572,8 +595,8 @@ func TestSynologyPlaceNamesAreABonus(t *testing.T) {
 			t.Fatalf("without places: %d items, err %v", len(items), err)
 		}
 	}
-	if nas2.placeAsks != 1 {
-		t.Errorf("the NAS was asked for places %d times, want once", nas2.placeAsks)
+	if nas2.placeAsks != 2 {
+		t.Errorf("the NAS was asked for places %d times, want twice: once with positions, once without", nas2.placeAsks)
 	}
 	_ = nas
 }

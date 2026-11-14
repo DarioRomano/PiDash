@@ -61,6 +61,12 @@ func (Mock) Fetch(context.Context) (any, error) {
 			UVIndexMax:       1.8, WindSpeedMax: 22 + float64(i),
 		})
 	}
+	// Rain on its way, to have something to show: it starts within half an hour.
+	st.Rain = &Rain{Starts: now.Truncate(15 * time.Minute).Add(30 * time.Minute).Format(time.RFC3339)}
+	st.Air = &Air{
+		Index: 34, Scale: "eu", Level: 1, PM25: 8.4, PM10: 15,
+		Pollen: []Pollen{{Kind: "birch", Level: 3}, {Kind: "grass", Level: 2}, {Kind: "alder", Level: 1}},
+	}
 	// Keep today's summary consistent with the rainy hours above.
 	st.Daily[0].PrecipitationProbability, st.Daily[0].PrecipitationSum = 75, 2.4
 	return st, nil

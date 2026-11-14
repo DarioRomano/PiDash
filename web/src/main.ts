@@ -4,6 +4,9 @@ import { Clock } from "./clock";
 import { Help } from "./help";
 import { StatusPanel } from "./status";
 import { WifiPanel } from "./wifi";
+import { Menu } from "./menu";
+import { PhotoInfo } from "./photoinfo";
+import { evening, sunToday, timeOf, within } from "./sun";
 import { play, setSounds } from "./sfx";
 import { reportAlive } from "./alive";
 
@@ -124,7 +127,7 @@ function showCaption(item: PhotoItem | null) {
   const when = isNaN(taken.getTime()) || taken.getFullYear() < 1990
     ? ""
     : new Intl.DateTimeFormat(dateLocale, { day: "numeric", month: "long", year: "numeric" }).format(taken);
-  captionEl.textContent = [folder, item.place, when].filter(Boolean).join("  ·  ");
+  captionEl.textContent = (item.favourite ? "★  " : "") + [folder, item.place, when].filter(Boolean).join("  ·  ");
 }
 
 // Without a photo on screen, the background is a slow play of colours.
@@ -144,7 +147,13 @@ const slideshow = new Slideshow($("#backdrop"), (item) => {
 });
 let photosHintShown = false;
 
+let photosNow: PhotosStatus | null = null;
+
 function onPhotos(st: PhotosStatus) {
+  const before = photosNow;
+  photosNow = st;
+  // The "only favourites" tile comes and goes with the favourites.
+  if (before?.favourites !== st.favourites || before?.onlyFavourites !== st.onlyFavourites) rail.setItems(railItems());
   slideshow.setStatus(st);
   // First run: a source is configured but no folders have been chosen yet.
   if (st.enabled && !st.indexing && st.count === 0 && st.selection.folders.length === 0 && !st.error && !photosHintShown) {
@@ -158,7 +167,7 @@ let tvAsleep = false;
 function updateSuspended() {
   // Do not load photos while an app covers the dashboard, the page is hidden,
   // the TV has been switched off for the night, or night mode shows only a clock.
-  slideshow.setSuspended(appsStatus.running !== "" || document.visibilityState !== "visible" || tvAsleep || nightNow);
+  slideshow.setSuspended(appsStatus.running !== "" || document.visibilityState !== "visible" || tvAsleep || nightNow || photoInfo.isOpen);
   // An app brings its own sound, and a TV that is off needs none.
   if (appsStatus.running !== "" || tvAsleep) stopRadio();
   updateAmbient();
@@ -168,22 +177,28 @@ function updateSuspended() {
 // Between two times of day the screen shows only a dim clock on black. Any
 // button brings the dashboard back for a minute.
 
-let nightHours: [number, number] | null = null; // minutes after midnight
+// Either time may follow the sun ("sunset", "sunrise+60"): then it is worked
+// out anew from the weather's sunrise and sunset each time it is looked at.
+let nightTimes: [string, string] | null = null;
 let nightNow = false;
 let awakeUntil = 0;
-
-function minutesOf(clock: string): number {
-  const [h, m] = clock.split(":").map(Number);
-  return h * 60 + m;
-}
+/** The latest weather, for the sun's times. */
+let skyNow: WeatherState | null = null;
+/** How much the picture darkens when the evening has fully come; 0 for not at all. */
+let dimStrength = 0;
+const dimSheet = $("#dim");
 
 function updateNight() {
+  const d = new Date();
+  const now = d.getHours() * 60 + d.getMinutes();
+  const sun = sunToday(skyNow, d);
+  dimSheet.style.opacity = (dimStrength * evening(now, sun)).toFixed(3);
   let night = false;
-  if (nightHours) {
-    const d = new Date();
-    const now = d.getHours() * 60 + d.getMinutes();
-    const [from, to] = nightHours;
-    night = from <= to ? now >= from && now < to : now >= from || now < to;
+  if (nightTimes) {
+    const from = timeOf(nightTimes[0], sun);
+    const to = timeOf(nightTimes[1], sun);
+    // Without the sun's times, a night that follows the sun does not begin.
+    night = from !== null && to !== null && within(now, from, to);
   }
   night = night && Date.now() > awakeUntil;
   if (night === nightNow) return;
@@ -199,7 +214,7 @@ window.setInterval(updateNight, 15_000);
 
 /** A button was pressed. Returns true when that press only woke the screen. */
 function wakeFromNight(): boolean {
-  if (!nightHours) return false;
+  if (!nightTimes) return false;
   const wasNight = nightNow;
   awakeUntil = Date.now() + 60_000;
   updateNight();
@@ -210,9 +225,7 @@ function wakeFromNight(): boolean {
 
 const WEATHER_ID = "__weather";
 const weatherEl = $("#weather");
-const weather: WeatherView = new WeatherView(weatherEl, $("#weather-panel"), (open) =>
-  stage.classList.toggle("panel-open", open || help.isOpen || statusPanel.isOpen),
-);
+const weather: WeatherView = new WeatherView(weatherEl, $("#weather-panel"), () => syncPanels());
 // With a mouse or touch screen, clicking the summary opens the details too.
 weatherEl.addEventListener("click", (e) => {
   e.stopPropagation();
@@ -221,7 +234,7 @@ weatherEl.addEventListener("click", (e) => {
 
 // --- Help ---------------------------------------------------------------------
 
-const help = new Help($("#help"), (open) => stage.classList.toggle("panel-open", open || weather.isOpen || statusPanel.isOpen));
+const help = new Help($("#help"), () => syncPanels());
 
 // --- Status ---------------------------------------------------------------------
 // How PiDash is doing, readable from the sofa.
@@ -233,7 +246,67 @@ const WIFI_GLYPH =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
   '<path d="M3 9.500a13 13 0 0 1 18 0M6 12.800a8.600 8.600 0 0 1 12 0M9 16a4.300 4.300 0 0 1 6 0"/><circle cx="12" cy="19" r="0.900" fill="currentColor"/></svg>';
 let guestWifi = "";
-const wifiPanel: WifiPanel = new WifiPanel($("#wifi-panel"), (open) => stage.classList.toggle("panel-open", open || weather.isOpen || help.isOpen || statusPanel.isOpen));
+const wifiPanel: WifiPanel = new WifiPanel($("#wifi-panel"), () => syncPanels());
+
+// --- About this photo, and favourites -------------------------------------------
+
+const INFO_ID = "__photo-info";
+const INFO_GLYPH =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M12 21s6.500-6 6.500-11A6.500 6.500 0 0 0 5.500 10c0 5 6.500 11 6.500 11z"/><circle cx="12" cy="10" r="2.300"/></svg>';
+const FAV_ID = "__favourite";
+const STAR = "M12 3.600l2.600 5.300 5.800.800-4.200 4.100 1 5.800-5.200-2.700-5.200 2.700 1-5.800-4.200-4.100 5.800-.800z";
+const FAV_GLYPH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="${STAR}"/></svg>`;
+const FAV_ON_GLYPH = `<svg viewBox="0 0 24 24" fill="#ffd257" stroke="#ffd257" stroke-width="1.6" stroke-linejoin="round"><path d="${STAR}"/></svg>`;
+const ONLY_FAV_ID = "__only-favourites";
+const ONLY_FAV_GLYPH =
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">` +
+  `<rect x="3" y="5" width="18" height="14" rx="2.500"/><path transform="translate(6.600 6.800) scale(0.450)" d="${STAR}"/></svg>`;
+const photoInfo: PhotoInfo = new PhotoInfo($("#photo-info"), () => {
+  syncPanels();
+  updateSuspended(); // the photo stays while it is being read about
+});
+
+/** Whatever covers the whole screen hides the clock, the weather and the rest. */
+function syncPanels() {
+  stage.classList.toggle("panel-open", weather.isOpen || help.isOpen || statusPanel.isOpen || wifiPanel.isOpen || photoInfo.isOpen);
+}
+
+// --- Restart and shut down ---------------------------------------------------------
+// Things that take the screen away are asked about twice: once to choose,
+// once to be sure.
+
+const POWER_ID = "__power";
+const POWER_GLYPH =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M12 3.500v8"/><path d="M7 6.800a7.500 7.500 0 1 0 10 0"/></svg>';
+const menu: Menu = new Menu($("#menu"), () => {});
+
+function openPowerMenu() {
+  const choices = [
+    { action: "restart", label: "Restart PiDash", hint: "The dashboard is back in a few seconds.", sure: "Restart PiDash?", yes: "Yes, restart PiDash" },
+    { action: "reboot", label: "Restart the Pi", hint: "Takes about a minute. An app that is open is closed.", sure: "Restart the Pi?", yes: "Yes, restart the Pi" },
+    { action: "off", label: "Shut the Pi down", hint: "To start it again, switch its power off and on.", sure: "Shut the Pi down?", yes: "Yes, shut it down" },
+  ];
+  menu.open("Power", choices, 0, (i) => {
+    const c = choices[i];
+    // "No" is what is selected: a second OK by habit changes nothing.
+    menu.open(c.sure, [{ label: "No, go back" }, { label: c.yes }], 0, async (answer) => {
+      if (answer !== 1) return;
+      try {
+        const res = await postJSON(`/api/power/${c.action}`, {});
+        if (res.status === 401 || res.status === 429) return toast("The settings are locked: this needs the PIN, under Settings.", 8000);
+        if (!res.ok) {
+          const said = t((await res.text()).trim());
+          return toast(said.charAt(0).toUpperCase() + said.slice(1), 12000);
+        }
+        toast(t(c.action === "off" ? "Shutting down…" : "Restarting…"), 30000);
+      } catch {
+        toast("The PiDash backend is not reachable.", 6000);
+      }
+    });
+  });
+}
 
 const STOP_ID = "__stop-music";
 const STOP_GLYPH =
@@ -247,7 +320,7 @@ let lastSystem: SystemState | null = null;
 const statusPanel: StatusPanel = new StatusPanel(
   $("#status-panel"),
   () => lastSystem,
-  (open) => stage.classList.toggle("panel-open", open || weather.isOpen || help.isOpen),
+  () => syncPanels(),
 );
 
 function openHelp() {
@@ -640,6 +713,18 @@ function railItems(): RailItem[] {
     } else {
       items.push({ id: HIDE_ID + keys[0], label: "Hide this photo", glyph: HIDE_GLYPH });
     }
+    items.push({ id: INFO_ID, label: "About this photo", glyph: INFO_GLYPH, sub: shownPhoto.place });
+    items.push(
+      shownPhoto.favourite
+        ? { id: FAV_ID, label: "Remove from favourites", glyph: FAV_ON_GLYPH }
+        : { id: FAV_ID, label: "Add to favourites", glyph: FAV_GLYPH },
+    );
+  }
+  if (photosNow?.onlyFavourites) {
+    items.push({ id: ONLY_FAV_ID, label: "Show all photos", glyph: ONLY_FAV_GLYPH, running: true });
+  } else if ((photosNow?.favourites ?? 0) > 0) {
+    const n = photosNow?.favourites ?? 0;
+    items.push({ id: ONLY_FAV_ID, label: "Only favourites", glyph: ONLY_FAV_GLYPH, sub: t(n === 1 ? "1 photo" : "{n} photos", { n }) });
   }
   if (soundOutputs.length > 1) {
     items.push({ id: SOUND_ID, label: "Sound", glyph: SOUND_GLYPH, sub: soundOutputs.find((o) => o.active)?.name ?? "" });
@@ -650,6 +735,7 @@ function railItems(): RailItem[] {
   items.push({ id: STATUS_ID, label: "Status", glyph: STATUS_GLYPH });
   items.push({ id: SETTINGS_ID, label: "Settings", glyph: GEAR_GLYPH, sub: newVersion ? "Update available" : undefined, notice: !!newVersion });
   items.push({ id: EXIT_ID, label: "Desktop", glyph: EXIT_GLYPH });
+  items.push({ id: POWER_ID, label: "Power", glyph: POWER_GLYPH });
   return items;
 }
 
@@ -690,6 +776,11 @@ async function activateRailItem(item: RailItem) {
     void nextSoundOutput();
     return;
   }
+  if (item.id === POWER_ID) {
+    rail.close();
+    openPowerMenu();
+    return;
+  }
   if (item.id === STOP_ID) {
     // Ends the music app that plays behind the dashboard.
     try {
@@ -702,6 +793,41 @@ async function activateRailItem(item: RailItem) {
   if (item.id === WIFI_ID) {
     rail.close();
     wifiPanel.open();
+    return;
+  }
+  if (item.id === INFO_ID) {
+    if (!shownPhoto) return;
+    rail.close();
+    photoInfo.open(shownPhoto.key, shownPhoto.v);
+    return;
+  }
+  if (item.id === FAV_ID) {
+    const photo = shownPhoto;
+    if (!photo) return;
+    const on = !photo.favourite;
+    try {
+      const res = await postJSON("/api/photos/favourite", { keys: [photo.key], on });
+      if (!res.ok) throw new Error(String(res.status));
+      photo.favourite = on;
+      if (shownPhoto === photo) showCaption(photo);
+      rail.setItems(railItems());
+      toast(on ? "Added to favourites. Favourites come round more often." : "Removed from favourites.", 5000);
+    } catch {
+      toast("The PiDash backend is not reachable.", 5000);
+    }
+    return;
+  }
+  if (item.id === ONLY_FAV_ID) {
+    const on = !photosNow?.onlyFavourites;
+    try {
+      const res = await postJSON("/api/photos/only-favourites", { on });
+      if (!res.ok) throw new Error(String(res.status));
+      onPhotos((await res.json()) as PhotosStatus);
+      rail.close();
+      toast(on ? "Showing only your favourites." : "Showing all photos again.", 5000);
+    } catch {
+      toast("The PiDash backend is not reachable.", 5000);
+    }
     return;
   }
   if (item.id === STATUS_ID) {
@@ -833,6 +959,7 @@ function applyConfig(cfg: ClientConfig) {
     overlay.dataset.density = DENSITIES[density];
   }
   weather.configure(d.clock_24h, locale);
+  photoInfo.configure(d.clock_24h, locale || undefined);
   dateLocale = locale || undefined;
   renderAgenda();
   input.setKeyMap(cfg.keys);
@@ -845,7 +972,8 @@ function applyConfig(cfg: ClientConfig) {
     rail.setItems(railItems());
   }
   startPixelShift(d.pixel_shift);
-  nightHours = d.night_start && d.night_end ? [minutesOf(d.night_start), minutesOf(d.night_end)] : null;
+  nightTimes = d.night_start && d.night_end ? [d.night_start, d.night_end] : null;
+  dimStrength = { light: 0.22, strong: 0.42 }[d.evening_dim ?? ""] ?? 0;
   updateNight();
   railTimeoutMs = (d.app_row_timeout ?? 30) * 1000;
   railActivity();
@@ -920,6 +1048,7 @@ function renderAgenda() {
 }
 // Events pass, and "Tomorrow" becomes "Today", without anything arriving.
 window.setInterval(renderAgenda, 60_000);
+window.setInterval(() => weather.tick(), 30_000);
 
 // --- State ------------------------------------------------------------------
 
@@ -949,6 +1078,8 @@ function onState(entry: StateEntry) {
       break;
     case "weather":
       weather.update(entry.data as WeatherState | null, entry.stale);
+      skyNow = (entry.data as WeatherState | null) ?? skyNow;
+      updateNight();
       rail.setItems(railItems()); // the Weather tile shows the current conditions
       break;
   }
@@ -1018,8 +1149,10 @@ input.on((action, ev) => {
     exitToDesktop();
     return;
   }
+  if (menu.handle(action)) return;
   if (help.handle(action)) return play("back");
   if (wifiPanel.handle(action)) return play("back");
+  if (photoInfo.handle(action)) return;
   if (statusPanel.handle(action)) {
     if (!statusPanel.isOpen) play("back");
     return;
@@ -1193,8 +1326,10 @@ window.addEventListener("pointerdown", pointerActive);
 // whatever is open.
 stage.addEventListener("click", (e) => {
   if (help.isOpen) return help.close();
+  if (menu.isOpen) return menu.close();
   if (statusPanel.isOpen) return statusPanel.close();
   if (wifiPanel.isOpen) return wifiPanel.close();
+  if (photoInfo.isOpen) return photoInfo.close();
   if (weather.isOpen) return weather.close();
   if ((e.target as Element).closest("#hud")) return;
   if (rail.isOpen) rail.close();
@@ -1213,7 +1348,7 @@ window.addEventListener(
   "wheel",
   (e) => {
     e.preventDefault();
-    if (help.isOpen || weather.isOpen || statusPanel.isOpen || wifiPanel.isOpen) return;
+    if (help.isOpen || weather.isOpen || statusPanel.isOpen || wifiPanel.isOpen || photoInfo.isOpen) return;
     const now = performance.now();
     if (now - lastWheel < (rail.isOpen ? 110 : 450)) return;
     const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;

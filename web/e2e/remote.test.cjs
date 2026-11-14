@@ -5,7 +5,7 @@
 // Run with: make e2e
 const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
-const { startPiDash, openPage, closeBrowser, remoteFor } = require("./harness.cjs");
+const { startPiDash, openPage, closeBrowser, remoteFor, startTileServer } = require("./harness.cjs");
 
 const APPS = `
 [[apps]]
@@ -186,9 +186,14 @@ const carried = (page) => page.evaluate(() => document.querySelector(".tile.movi
 const savedOrder = async (base) => (await (await fetch(base + "/api/apps")).json()).apps.map((a) => a.name);
 
 async function focusTile(page, remote, label) {
-  for (let i = 0; i < 14; i++) {
-    if ((await page.evaluate(() => document.querySelector(".tile.focused .tile-label")?.textContent)) === label) return;
-    await remote.press("right");
+  for (let i = 0; i < 40; i++) {
+    const [at, want] = await page.evaluate((label) => {
+      const all = [...document.querySelectorAll(".tile")];
+      return [all.findIndex((t) => t.classList.contains("focused")), all.findIndex((t) => t.querySelector(".tile-label")?.textContent === label)];
+    }, label);
+    if (want < 0) break;
+    if (at === want) return;
+    await remote.press(at < want ? "right" : "left");
   }
   assert.fail(`no tile called ${label}`);
 }
@@ -841,6 +846,309 @@ test("the games of the PC, from Moonlight, are tiles that start with one press",
     await page.waitForFunction(() => !document.getElementById("rail").classList.contains("open"));
     const running = (await (await fetch(own.base + "/api/apps")).json()).running;
     assert.match(running, /^game-[0-9a-f]{6}-2$/, "the game is what is running");
+    assert.deepEqual(page.problems, []);
+    await page.context().close();
+  } finally {
+    await own.stop();
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+// --- Rain soon, air and pollen ----------------------------------------------------------
+
+test("the weather says when rain is about to start, and how the air is", async () => {
+  const page = await dashboard();
+  const news = await page.evaluate(() => document.querySelector("#weather .w-soon")?.textContent ?? "");
+  assert.match(news, /^Rain (in \d+ min|any minute now)  ·  Lots of pollen: Birch$/, "rain on its way and a lot of pollen are worth a line");
+  const remote = remoteFor(page, pi.base);
+  await remote.press("weather");
+  await page.waitForSelector("#weather-panel.open");
+  const tilesText = await page.evaluate(() => [...document.querySelectorAll("#weather-panel .wp-tile")].map((t) => t.innerText.replace(/\s+/g, " ").trim()));
+  assert.equal(tilesText.length, 9, "three more tiles for the air");
+  assert.deepEqual(tilesText.slice(6), ["Air quality 34 Fair", "Pollen High Birch", "Fine dust 8.4 µg/m³ coarser dust 15"]);
+  assert.match(await page.evaluate(() => document.querySelector("#weather-panel .wp-soon").textContent), /^Rain (in \d+ min|any minute now)$/);
+  assert.deepEqual(page.problems, []);
+  await page.context().close();
+});
+
+// --- Night mode and dimming by the sun --------------------------------------------------
+
+test("night mode and the evening's dimming can follow sunset and sunrise", async () => {
+  // The sample weather has the sun rise at 07:12 and set at 16:51, UTC. A
+  // night that began five minutes ago and ends in an hour, said in terms of
+  // whichever of the two is near enough to say it with.
+  const weatherNow = (await (await fetch(pi.base + "/api/state")).json()).find((e) => e.provider === "weather").data;
+  const minutes = (iso) => new Date(iso).getHours() * 60 + new Date(iso).getMinutes();
+  const sun = { rise: minutes(weatherNow.daily[0].sunrise), set: minutes(weatherNow.daily[0].sunset) };
+  const d = new Date();
+  const now = d.getHours() * 60 + d.getMinutes();
+  const spec = (target) => {
+    for (const [name, at] of [["sunset", sun.set], ["sunrise", sun.rise]]) {
+      for (const day of [0, 1440, -1440]) {
+        const off = target + day - at;
+        if (Math.abs(off) <= 999) return off === 0 ? name : `${name}${off > 0 ? "+" : ""}${off}`;
+      }
+    }
+    throw new Error("no way to say " + target);
+  };
+  const own = await startPiDash(`night_start = "${spec(now - 5)}"\nnight_end = "${spec(now + 60)}"\nevening_dim = "strong"\n` + APPS);
+  try {
+    const page = await openPage(own.base);
+    await page.waitForFunction(() => document.getElementById("stage").classList.contains("night"), null, { timeout: 20000 });
+    // The dimming: none by day, all of it at night, rising in the hour after
+    // sunset and falling in the half hour before sunrise.
+    const since = (now - sun.set + 1440) % 1440;
+    const night = (sun.rise - sun.set + 1440) % 1440;
+    const evening = since >= night ? 0 : Math.max(0, Math.min(1, since / 60, (night - since) / 30));
+    const dim = await page.evaluate(() => Number(document.getElementById("dim").style.opacity));
+    assert.ok(Math.abs(dim - 0.42 * evening) < 0.03, `the sheet over the picture is ${dim}, want about ${(0.42 * evening).toFixed(3)}`);
+    assert.deepEqual(page.problems, []);
+    await page.context().close();
+  } finally {
+    await own.stop();
+  }
+
+  // A night that begins in ten minutes has not begun.
+  const later = await startPiDash(`night_start = "${spec(now + 10)}"\nnight_end = "${spec(now + 90)}"\n` + APPS);
+  try {
+    const page = await openPage(later.base);
+    await page.waitForSelector("#weather .w-temp");
+    await page.waitForTimeout(500);
+    assert.equal(await page.evaluate(() => document.getElementById("stage").classList.contains("night")), false);
+    assert.equal(await page.evaluate(() => Number(document.getElementById("dim").style.opacity)), 0, "no dimming unless asked for");
+    await page.context().close();
+  } finally {
+    await later.stop();
+  }
+});
+
+// --- Restart and shut down --------------------------------------------------------------
+
+test("the Power tile asks twice before the Pi is shut down", async () => {
+  const page = await dashboard();
+  const remote = remoteFor(page, pi.base);
+  const menu = () =>
+    page.evaluate(() => {
+      const m = document.getElementById("menu");
+      if (!m.classList.contains("open")) return null;
+      return { title: m.querySelector("h2").textContent, items: [...m.querySelectorAll(".menu-label")].map((e) => e.textContent), at: [...m.querySelectorAll(".menu-item")].findIndex((e) => e.classList.contains("focused")) };
+    });
+  const asked = async () => (await fetch(pi.base + "/api/test/power")).text();
+
+  await remote.press("select");
+  await focusTile(page, remote, "Power");
+  await remote.press("select");
+  assert.deepEqual(await menu(), { title: "Power", items: ["Restart PiDash", "Restart the Pi", "Shut the Pi down"], at: 0 });
+  assert.equal(await rowOpen(page), false);
+  await remote.press("up"); // the top is the top
+  await remote.press("down");
+  await remote.press("down");
+  await remote.press("down");
+  assert.equal((await menu()).at, 2);
+  await remote.press("select");
+  assert.deepEqual(await menu(), { title: "Shut the Pi down?", items: ["No, go back", "Yes, shut it down"], at: 0 }, "the second question, with No selected");
+  await remote.press("select"); // OK by habit: nothing happens
+  assert.equal(await menu(), null);
+  assert.equal(await asked(), "[]");
+
+  // Back leaves at either question.
+  await remote.press("select");
+  await focusTile(page, remote, "Power");
+  await remote.press("select");
+  await remote.press("back");
+  assert.equal(await menu(), null);
+  assert.equal(await view(page) !== undefined, true);
+
+  // And yes means yes.
+  await remote.press("select");
+  await focusTile(page, remote, "Power");
+  await remote.press("select");
+  await remote.press("down");
+  await remote.press("select");
+  assert.equal((await menu()).title, "Restart the Pi?");
+  await remote.press("down");
+  await remote.press("select");
+  await page.waitForFunction(() => /Restarting…/.test(document.getElementById("toast").textContent));
+  assert.equal(await asked(), "[reboot]");
+  assert.deepEqual(page.problems, []);
+  await page.context().close();
+});
+
+// --- Favourites, and where a photo was taken --------------------------------------------
+
+test("a favourite photo is marked, and the slideshow can show favourites only", async () => {
+  const own = await startPiDash(APPS);
+  try {
+    const page = await openPage(own.base);
+    await page.waitForFunction(() => document.getElementById("backdrop").classList.contains("has-photo"), null, { timeout: 20000 });
+    await page.waitForTimeout(2000);
+    const remote = remoteFor(page, own.base);
+    const status = async () => (await fetch(own.base + "/api/photos")).json();
+    const shown = () => decodeURIComponent(new URL(photoNow).pathname.split("/").pop());
+    let photoNow = await photo(page);
+
+    await remote.press("select");
+    assert.ok(!(await tiles(page)).includes("Only favourites"), "no such tile without favourites");
+    await focusTile(page, remote, "Add to favourites");
+    await remote.press("select");
+    await page.waitForFunction(() => [...document.querySelectorAll(".tile .tile-label")].some((t) => t.textContent === "Remove from favourites"));
+    assert.equal((await status()).favourites, 1);
+    assert.match(await page.evaluate(() => document.getElementById("caption").textContent), /^★/, "a star before the caption");
+    assert.equal(await rowOpen(page), true, "the row stays, to take it back at once");
+
+    // Only favourites: the slideshow has that one photo and nothing else.
+    await focusTile(page, remote, "Only favourites");
+    assert.equal(await page.evaluate(() => document.querySelector(".tile.focused .tile-sub")?.textContent), "1 photo");
+    await remote.press("select");
+    await page.waitForFunction(() => /Showing only your favourites/.test(document.getElementById("toast").textContent));
+    let list = (await (await fetch(own.base + "/api/photos/playlist?limit=50")).json()).items;
+    assert.deepEqual(list.map((i) => [i.key, i.favourite]), [[shown(), true]]);
+    assert.equal((await status()).onlyFavourites, true);
+
+    // Taking the last favourite away brings all photos back.
+    await remote.press("select");
+    await page.waitForFunction(() => [...document.querySelectorAll(".tile .tile-label")].some((t) => t.textContent === "Remove from favourites"));
+    await focusTile(page, remote, "Remove from favourites");
+    await remote.press("select");
+    await page.waitForFunction(() => [...document.querySelectorAll(".tile .tile-label")].some((t) => t.textContent === "Add to favourites"));
+    const st = await status();
+    assert.deepEqual([st.favourites, st.onlyFavourites], [0, false]);
+    list = (await (await fetch(own.base + "/api/photos/playlist?limit=50")).json()).items;
+    assert.ok(list.length > 5, `all photos again, got ${list.length}`);
+    assert.deepEqual(page.problems, []);
+    await page.context().close();
+  } finally {
+    await own.stop();
+  }
+});
+
+test("About this photo says when and where it was taken, with a map", async () => {
+  const map = await startTileServer();
+  const own = await startPiDash(`${APPS}\n[photos]\nmap_tiles = "${map.url}"\n`);
+  const choose = async (folder) => {
+    const label = folder.replaceAll("/", " / ");
+    await fetch(own.base + "/api/photos/selection", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ folders: [{ id: folder, name: folder.split("/").pop(), path: label }], recursive: false }),
+    });
+    // The folder is read in the background: wait until the slideshow is made of it.
+    for (let i = 0; i < 100; i++) {
+      const list = (await (await fetch(own.base + "/api/photos/playlist?limit=50")).json()).items;
+      if (list.length > 0 && list.every((it) => it.folder === label)) return;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.fail(`the slideshow never showed ${label}`);
+  };
+  const open = async () => {
+    const page = await openPage(own.base);
+    await page.waitForFunction(() => document.getElementById("backdrop").classList.contains("has-photo"), null, { timeout: 20000 });
+    await page.waitForTimeout(2000);
+    const remote = remoteFor(page, own.base);
+    await remote.press("select");
+    await focusTile(page, remote, "About this photo");
+    return { page, remote };
+  };
+  try {
+    // Photos from the coast know where they were taken.
+    await choose("Holidays/Coast");
+    let { page, remote } = await open();
+    assert.equal(await page.evaluate(() => document.querySelector(".tile.focused .tile-sub")?.textContent), "Cascais, Portugal");
+    await remote.press("select");
+    await page.waitForSelector("#photo-info.open .pi-map img.loaded");
+    const text = await page.evaluate(() => document.getElementById("photo-info").innerText);
+    for (const want of ["About this photo", "Cascais, Portugal", "Holidays / Coast", "2024", "12:00", "years ago", "© OpenStreetMap contributors"]) {
+      assert.ok(text.includes(want), `the page should say "${want}":\n${text}`);
+    }
+    assert.equal(await rowOpen(page), false);
+    assert.equal(await page.evaluate(() => document.getElementById("stage").classList.contains("panel-open")), true);
+    // The map: pieces at the regional zoom around Cascais (38.70° N, 9.42° W), fetched by the Pi.
+    await page.waitForFunction(() => [...document.querySelectorAll(".pi-map img")].every((i) => i.classList.contains("loaded")));
+    assert.ok(map.asked.length >= 4 && map.asked.every((u) => u.startsWith("/10/")), `tiles asked for: ${map.asked}`);
+    assert.ok(map.asked.includes("/10/485/392.png"), `the tile with Cascais on it: ${map.asked}`);
+    assert.ok([...map.agents].every((a) => /^PiDash\//.test(a)), `the map service is told who asks: ${[...map.agents]}`);
+    const pin = await page.evaluate(() => {
+      const box = document.querySelector(".pi-map").getBoundingClientRect();
+      const p = document.querySelector(".pi-pin").getBoundingClientRect();
+      return [Math.round(p.left + p.width / 2 - box.left - box.width / 2), Math.round(p.bottom - box.top - box.height / 2)];
+    });
+    assert.ok(Math.abs(pin[0]) <= 1 && Math.abs(pin[1]) <= 1, `the pin's tip is in the middle of the map, not ${pin} away from it`);
+
+    // Up looks closer, Down from further away, and no further than there is.
+    const zoom = () => page.evaluate(() => document.querySelector(".pi-map").dataset.zoom);
+    await remote.press("up");
+    assert.equal(await zoom(), "13");
+    await remote.press("up");
+    assert.equal(await zoom(), "13");
+    for (let i = 0; i < 4; i++) await remote.press("down");
+    assert.equal(await zoom(), "4");
+    // A second look at the same place asks the map service for nothing new.
+    await page.waitForFunction(() => [...document.querySelectorAll(".pi-map img")].every((i) => i.classList.contains("loaded")));
+    const before = map.asked.length;
+    await remote.press("up");
+    await remote.press("up");
+    await remote.press("down");
+    await page.waitForFunction(() => [...document.querySelectorAll(".pi-map img")].every((i) => i.classList.contains("loaded")));
+    assert.equal(map.asked.length, before, "pieces of map are kept on the Pi");
+    await remote.press("back");
+    assert.equal(await page.evaluate(() => document.getElementById("photo-info").classList.contains("open")), false);
+    assert.deepEqual(page.problems, []);
+    await page.context().close();
+
+    // Photos of the family do not: no map, and the page says so.
+    await choose("Family/Portraits");
+    ({ page, remote } = await open());
+    await remote.press("select");
+    await page.waitForSelector("#photo-info.open .pi-body");
+    const plain = await page.evaluate(() => document.getElementById("photo-info").innerText);
+    assert.ok(plain.includes("This photo does not say where it was taken.") && plain.includes("Family / Portraits"), plain);
+    assert.equal(await page.evaluate(() => document.querySelector(".pi-map")), null);
+    await remote.press("select"); // any button closes
+    assert.equal(await page.evaluate(() => document.getElementById("photo-info").classList.contains("open")), false);
+    assert.deepEqual(page.problems, []);
+    await page.context().close();
+  } finally {
+    await own.stop();
+    await map.stop();
+  }
+});
+
+// --- Games from RetroArch ---------------------------------------------------------------
+
+test("RetroArch's favourite games are tiles, and the one played last comes first", async () => {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "pidash-home-"));
+  const conf = path.join(home, ".config", "retroarch");
+  const put = (file, text) => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, text);
+  };
+  const core = path.join(conf, "cores", "mgba_libretro.so");
+  const game = (name) => ({ path: path.join(home, "ROMs", name + ".gba"), label: name, core_path: core, db_name: "Nintendo - Game Boy Advance.lpl" });
+  put(core, "x");
+  for (const name of ["Kart", "Quest", "Tennis"]) put(path.join(home, "ROMs", name + ".gba"), "x");
+  put(path.join(conf, "content_favorites.lpl"), JSON.stringify({ version: "1.5", default_core_path: "DETECT", items: [game("Kart"), game("Quest")] }));
+  put(path.join(conf, "content_history.lpl"), JSON.stringify({ version: "1.5", items: [game("Tennis"), game("Kart"), game("Gone")] }));
+
+  const own = await startPiDash(APPS + '\n[[apps]]\nid = "retroarch"\nname = "RetroArch"\ncommand = "retroarch -f"\n', { HOME: home });
+  try {
+    const page = await openPage(own.base);
+    await page.waitForFunction(() => document.getElementById("backdrop").classList.contains("has-photo"), null, { timeout: 20000 });
+    await page.waitForTimeout(2000);
+    const remote = remoteFor(page, own.base);
+    await remote.press("select");
+    let row = await tiles(page);
+    let at = row.indexOf("RetroArch");
+    assert.deepEqual(row.slice(at, at + 4), ["RetroArch", "Kart", "Quest", "Tennis"], `favourites, then what was played, without what is gone: ${row}`);
+
+    await focusTile(page, remote, "Tennis");
+    await remote.press("select");
+    await page.waitForFunction(() => !document.getElementById("rail").classList.contains("open"));
+    const status = await (await fetch(own.base + "/api/apps")).json();
+    assert.match(status.running, /^game-ra-[0-9a-f]{8}$/, "the game is what is running");
+    assert.deepEqual(status.apps.slice(-3).map((a) => a.name), ["Tennis", "Kart", "Quest"], "what was played last comes first");
     assert.deepEqual(page.problems, []);
     await page.context().close();
   } finally {

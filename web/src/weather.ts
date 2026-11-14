@@ -81,6 +81,23 @@ function uvWord(v: number): string {
   return v < 3 ? "Low" : v < 6 ? "Moderate" : v < 8 ? "High" : v < 11 ? "Very high" : "Extreme";
 }
 
+// What the six levels of each air quality scale are called.
+const AIR_WORDS = {
+  eu: ["Good", "Fair", "Moderate", "Poor", "Very poor", "Extremely poor"],
+  us: ["Good", "Moderate", "Unhealthy for sensitive people", "Unhealthy", "Very unhealthy", "Hazardous"],
+};
+const POLLEN_WORDS = ["None", "Low", "Moderate", "High"];
+const POLLEN_KINDS: Record<string, string> = {
+  alder: "Alder", birch: "Birch", olive: "Olive tree", grass: "Grass", mugwort: "Mugwort", ragweed: "Ragweed",
+};
+
+function airWord(air: NonNullable<WeatherState["air"]>): string {
+  const words = AIR_WORDS[air.scale] ?? AIR_WORDS.eu;
+  return t(words[Math.max(0, Math.min(words.length - 1, air.level))]);
+}
+
+const pollenKind = (kind: string) => t(POLLEN_KINDS[kind] ?? kind);
+
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
@@ -95,6 +112,7 @@ export class WeatherView {
   private opened = false;
   private hour24 = true;
   private locale: string | undefined;
+  private noticed = "";
 
   constructor(
     private summary: HTMLElement,
@@ -187,6 +205,43 @@ export class WeatherView {
     if (this.opened) this.renderPanel();
   }
 
+  /** Called now and then: "rain in 20 min" counts down between two forecasts. */
+  tick() {
+    if (this.state && this.notices().join("|") !== this.noticed) this.render();
+  }
+
+  /** Rain or snow about to start or stop, in words; empty when nothing changes soon. */
+  private rainSoon(now = Date.now()): string {
+    const r = this.state?.rain;
+    if (!r) return "";
+    const what = r.snow ? "Snow" : "Rain";
+    const at = r.now ? r.stops : r.starts;
+    if (!at) return "";
+    const minutes = (new Date(at).getTime() - now) / 60_000;
+    // Passed already: the next forecast says what happened.
+    if (!Number.isFinite(minutes) || minutes < -2) return "";
+    if (minutes > 50) return t(r.now ? `${what} until {time}` : `${what} from {time}`, { time: this.clock(at) });
+    // The forecast comes in quarters of an hour; to the minute would be pretending.
+    if (minutes <= 2) return r.now ? "" : t(`${what} any minute now`);
+    const n = Math.max(5, Math.round(minutes / 5) * 5);
+    return t(r.now ? `${what} stops in {n} min` : `${what} in {n} min`, { n });
+  }
+
+  /** What is worth a line on the ambient screen: rain soon, bad air, a lot of pollen. */
+  private notices(): string[] {
+    const out: string[] = [];
+    const rain = this.rainSoon();
+    if (rain) out.push(rain);
+    const air = this.state?.air;
+    if (air) {
+      // From the level on at which the scale itself starts to advise caution.
+      if (air.level >= (air.scale === "us" ? 2 : 3)) out.push(t("Air quality: {word}", { word: airWord(air).toLowerCase() }));
+      const lots = air.pollen.filter((p) => p.level >= 3).map((p) => pollenKind(p.kind));
+      if (lots.length) out.push(t("Lots of pollen: {kinds}", { kinds: lots.join(", ") }));
+    }
+    return out;
+  }
+
   private renderSummary() {
     const s = this.state;
     this.summary.hidden = !s;
@@ -194,11 +249,14 @@ export class WeatherView {
     const c = s.current;
     const today = s.daily[0];
     const rain = today ? Math.max(today.precipitationProbability, s.hourly[0]?.precipitationProbability ?? 0) : 0;
+    const notices = this.notices();
+    this.noticed = notices.join("|");
     this.summary.innerHTML =
       `<div class="w-now"><span class="w-icon">${weatherIcon(c.code, c.isDay)}</span><span class="w-temp">${deg(c.temperature)}</span></div>` +
       `<div class="w-line">${esc(conditionText(c.code))}` +
       (today ? `<span class="w-hilo">${deg(today.max)} / ${deg(today.min)}</span>` : "") +
       `</div>` +
+      (notices.length ? `<div class="w-soon" data-no-translate>${esc(notices.join("  ·  "))}</div>` : "") +
       `<div class="w-extra">${esc(s.location)}  ·  ${esc(t("Feels like {t}", { t: deg(c.feelsLike) }))}  ·  ${esc(t("Rain {p}%", { p: rain }))}</div>`;
   }
 
@@ -212,6 +270,21 @@ export class WeatherView {
     const tile = (label: string, value: string, note = "") =>
       `<div class="wp-tile"><div class="wp-label">${label}</div><div class="wp-value">${value}</div><div class="wp-note">${note}</div></div>`;
 
+    const air = s.air;
+    const most = air?.pollen[0];
+    const one = (v: number) => (v < 10 ? v.toFixed(1) : String(Math.round(v)));
+    const airTiles = !air
+      ? ""
+      : tile("Air quality", String(air.index), esc(airWord(air))) +
+        tile(
+          "Pollen",
+          esc(t(POLLEN_WORDS[most?.level ?? 0])),
+          // The ones that matter most, by name.
+          esc(air.pollen.filter((p) => p.level === most?.level).map((p) => pollenKind(p.kind)).join(", ")),
+        ) +
+        tile("Fine dust", `${one(air.pm25)} <small>µg/m³</small>`, esc(t("coarser dust {n}", { n: one(air.pm10) })));
+    const soon = this.rainSoon();
+
     const tiles =
       tile("Wind", `${Math.round(c.windSpeed)} <small>${esc(u.wind)}</small>`, `${t(compass(c.windDirection))} · ${esc(t("gusts {n}", { n: Math.round(c.windGusts) }))}`) +
       tile("Humidity", `${c.humidity}<small>%</small>`) +
@@ -222,7 +295,8 @@ export class WeatherView {
       ) +
       tile("UV index", today ? `${Math.round(today.uvIndexMax)}` : "–", today ? uvWord(today.uvIndexMax) : "") +
       tile("Sunrise", today ? this.clock(today.sunrise) : "–") +
-      tile("Sunset", today ? this.clock(today.sunset) : "–");
+      tile("Sunset", today ? this.clock(today.sunset) : "–") +
+      airTiles;
 
     // Every second hour: twelve columns cover the next 24 hours.
     const hours = s.hourly
@@ -266,7 +340,8 @@ export class WeatherView {
       `<div class="wp-sub">${esc(t("Feels like {t}", { t: deg(c.feelsLike) }))}` +
       (today ? `  ·  ${esc(t("High {t}", { t: deg(today.max) }))}  ·  ${esc(t("Low {t}", { t: deg(today.min) }))}` : "") +
       `</div>` +
-      `<div class="wp-tiles">${tiles}</div>` +
+      (soon ? `<div class="wp-soon" data-no-translate>${esc(soon)}</div>` : "") +
+      `<div class="wp-tiles${air ? " nine" : ""}">${tiles}</div>` +
       `</section>` +
       `<section class="wp-right">` +
       `<h3>Next 24 hours</h3><div class="wp-hours">${hours}</div>` +

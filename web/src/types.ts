@@ -17,6 +17,8 @@ export interface DisplayConfig {
   view: string;
   /** "moving" or "still": the background shown without photos. */
   background: string;
+  /** "off", "light" or "strong": how much the picture darkens in the evening. */
+  evening_dim?: string;
   /** "bold", "slim" or "analog". */
   clock_style?: string;
   /** Small sounds when the remote is used. */
@@ -157,6 +159,9 @@ export interface PhotosStatus {
   pairs?: number;
   /** Photos the person chose never to see again. */
   hidden?: number;
+  /** How many favourites the slideshow has, and whether it shows nothing else. */
+  favourites?: number;
+  onlyFavourites?: boolean;
 }
 
 export interface PhotoItem {
@@ -168,6 +173,8 @@ export interface PhotoItem {
   place?: string;
   /** A video clip rather than a photo. */
   video?: boolean;
+  /** One of the person's favourites. */
+  favourite?: boolean;
   v: string;
 }
 
@@ -202,6 +209,18 @@ export interface WeatherState {
   };
   hourly: { time: string; temperature: number; precipitationProbability: number; precipitation: number; code: number; isDay: boolean }[];
   daily: WeatherDay[];
+  /** The next two hours: whether it rains, and from when to when. */
+  rain?: { now: boolean; starts?: string; stops?: string; snow?: boolean };
+  /** Air quality and pollen, where they are known. */
+  air?: {
+    index: number;
+    scale: "eu" | "us";
+    /** 0 (good) to 5. */
+    level: number;
+    pm25: number;
+    pm10: number;
+    pollen: { kind: string; level: number }[];
+  };
 }
 
 /** The complete remote-control vocabulary. Everything else is ignored. */
