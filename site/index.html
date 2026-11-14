@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>PiDash · A TV dashboard for the Raspberry Pi</title>
+    <meta
+      name="description"
+      content="PiDash turns a Raspberry Pi 5 into a calm screen for your TV: your photos, the time and the weather, with apps and games one press away. Everything works with the TV's own remote."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="PiDash · A TV dashboard for the Raspberry Pi" />
+    <meta
+      property="og:description"
+      content="Your photos, the time and the weather on the TV. Apps, games and settings with nothing but the TV's own remote."
+    />
+    <meta property="og:image" content="https://darioromano.github.io/PiDash/img/dashboard.jpg" />
+    <meta property="og:url" content="https://darioromano.github.io/PiDash/" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0d12'/%3E%3Crect x='10' y='15' width='44' height='28' rx='5' fill='none' stroke='%237cc4ff' stroke-width='4'/%3E%3Cpath d='M24 52h16' stroke='%237cc4ff' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="top">
+      <a class="brand" href="#top" aria-label="PiDash, to the top of the page">
+        <svg viewBox="0 0 64 64" aria-hidden="true">
+          <rect x="8" y="13" width="48" height="31" rx="6" fill="none" stroke="currentColor" stroke-width="4.500" />
+          <path d="M23 54h18" stroke="currentColor" stroke-width="4.500" stroke-linecap="round" />
+        </svg>
+        PiDash
+      </a>
+      <nav aria-label="On this page">
+        <a href="#features">Features</a>
+        <a href="#install">Install</a>
+        <a href="https://github.com/DarioRomano/PiDash">GitHub</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <p class="eyebrow">For the Raspberry Pi 5</p>
+        <h1>Something worth looking at when nothing is on.</h1>
+        <p class="lead">
+          PiDash shows your photos, the time and the weather on the TV, and puts YouTube, Netflix, your games and
+          everything else one press away. All of it works with the remote the TV came with.
+        </p>
+        <p class="actions">
+          <a class="button primary" href="#install">Install it</a>
+          <a class="button" href="https://github.com/DarioRomano/PiDash">View the code</a>
+        </p>
+        <figure class="tv big">
+          <img src="img/dashboard.jpg" width="1920" height="1080" alt="The dashboard on a TV: a large clock and the date over a photo of mountains at sunrise, with the weather in the corner." />
+        </figure>
+      </section>
+
+      <section id="features" class="features" aria-labelledby="features-title">
+        <h2 id="features-title" class="hidden">What it does</h2>
+
+        <article class="feature">
+          <div class="words">
+            <h3>Photos, the time, the weather</h3>
+            <p>
+              Albums from Synology Photos or a folder on the Pi, behind a clock you can read from the sofa. Photos
+              can drift and zoom slowly without anything being cut off, upright ones appear two at a time, and the
+              slideshow can start each day with what you took on that day in earlier years.
+            </p>
+            <ul>
+              <li>Weather for today, the next hours and the week</li>
+              <li>Your next calendar events</li>
+              <li>A dim clock at night, and the TV switched off and on by the clock</li>
+            </ul>
+          </div>
+          <figure class="tv">
+            <img src="img/weather.jpg" width="1920" height="1080" loading="lazy" alt="The weather page: the temperature now, the next 24 hours, and a week of days with their low and high." />
+          </figure>
+        </article>
+
+        <article class="feature flip">
+          <div class="words">
+            <h3>Apps and games, one press away</h3>
+            <p>
+              Press OK and a row of tiles slides up. YouTube in its TV layout, Netflix, Spotify, Plex and any other
+              website open fullscreen. Kodi, Steam Link, Moonlight and emulators such as RetroArch and PPSSPP start
+              like on a console, and so does any program installed on the Pi.
+            </p>
+            <ul>
+              <li>Hold Back for two seconds to come home from anywhere</li>
+              <li>Internet radio that plays while the photos carry on</li>
+              <li>Move tiles around with the remote</li>
+            </ul>
+          </div>
+          <figure class="tv">
+            <img src="img/apps.jpg" width="1920" height="1080" loading="lazy" alt="The app row along the bottom of the screen, with tiles for the weather, YouTube, Netflix, Spotify and Synology Photos. The selected tile glows in the colour of its icon." />
+          </figure>
+        </article>
+
+        <article class="feature">
+          <div class="words">
+            <h3>Set up from the sofa</h3>
+            <p>
+              Every setting is on the TV and works with arrows, OK and Back, down to an on-screen keyboard for the
+              rare thing that has to be typed. For anything longer, the same page opens on your phone.
+            </p>
+            <ul>
+              <li>English, German, French and Italian</li>
+              <li>Backup and restore in one file</li>
+              <li>A PIN, if little hands should not change things</li>
+            </ul>
+          </div>
+          <figure class="tv">
+            <img src="img/keyboard.jpg" width="1920" height="1080" loading="lazy" alt="The settings page on the TV with an on-screen keyboard open, one key highlighted." />
+          </figure>
+        </article>
+
+        <article class="feature flip">
+          <div class="words">
+            <h3>Controllers and headphones</h3>
+            <p>
+              Pair a game controller or headphones over Bluetooth without touching a mouse. A controller then works
+              as a remote for everything, and switching it on switches the TV on, the way a console does. Put
+              headphones on and the sound moves to them; take them off and it is back on the TV.
+            </p>
+            <ul>
+              <li>Battery levels, and a word on the TV when one runs low</li>
+              <li>Choose the sound output and its volume</li>
+              <li>The controller works inside YouTube and Netflix too</li>
+            </ul>
+          </div>
+          <figure class="tv">
+            <img src="img/bluetooth.jpg" width="1920" height="1080" loading="lazy" alt="The sound and Bluetooth settings on the TV: a paired controller with its battery level, a speaker, and two devices found nearby with a Pair button each." />
+          </figure>
+        </article>
+
+        <article class="feature">
+          <div class="words">
+            <h3>It looks after itself</h3>
+            <p>
+              PiDash is meant to be forgotten about. It can install its own updates at night, rests while the TV is
+              off, pauses its animations when the Pi runs hot, and starts its browser again should the page ever
+              freeze. When something does need you, a status page on the TV says what, in plain words.
+            </p>
+            <ul>
+              <li>No terminal needed to find out why something is not working</li>
+              <li>Shows the last button it heard, to check a remote</li>
+              <li>Nudges the clock and texts by a few pixels now and then, to spare the screen</li>
+            </ul>
+          </div>
+          <figure class="tv">
+            <img src="img/status.jpg" width="1920" height="1080" loading="lazy" alt="The status page: version, temperature and memory of the Pi, whether the TV answers, which remotes are listened to, and where photos and weather come from." />
+          </figure>
+        </article>
+      </section>
+
+      <section class="facts" aria-labelledby="facts-title">
+        <h2 id="facts-title">Good to know</h2>
+        <div class="grid">
+          <div>
+            <h3>No extra hardware</h3>
+            <p>The TV passes its remote's buttons to the Pi over the HDMI cable. Nothing to buy, nothing to pair.</p>
+          </div>
+          <div>
+            <h3>On top of your desktop</h3>
+            <p>Nothing is flashed and the Pi's start-up is not changed. Leave the dashboard and your desktop is there, as you left it.</p>
+          </div>
+          <div>
+            <h3>No account</h3>
+            <p>Photos come from your own NAS or folder and stay at home; passwords stay on the Pi. From outside it only fetches the weather, your calendar and new versions.</p>
+          </div>
+          <div>
+            <h3>Easy on the Pi</h3>
+            <p>One small program with the pages built in. Photos are prepared once, and the screen is drawn no more often than the eye can tell, and not at all while the TV is off.</p>
+          </div>
+          <div>
+            <h3>Removable</h3>
+            <p>It lives in your home folder, plus one small system rule for the remote. One command removes it again.</p>
+          </div>
+          <div>
+            <h3>Free and open</h3>
+            <p>MIT licensed. Read it, change it, or tell it what it should do next.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="install" class="install" aria-labelledby="install-title">
+        <h2 id="install-title">Install</h2>
+        <p class="lead">
+          You need a Raspberry Pi 5 with Raspberry Pi OS and its desktop (Bookworm or newer), connected to the TV by
+          HDMI and to the internet. Open a terminal on the Pi and run:
+        </p>
+        <div class="command">
+          <code id="cmd">curl -fsSL https://raw.githubusercontent.com/DarioRomano/PiDash/main/install.sh | bash</code>
+          <button type="button" id="copy" aria-label="Copy the command">Copy</button>
+        </div>
+        <p class="small">
+          This downloads the latest release, checks it against its checksums and installs it. Nothing is compiled
+          on the Pi. If you would rather look first, the
+          <a href="https://github.com/DarioRomano/PiDash/blob/main/install.sh">installer</a> is a short script, and the
+          <a href="https://github.com/DarioRomano/PiDash#install-on-your-pi">README</a> has the options, such as
+          starting the dashboard whenever the Pi starts.
+        </p>
+        <p class="actions">
+          <a class="button" href="https://github.com/DarioRomano/PiDash#readme">Read the guide</a>
+          <a class="button" href="https://github.com/DarioRomano/PiDash/releases/latest">Latest release</a>
+        </p>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <p>
+        PiDash is made by Dario Romano and released under the
+        <a href="https://github.com/DarioRomano/PiDash/blob/main/LICENSE">MIT License</a>.
+      </p>
+      <p>
+        The pictures behind the clock in these screenshots were drawn for this page. YouTube, Netflix, Spotify, Plex,
+        Synology and the other names belong to their owners; PiDash only opens them and is not affiliated with any of
+        them.
+      </p>
+    </footer>
+
+    <script>
+      // The one thing on this page that needs a script: copying the command.
+      const button = document.getElementById("copy");
+      button.addEventListener("click", async () => {
+        const text = document.getElementById("cmd").textContent;
+        try {
+          await navigator.clipboard.writeText(text);
+          button.textContent = "Copied";
+        } catch {
+          // No clipboard here: select the command so that it can be copied by hand.
+          const range = document.createRange();
+          range.selectNodeContents(document.getElementById("cmd"));
+          const selection = getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+          button.textContent = "Selected";
+        }
+        setTimeout(() => (button.textContent = "Copy"), 2000);
+      });
+    </script>
+  </body>
+</html>

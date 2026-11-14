@@ -8,6 +8,9 @@ controlled with the TV's own remote (HDMI-CEC) or your phone.
 - **Single binary**: Go backend with the web UI embedded. Deploy with one command.
 - **Stays smooth**: 1080p render, GPU-only animations, no polling in the browser.
 
+**[darioromano.github.io/PiDash](https://darioromano.github.io/PiDash/)** shows
+what it looks like.
+
 See [docs/PLAN.md](docs/PLAN.md) for the architecture and roadmap.
 
 ## Status
@@ -1205,6 +1208,21 @@ make deploy  PI_HOST=pi@raspberrypi.local     # afterwards: rebuild, copy, resta
 Add `INSTALL_FLAGS="--autostart --console-apps --phone-input"` to `make install`
 as needed. On the Pi itself, `make install-local` does the same from a checkout
 there.
+
+## The project page
+
+The page at [darioromano.github.io/PiDash](https://darioromano.github.io/PiDash/)
+is the `site/` folder: one HTML file, one stylesheet, and screenshots. A push
+to `main` that changes it publishes it (`.github/workflows/pages.yml`); for
+that, the repository's **Settings → Pages → Source** must be set to **GitHub
+Actions**, once.
+
+The screenshots are taken from the real pages, driven like a TV remote drives
+them, with sample pictures that are drawn for the purpose:
+
+```sh
+make build && make site-shots
+```
 
 ## Releasing
 

@@ -28,7 +28,7 @@ LDFLAGS   = -s -w -X main.version=$(VERSION)
 INSTALL_FLAGS ?=
 APP_DIR   = .local/share/pidash
 
-.PHONY: dev dev-backend dev-web build build-web build-pi deploy install install-local uninstall lint test e2e clean dist release
+.PHONY: dev dev-backend dev-web build build-web build-pi deploy install install-local uninstall lint test e2e clean dist release site-shots
 
 dev:
 	@$(MAKE) -j2 dev-backend dev-web
@@ -80,6 +80,12 @@ test:
 e2e:
 	@test -x bin/pidash || (echo 'bin/pidash is missing: run "make build" first'; exit 1)
 	node --test web/e2e/*.test.cjs
+
+# Takes the screenshots of the project page (site/img) again, from the real
+# pages. Needs python3 with numpy and Pillow for the sample pictures.
+site-shots:
+	@test -x bin/pidash || (echo 'bin/pidash is missing: run "make build" first'; exit 1)
+	cd web && node ../scripts/site-shots.cjs
 
 dist: build-web
 	scripts/dist.sh $(VERSION)
