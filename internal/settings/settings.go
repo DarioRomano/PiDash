@@ -244,8 +244,8 @@ const youTubeTV = "Mozilla/5.0 (PS4; Leanback Shell) Gecko/20100101 Firefox/65.0
 
 // Presets are the apps offered on the settings page.
 var Presets = []Preset{
-	{ID: "youtube", Name: "YouTube", Description: "The TV interface, in Firefox with uBlock Origin",
-		App: config.App{URL: "https://www.youtube.com/tv", Browser: config.BrowserFirefox, AdBlock: true, UserAgent: youTubeTV}},
+	{ID: "youtube", Name: "YouTube", Description: "The TV interface, made for a remote, with the adverts taken out",
+		App: config.App{URL: "https://www.youtube.com/tv", Browser: config.BrowserChromium, AdBlock: true, UserAgent: youTubeTV}},
 	{ID: "netflix", Name: "Netflix", Description: "In Chromium, which has the DRM module Netflix needs",
 		App: config.App{URL: "https://www.netflix.com/browse", Browser: config.BrowserChromium}},
 	{ID: "synology-photos", Name: "Synology Photos", Description: "Browse the photo app of your NAS",

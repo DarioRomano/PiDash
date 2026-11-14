@@ -337,7 +337,7 @@ const list: Record<string, string> = {
   "Personal Space": "Persönlicher Bereich",
   "Shared Space": "Gemeinsamer Bereich",
   "Albums": "Alben",
-  "The TV interface, in Firefox with uBlock Origin": "Die TV-Oberfläche, in Firefox mit uBlock Origin",
+  "The TV interface, made for a remote, with the adverts taken out": "Die TV-Oberfläche, für die Fernbedienung gemacht, ohne Werbung",
   "In Chromium, which has the DRM module Netflix needs": "In Chromium, das das von Netflix benötigte DRM-Modul hat",
   "Browse the photo app of your NAS": "Die Foto-App des NAS durchstöbern",
   "The Spotify web player. Works best with a mouse; the remote's OK and play button work on what is selected": "Der Spotify-Webplayer. Funktioniert am besten mit einer Maus; OK und die Wiedergabetaste der Fernbedienung wirken auf das Ausgewählte",

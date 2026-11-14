@@ -52,14 +52,14 @@ func TestFirefoxWebAppWithAdBlock(t *testing.T) {
 	bin := fakeBrowsers(t, "firefox")
 	hits := fakeAddonSite(t, 200, "PK\x03\x04fake-xpi")
 	data := t.TempDir()
-	app := config.App{ID: "youtube", URL: "https://www.youtube.com/tv", Browser: config.BrowserFirefox, AdBlock: true, UserAgent: youTubeUA}
+	app := config.App{ID: "youtube", URL: "https://www.youtube.com/", Browser: config.BrowserFirefox, AdBlock: true, UserAgent: youTubeUA}
 
 	launch, err := PrepareWebApp(app, data, []string{"WAYLAND_DISPLAY=wayland-0"}, quiet)
 	if err != nil {
 		t.Fatal(err)
 	}
 	profile := filepath.Join(data, "profiles", "youtube")
-	want := []string{filepath.Join(bin, "firefox"), "--kiosk", "--no-remote", "--profile", profile, "--name", "pidash-youtube", "--class", "pidash-youtube", "https://www.youtube.com/tv"}
+	want := []string{filepath.Join(bin, "firefox"), "--kiosk", "--no-remote", "--profile", profile, "--name", "pidash-youtube", "--class", "pidash-youtube", "https://www.youtube.com/"}
 	if !slices.Equal(launch.Argv, want) {
 		t.Errorf("argv = %q\nwant  %q", launch.Argv, want)
 	}
@@ -177,5 +177,61 @@ func TestZoomReachesTheBrowser(t *testing.T) {
 	big := firefoxPrefs(config.App{ID: "a", URL: "https://example.org", Zoom: 1.5})
 	if !strings.Contains(big, `user_pref("layout.css.devPixelsPerPx", "1.50");`) {
 		t.Errorf("zoom 1.5 is missing from the Firefox profile:\n%s", big)
+	}
+}
+
+func TestYouTubeOnTheTVRunsInChromiumWithTheAdvertsTakenOut(t *testing.T) {
+	bin := fakeBrowsers(t, "chromium", "firefox")
+	data := t.TempDir()
+	// Even when the settings still name Firefox, as older ones do.
+	for _, browser := range []string{config.BrowserFirefox, config.BrowserChromium} {
+		app := config.App{ID: "youtube", URL: "https://www.youtube.com/tv", Browser: browser, AdBlock: true, UserAgent: youTubeUA}
+		launch, err := PrepareWebApp(app, data, []string{"WAYLAND_DISPLAY=wayland-0"}, quiet)
+		if err != nil {
+			t.Fatal(err)
+		}
+		extension := filepath.Join(data, "extensions", "youtube-tv")
+		if launch.Argv[0] != filepath.Join(bin, "chromium") {
+			t.Errorf("browser = %s, want Chromium", launch.Argv[0])
+		}
+		for _, flag := range []string{"--load-extension=" + extension, "--disable-features=TranslateUI,Translate,DisableLoadExtensionCommandLineSwitch", "--user-agent=" + youTubeUA, "--class=pidash-youtube", "--kiosk"} {
+			if !slices.Contains(launch.Argv, flag) {
+				t.Errorf("argv is missing %s: %q", flag, launch.Argv)
+			}
+		}
+		for _, name := range []string{"manifest.json", "clean.js"} {
+			if b, err := os.ReadFile(filepath.Join(extension, name)); err != nil || len(b) < 100 {
+				t.Errorf("%s was not written: %v", name, err)
+			}
+		}
+	}
+	// Without adblock, and for other websites, nothing is loaded.
+	for _, app := range []config.App{
+		{ID: "youtube", URL: "https://www.youtube.com/tv", Browser: config.BrowserChromium},
+		{ID: "netflix", URL: "https://www.netflix.com/browse", Browser: config.BrowserChromium},
+	} {
+		launch, err := PrepareWebApp(app, t.TempDir(), nil, quiet)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, arg := range launch.Argv {
+			if strings.HasPrefix(arg, "--load-extension") {
+				t.Errorf("%s: %s", app.ID, arg)
+			}
+		}
+		if !slices.Contains(launch.Argv, "--disable-features=TranslateUI,Translate") {
+			t.Errorf("%s: argv = %q", app.ID, launch.Argv)
+		}
+	}
+}
+
+func TestWhichAddressIsYouTubeOnTheTV(t *testing.T) {
+	for address, want := range map[string]bool{
+		"https://www.youtube.com/tv": true, "https://youtube.com/tv#/": true, "https://www.youtube.com/tv/": true, "HTTPS://WWW.YOUTUBE.COM/tv": true,
+		"https://www.youtube.com/": false, "https://www.youtube.com/tvshows": false, "https://music.youtube.com/tv": false, "https://example.com/tv": false, "": false,
+	} {
+		if got := IsYouTubeTV(address); got != want {
+			t.Errorf("IsYouTubeTV(%q) = %v", address, got)
+		}
 	}
 }

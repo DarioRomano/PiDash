@@ -85,7 +85,7 @@ command -v chromium >/dev/null 2>&1 || command -v chromium-browser >/dev/null 2>
 command -v cec-ctl >/dev/null 2>&1 || missing+=(v4l-utils)
 command -v curl >/dev/null 2>&1 || missing+=(curl)
 fc-list 2>/dev/null | grep -qi '/inter' || missing+=(fonts-inter)
-# The YouTube app runs in Firefox (for uBlock Origin).
+# Website apps set to Firefox (for its ad blocker, uBlock Origin) need it.
 command -v firefox >/dev/null 2>&1 || command -v firefox-esr >/dev/null 2>&1 || missing+=(firefox)
 # Netflix only plays with the Widevine DRM module, which Raspberry Pi OS packages for Chromium.
 if ! dpkg -s libwidevinecdm0 >/dev/null 2>&1 && apt-cache show libwidevinecdm0 >/dev/null 2>&1; then

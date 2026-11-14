@@ -257,13 +257,15 @@ path = "/home/pi/Pictures"
 # While an app is running, the phone remote shows "Back to dashboard".
 
 # YouTube's TV interface, made for remote controls: arrow keys and OK work.
-# Runs in Firefox with uBlock Origin. The user agent makes YouTube serve the TV
-# interface; remove user_agent and use https://www.youtube.com/ for the normal site.
+# With adblock = true PiDash takes the adverts out of it. The user agent makes
+# YouTube serve the TV interface. For the normal site use
+# https://www.youtube.com/ with browser = "firefox", adblock = true and no
+# user_agent: there the ad blocker uBlock Origin does the work.
 [[apps]]
 id = "youtube"
 name = "YouTube"
 url = "https://www.youtube.com/tv"
-browser = "firefox"
+browser = "chromium"
 adblock = true
 user_agent = "Mozilla/5.0 (PS4; Leanback Shell) Gecko/20100101 Firefox/65.0 LeanbackShell/01.00.01.75 Sony PS4/ (PS4, , no, CH)"
 

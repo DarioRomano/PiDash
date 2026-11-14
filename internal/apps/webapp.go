@@ -14,7 +14,9 @@ import (
 	"strings"
 	"time"
 
+	"embed"
 	"github.com/DarioRomano/PiDash/internal/config"
+	"net/url"
 )
 
 // uBlock Origin, as published on addons.mozilla.org. The "latest" address
@@ -44,6 +46,20 @@ func PrepareWebApp(app config.App, dataDir string, env []string, log *slog.Logge
 		return WebLaunch{}, err
 	}
 	wayland := envValue(env, "WAYLAND_DISPLAY") != ""
+
+	// YouTube's TV interface without adverts runs in Chromium, whatever
+	// browser the app names: there PiDash takes the adverts out itself. The
+	// ad blocker for Firefox knows the YouTube website, not this interface.
+	extension := ""
+	if app.AdBlock && IsYouTubeTV(app.URL) {
+		app.Browser = config.BrowserChromium
+		dir := filepath.Join(dataDir, "extensions", "youtube-tv")
+		if err := writeYouTubeTV(dir); err != nil {
+			log.Warn("could not prepare the ad removal for YouTube; continuing without it", "app", app.ID, "err", err)
+		} else {
+			extension = dir
+		}
+	}
 
 	switch app.Browser {
 	case config.BrowserFirefox:
@@ -91,9 +107,16 @@ func PrepareWebApp(app config.App, dataDir string, env []string, log *slog.Logge
 			"--disable-infobars",
 			"--disable-session-crashed-bubble",
 			"--hide-crash-restore-bubble",
-			"--disable-features=TranslateUI,Translate",
 			"--autoplay-policy=no-user-gesture-required",
 		}
+		features := "TranslateUI,Translate"
+		if extension != "" {
+			// Newer versions want to be told that loading an extension from
+			// a folder is meant.
+			features += ",DisableLoadExtensionCommandLineSwitch"
+			argv = append(argv, "--load-extension="+extension)
+		}
+		argv = append(argv, "--disable-features="+features)
 		if app.UserAgent != "" {
 			argv = append(argv, "--user-agent="+app.UserAgent)
 		}
@@ -104,6 +127,38 @@ func PrepareWebApp(app config.App, dataDir string, env []string, log *slog.Logge
 		return WebLaunch{Argv: append(argv, app.URL), Env: env}, nil
 	}
 	return WebLaunch{}, fmt.Errorf("unknown browser %q", app.Browser)
+}
+
+//go:embed youtubetv/manifest.json youtubetv/clean.js
+var youTubeTVFiles embed.FS
+
+// IsYouTubeTV reports whether an address is YouTube's TV interface.
+func IsYouTubeTV(address string) bool {
+	u, err := url.Parse(address)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	return (host == "www.youtube.com" || host == "youtube.com") && (u.Path == "/tv" || strings.HasPrefix(u.Path, "/tv/"))
+}
+
+// writeYouTubeTV puts the small browser extension that takes the adverts out
+// of YouTube's TV interface into dir. It is written anew on every start, so
+// an update of PiDash also updates it.
+func writeYouTubeTV(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	for _, name := range []string{"manifest.json", "clean.js"} {
+		data, err := youTubeTVFiles.ReadFile("youtubetv/" + name)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // firefoxPrefs returns the profile's user.js. It is rewritten on every launch,

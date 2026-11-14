@@ -409,7 +409,9 @@ type App struct {
 	URL string `toml:"url"`
 	// Browser for a web app: "chromium" (default) or "firefox".
 	Browser string `toml:"browser"`
-	// AdBlock installs uBlock Origin into the app's browser profile (Firefox only).
+	// AdBlock installs uBlock Origin into the app's browser profile (Firefox
+	// only). For YouTube's TV interface it means something else: PiDash
+	// takes the adverts out itself, and runs the app in Chromium for that.
 	AdBlock bool `toml:"adblock"`
 	// UserAgent overrides the browser's user agent for a web app, for sites
 	// that only show their TV interface to TVs.
@@ -592,7 +594,9 @@ func (c *Config) Finish() error {
 			default:
 				return fmt.Errorf("apps[%d] (%s): browser must be %q or %q, got %q", i, a.ID, BrowserChromium, BrowserFirefox, a.Browser)
 			}
-			if a.AdBlock && a.Browser != BrowserFirefox {
+			// YouTube's TV interface is the exception: its adverts are taken
+			// out by PiDash itself, in Chromium.
+			if a.AdBlock && a.Browser != BrowserFirefox && !isYouTubeTV(a.URL) {
 				return fmt.Errorf("apps[%d] (%s): adblock = true needs browser = %q", i, a.ID, BrowserFirefox)
 			}
 			if a.Zoom != 0 && (a.Zoom < 0.5 || a.Zoom > 4) {
@@ -754,4 +758,14 @@ func (c Config) ForClient() Client {
 		stations = []RadioStation{}
 	}
 	return Client{Display: c.Display, Keys: c.Input.Keys, Radio: stations, GuestWifi: c.Wifi.Name, PhotoMap: c.Photos.Map}
+}
+
+// isYouTubeTV reports whether an address is YouTube's TV interface.
+func isYouTubeTV(address string) bool {
+	u, err := url.Parse(address)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	return (host == "www.youtube.com" || host == "youtube.com") && (u.Path == "/tv" || strings.HasPrefix(u.Path, "/tv/"))
 }

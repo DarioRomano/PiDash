@@ -894,7 +894,7 @@ with these two:
 id = "youtube"
 name = "YouTube"
 url = "https://www.youtube.com/tv"
-browser = "firefox"
+browser = "chromium"
 adblock = true
 user_agent = "Mozilla/5.0 (PS4; Leanback Shell) Gecko/20100101 Firefox/65.0 LeanbackShell/01.00.01.75 Sony PS4/ (PS4, , no, CH)"
 
@@ -904,13 +904,28 @@ name = "Netflix"
 url = "https://www.netflix.com/browse"
 ```
 
-- **YouTube** runs in Firefox with **uBlock Origin**. The ad blocker is
-  downloaded from Mozilla's add-on site into the YouTube profile the first time
-  you start the app, so the Pi needs internet then. Firefox keeps it updated.
-  The address is YouTube's TV interface, which is built for remote controls:
-  the arrow keys and OK on your TV remote work. The `user_agent` line is what
-  makes YouTube serve that interface. For the normal website instead, use
-  `url = "https://www.youtube.com/"` and delete the `user_agent` line.
+- **YouTube** opens YouTube's TV interface, which is built for remote
+  controls: the arrow keys and OK on your TV remote work. The `user_agent`
+  line is what makes YouTube serve that interface.
+- **YouTube without adverts.** With `adblock = true` PiDash takes the adverts
+  out itself. The TV interface asks YouTube what to play and what to show,
+  and the answers say which adverts go before and into a video and carry
+  adverts among the rows of videos. A small script that PiDash loads into the
+  app's browser leaves those parts out as the answers are read, so there is
+  nothing for the interface to show. This needs Chromium, so the app runs in
+  Chromium even if its settings still say `browser = "firefox"`, as older
+  ones do; you sign in to YouTube once more after that change. Ad blockers
+  such as uBlock Origin do not cover the TV interface, which is why adverts
+  came through before.
+
+  This follows what YouTube sends today. If YouTube changes it, adverts can
+  come back until PiDash catches up; the only way that never breaks is a
+  YouTube Premium subscription, which works here like anywhere else.
+- **The normal YouTube website** instead: `url = "https://www.youtube.com/"`,
+  `browser = "firefox"`, `adblock = true` and no `user_agent` line. There
+  **uBlock Origin** does the work. It is downloaded from Mozilla's add-on site
+  into the app's profile the first time the app starts, and Firefox keeps it
+  updated. The website expects a mouse.
 - **Netflix** runs in Chromium, because Raspberry Pi OS provides the DRM module
   Netflix requires (`libwidevinecdm0`) for Chromium. The installer adds it if
   it is missing.
@@ -941,7 +956,7 @@ real certificate.
   interface works with the TV remote alone.
 - **Getting back.** Hold Back on the TV remote for two seconds, tap **Back to
   dashboard** on the phone remote, or press Alt+F4 on a keyboard.
-- **If uBlock Origin is not active** in the YouTube app, Firefox on your system
+- **If uBlock Origin is not active** in an app that uses Firefox, Firefox on your system
   did not accept the automatic install. The reliable alternative applies to
   every Firefox profile on the Pi. Create `/etc/firefox/policies/policies.json`:
 

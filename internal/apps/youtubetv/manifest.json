@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "PiDash: YouTube on the TV",
+  "version": "1.0",
+  "description": "Takes the advertising out of what YouTube's TV interface is sent. Part of PiDash.",
+  "content_scripts": [
+    {
+      "matches": ["*://www.youtube.com/tv*", "*://youtube.com/tv*"],
+      "js": ["clean.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ]
+}
