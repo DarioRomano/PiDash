@@ -95,7 +95,7 @@ func (c *Controller) follow(ctx context.Context, dev string, log *slog.Logger) e
 	}
 	log.Debug("answering the TV over HDMI-CEC", "device", dev)
 
-	r := &responder{phys: physInvalid, addr: laInvalid, active: &c.active}
+	r := &responder{phys: physInvalid, addr: laInvalid, active: &c.active, seen: &c.seen}
 	var lastRegister time.Time
 	for ctx.Err() == nil {
 		// Where the Pi is on the bus can change at any time: the TV drops and

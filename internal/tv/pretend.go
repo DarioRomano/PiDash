@@ -14,6 +14,15 @@ type Pretend struct {
 	mu    sync.Mutex
 	power cec.Power
 	did   []string
+	// elsewhere is true after it was told to show another device.
+	elsewhere bool
+}
+
+// Elsewhere reports whether the TV shows something other than the Pi.
+func (p *Pretend) Elsewhere() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.elsewhere
 }
 
 func (p *Pretend) note(what string) {
@@ -45,7 +54,7 @@ func (p *Pretend) Standby(context.Context) error {
 func (p *Pretend) Wake(context.Context) error {
 	p.note("wake")
 	p.mu.Lock()
-	p.power = cec.PowerOn
+	p.power, p.elsewhere = cec.PowerOn, false
 	p.mu.Unlock()
 	return nil
 }
@@ -63,6 +72,9 @@ func (p *Pretend) PowerStatus(context.Context) (cec.Power, error) {
 // Show implements InputSwitcher.
 func (p *Pretend) Show(_ context.Context, address string) error {
 	p.note("show " + address)
+	p.mu.Lock()
+	p.elsewhere = true
+	p.mu.Unlock()
 	return nil
 }
 

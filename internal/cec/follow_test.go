@@ -8,7 +8,7 @@ import (
 
 // The Pi is a playback device with address 4 on HDMI 1 (1.0.0.0); the TV is 0.
 func newResponder() *responder {
-	return &responder{phys: 0x1000, addr: 4, active: new(atomic.Bool)}
+	return &responder{phys: 0x1000, addr: 4, active: new(atomic.Bool), seen: new(sight)}
 }
 
 func answers(t *testing.T, r *responder, msg ...byte) [][]byte {
@@ -117,4 +117,45 @@ func TestWhatTheTVSaysAboutItsPower(t *testing.T) {
 			t.Errorf("%s: standby %v, active %v; want %v, %v", name, standby, active, c.standby, c.active)
 		}
 	}
+}
+
+func TestWhatTheTVSaysItShows(t *testing.T) {
+	r := newResponder()
+	elsewhere := func() bool { return r.seen.elsewhere.Load() }
+	// Before the TV has said anything, nothing is assumed.
+	if elsewhere() {
+		t.Fatal("elsewhere before anything was heard")
+	}
+	for _, c := range []struct {
+		what string
+		msg  []byte
+		want bool
+	}{
+		{"another input is chosen with the TV's remote", []byte{0x0f, 0x86, 0x20, 0x00}, true},
+		{"the Pi's input is chosen", []byte{0x0f, 0x86, 0x10, 0x00}, false},
+		{"the TV turns to its own apps, and says so", []byte{0x0f, 0x82, 0x00, 0x00}, true},
+		{"a button of its remote arrives all the same", []byte{0x04, 0x44, 0x01}, false},
+		{"the inputs are switched away from the Pi", []byte{0x0f, 0x80, 0x10, 0x00, 0x00, 0x00}, true},
+		{"and back to it", []byte{0x0f, 0x80, 0x00, 0x00, 0x10, 0x00}, false},
+		{"a console switches itself on and takes the screen", []byte{0x8f, 0x82, 0x30, 0x00}, true},
+		{"a button meant for another device says nothing", []byte{0x05, 0x44, 0x01}, true},
+		{"a message cut short says nothing", []byte{0x0f, 0x86, 0x10}, true},
+		{"the TV goes off: what it shows next is not known", []byte{0x0f, 0x36}, false},
+		{"a message cut short, again", []byte{0x0f, 0x82, 0x20}, false},
+	} {
+		r.handle(c.msg)
+		if elsewhere() != c.want {
+			t.Fatalf("%s: elsewhere = %v, want %v", c.what, elsewhere(), c.want)
+		}
+	}
+	// When it last left and came back is kept, for the status page.
+	if r.seen.left.Load() == 0 || r.seen.back.Load() == 0 {
+		t.Errorf("times not kept: left %d, back %d", r.seen.left.Load(), r.seen.back.Load())
+	}
+	// A responder without anyone to tell still answers.
+	bare := &responder{phys: 0x1000, addr: 4, active: new(atomic.Bool)}
+	if out, _ := bare.handle([]byte{0x0f, 0x86, 0x10, 0x00}); len(out) != 1 {
+		t.Errorf("without a place to note it: %v", out)
+	}
+	bare.handle([]byte{0x0f, 0x86, 0x20, 0x00})
 }

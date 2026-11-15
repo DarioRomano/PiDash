@@ -3,6 +3,7 @@ package cec
 import (
 	"fmt"
 	"sync/atomic"
+	"time"
 )
 
 // A TV does not just send key presses to whatever is plugged in. It first asks
@@ -17,6 +18,7 @@ const (
 	opFeatureAbort        = 0x00
 	opGiveDeckStatus      = 0x1a
 	opStandby             = 0x36
+	opKeyPressed          = 0x44
 	opRoutingChange       = 0x80
 	opActiveSource        = 0x82
 	opRequestActiveSource = 0x85
@@ -54,6 +56,42 @@ type responder struct {
 	// active is true while the TV is showing the Pi's input, as far as the
 	// messages on the bus tell.
 	active *atomic.Bool
+	// seen notes when the TV says it shows something else; may be nil.
+	seen *sight
+}
+
+// sight is what the TV has said about what it shows. A TV says when it turns
+// to another input, and most say when they turn to their own programme or
+// one of their own apps; that it shows the Pi is known when it says so, and
+// from every button of its remote that arrives, since those go to what is
+// on screen. Before any of that was heard, nothing is known, and nothing is
+// assumed.
+type sight struct {
+	elsewhere atomic.Bool
+	// When it last turned to something else, and when it last came back, in
+	// seconds since 1970; zero for never.
+	left, back atomic.Int64
+}
+
+// away notes that the TV shows something else than the Pi.
+func (s *sight) away() {
+	if s != nil && !s.elsewhere.Swap(true) {
+		s.left.Store(time.Now().Unix())
+	}
+}
+
+// here notes that the TV shows the Pi.
+func (s *sight) here() {
+	if s != nil && s.elsewhere.Swap(false) {
+		s.back.Store(time.Now().Unix())
+	}
+}
+
+// forget is for when the TV went off: what it shows next is not known.
+func (s *sight) forget() {
+	if s != nil {
+		s.elsewhere.Store(false)
+	}
 }
 
 // handle takes one received message and returns the messages to send in
@@ -85,13 +123,36 @@ func (r *responder) handle(msg []byte) (out [][]byte, note string) {
 		}
 		if target != r.phys {
 			r.active.Store(false)
+			if target != physInvalid {
+				r.seen.away()
+				return nil, "the TV switched to something else"
+			}
 			return nil, ""
 		}
 		r.active.Store(true)
+		r.seen.here()
 		return [][]byte{activeSource}, "the TV switched to the Pi; confirmed it as the active source"
 	case opActiveSource:
+		// Another device says it is what the TV shows; a TV says so of
+		// itself (address 0.0.0.0) when it turns to its own programme or apps.
 		if param(2) != r.phys {
 			r.active.Store(false)
+			if param(2) != physInvalid {
+				r.seen.away()
+				return nil, "the TV shows something else now"
+			}
+		}
+		return nil, ""
+	case opStandby:
+		if from == 0 {
+			r.seen.forget()
+		}
+		return nil, ""
+	case opKeyPressed:
+		// A button of the TV's remote, sent to the Pi: the TV sends those to
+		// what it shows.
+		if from == 0 && to == r.addr {
+			r.seen.here()
 		}
 		return nil, ""
 	case opRequestActiveSource:

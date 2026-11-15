@@ -105,3 +105,82 @@ func TestWithoutTheSettingTheTVStaysOn(t *testing.T) {
 		t.Errorf("standbys %d, status %+v", fake.standbys, s.Status())
 	}
 }
+
+func TestTheTVIsLeftOnWhileItShowsSomethingElse(t *testing.T) {
+	fake := &fakeTV{power: cec.PowerOn}
+	elsewhere := false
+	off := Clock{23, 30}
+	var told []Status
+	s := New(Options{
+		TV: fake, IdleOff: 30 * time.Minute, Off: &off, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		AppRunning: func() bool { return false },
+		// The TV says when it turns to another input or to one of its own apps.
+		Elsewhere: func() bool { return elsewhere },
+	})
+	s.OnChange(func(st Status) { told = append(told, st) })
+	ctx := context.Background()
+	clock := at(14, 20, 0)
+	step := func(d time.Duration) {
+		clock = clock.Add(d)
+		s.Step(ctx, clock)
+	}
+	step(0)
+
+	// Ten minutes of the dashboard, then two hours of a film in one of the
+	// TV's own apps: its buttons do not come here, and that is no reason to
+	// switch the TV off.
+	step(10 * time.Minute)
+	elsewhere = true
+	for i := 0; i < 240; i++ {
+		step(30 * time.Second)
+	}
+	if st := s.Status(); fake.standbys != 0 || st.SleepAt != nil || !st.Elsewhere {
+		t.Fatalf("during the film: standbys %d, status %+v", fake.standbys, st)
+	}
+	// Back on the dashboard, the half hour starts anew.
+	elsewhere = false
+	step(28 * time.Minute)
+	if fake.standbys != 0 || s.Status().SleepAt != nil {
+		t.Fatalf("28 minutes after coming back: standbys %d, status %+v", fake.standbys, s.Status())
+	}
+	// The minute's notice is running when the TV turns to something else:
+	// nobody sees it, and it is taken back.
+	step(90 * time.Second)
+	if s.Status().SleepAt == nil {
+		t.Fatal("no notice")
+	}
+	elsewhere = true
+	said := len(told)
+	step(30 * time.Second)
+	step(60 * time.Second)
+	if st := s.Status(); fake.standbys != 0 || st.SleepAt != nil || st.Idle || len(told) == said {
+		t.Fatalf("the notice was not taken back: standbys %d, status %+v", fake.standbys, st)
+	}
+
+	// The nightly switch-off waits as well, as it does for an app on the Pi,
+	// and is made up for when the dashboard is back.
+	step(time.Until(at(14, 23, 31)) - time.Until(clock))
+	step(30 * time.Minute)
+	if fake.standbys != 0 {
+		t.Fatal("the TV was switched off at half past eleven, in the middle of something else")
+	}
+	elsewhere = false
+	step(30 * time.Second)
+	if fake.standbys != 1 {
+		t.Errorf("back on the dashboard after the time: standbys %d, want 1", fake.standbys)
+	}
+}
+
+func TestASleepTimerThatWasSetStillCounts(t *testing.T) {
+	// Set by hand, it means "off in half an hour, whatever I watch".
+	fake := &fakeTV{power: cec.PowerOn}
+	s := New(Options{TV: fake, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		AppRunning: func() bool { return false }, Elsewhere: func() bool { return true }})
+	ctx := context.Background()
+	s.Step(ctx, time.Now())
+	s.SetSleep(1)
+	s.Step(ctx, time.Now().Add(61*time.Second))
+	if fake.standbys != 1 {
+		t.Errorf("a sleep timer set by hand: standbys %d, want 1", fake.standbys)
+	}
+}

@@ -41,6 +41,11 @@ type tvReport struct {
 	On           string     `json:"on,omitempty"`
 	SleepAt      *time.Time `json:"sleepAt,omitempty"`
 	SleepMinutes int        `json:"sleepMinutes,omitempty"`
+	// Elsewhere says the TV shows another input or one of its own apps;
+	// LeftAt and BackAt when it last did, and when it came back.
+	Elsewhere bool       `json:"elsewhere,omitempty"`
+	LeftAt    *time.Time `json:"leftAt,omitempty"`
+	BackAt    *time.Time `json:"backAt,omitempty"`
 }
 
 type remoteReport struct {
@@ -91,7 +96,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.tv != nil {
 		st := s.tv.Status()
-		rep.TV = &tvReport{Control: st.Available, Asleep: st.Asleep, Off: st.Off, On: st.On, SleepAt: st.SleepAt, SleepMinutes: st.SleepMinutes}
+		rep.TV = &tvReport{Control: st.Available, Asleep: st.Asleep, Off: st.Off, On: st.On, SleepAt: st.SleepAt, SleepMinutes: st.SleepMinutes,
+			Elsewhere: st.Elsewhere, LeftAt: st.LeftAt, BackAt: st.BackAt}
 	}
 	if s.remote != nil {
 		r := &remoteReport{Devices: s.remote.Devices(), Focus: s.apps != nil && s.apps.CanFocus()}

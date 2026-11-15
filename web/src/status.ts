@@ -6,7 +6,7 @@ interface StatusReport {
   version: string;
   started: number;
   update?: { latest?: string; available: boolean; auto: boolean; possible: boolean; installing: boolean; error?: string };
-  tv?: { control: boolean; asleep: boolean; off?: string; on?: string; sleepAt?: string };
+  tv?: { control: boolean; asleep: boolean; off?: string; on?: string; sleepAt?: string; elsewhere?: boolean; leftAt?: string; backAt?: string };
   remote?: { devices: string[]; last?: { device: string; key: string; action?: string; at: string }; keys?: string; focus: boolean };
   photos?: { source: string; count: number; indexing: boolean; hidden: number; error?: string };
   sources: { name: string; updatedAt: string; stale: boolean; error?: string }[];
@@ -261,6 +261,15 @@ export class StatusPanel {
     const tv = section("TV and remote");
     if (r?.tv) {
       row(tv, "TV", r.tv.control ? (r.tv.asleep ? t("in standby") : t("answers over HDMI")) : t("does not answer over HDMI, so PiDash cannot switch it on or off"), r.tv.control ? "ok" : "warn");
+      if (r.tv.control) {
+        // What the TV has said about what it shows. It is not switched off
+        // while it shows something else.
+        const at = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        let shows = t("PiDash, as far as the TV has said: it says when it turns to another input or to one of its own apps");
+        if (r.tv.elsewhere) shows = t("something else since {time}: it is not switched off meanwhile", { time: r.tv.leftAt ? at(r.tv.leftAt) : "?" });
+        else if (r.tv.leftAt && r.tv.backAt) shows = t("PiDash · something else last from {from} to {until}", { from: at(r.tv.leftAt), until: at(r.tv.backAt) });
+        row(tv, "TV shows", shows);
+      }
       if (r.tv.off || r.tv.on) row(tv, "Timetable", [r.tv.off ? t("off at {time}", { time: r.tv.off }) : "", r.tv.on ? t("on at {time}", { time: r.tv.on }) : ""].filter(Boolean).join(" · "));
       if (r.tv.sleepAt) row(tv, "Sleep timer", t("TV off in {n} min", { n: Math.max(1, Math.round((Date.parse(r.tv.sleepAt) - Date.now()) / 60000)) }));
     }

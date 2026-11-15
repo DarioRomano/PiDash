@@ -48,6 +48,25 @@ type Controller struct {
 
 	// active is true while the TV shows the Pi's input, as far as PiDash knows.
 	active atomic.Bool
+	// seen is what the TV has said about showing something else.
+	seen sight
+}
+
+// Elsewhere reports whether the TV has said that it shows something other
+// than the Pi: another input, or its own programme or apps. False means
+// that it shows the Pi, or that nothing is known.
+func (c *Controller) Elsewhere() bool { return c.seen.elsewhere.Load() }
+
+// LastElsewhere returns when the TV last turned to something else, and when
+// it last came back to the Pi; zero times for never.
+func (c *Controller) LastElsewhere() (left, back time.Time) {
+	if v := c.seen.left.Load(); v != 0 {
+		left = time.Unix(v, 0)
+	}
+	if v := c.seen.back.Load(); v != 0 {
+		back = time.Unix(v, 0)
+	}
+	return left, back
 }
 
 // New returns a controller that uses the system's cec-ctl.
@@ -177,6 +196,7 @@ func (c *Controller) activate(ctx context.Context, a adapter) error {
 	_, err := c.run(ctx, "-d", a.dev, "--to", "15", "--active-source", "phys-addr="+a.phys)
 	if err == nil {
 		c.active.Store(true)
+		c.seen.here()
 	}
 	return err
 }
@@ -198,6 +218,7 @@ func (c *Controller) Announce(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	c.active.Store(true)
+	c.seen.here()
 	return true, nil
 }
 

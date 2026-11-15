@@ -621,6 +621,23 @@ while the dashboard shows: not during an app, a game or a video, and not
 while music or the radio plays. A minute before, the TV says so, and any
 button keeps it on. It needs a TV that can be switched over HDMI-CEC.
 
+**While the TV shows something else, it is left on.** Someone watching
+another input, or one of the TV's own apps, presses no buttons that reach
+the Pi; that must not look like nobody being there. A TV says over HDMI when
+it turns to another input, and most say when they turn to their own
+programme or apps. From then on the time does not count, a notice that was
+running is taken back, and the nightly switch-off (`off` under `[tv]`) waits
+too, as it does for an app on the Pi. It all starts again when the TV comes
+back to the Pi, which it says as well, and which any button of its remote
+arriving at the Pi shows in any case. A sleep timer set by hand still
+counts: that one means "off in half an hour, whatever is on".
+
+The [status page](#status-page) says under **TV shows** what the TV has
+said: PiDash, or something else and since when, and the last time it showed
+something else. If you watch one of the TV's apps for a while and that line
+never mentions it, your TV keeps this to itself; nothing can then tell the
+two apart, and the idle switch-off is better left on "Never".
+
 When the TV goes off, for this reason or any other, game controllers,
 headphones and speakers connected over Bluetooth are disconnected, so that
 they switch themselves off instead of running their batteries down.

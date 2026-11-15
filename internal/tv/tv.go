@@ -93,7 +93,15 @@ type Options struct {
 	// Busy reports that something is going on that nobody presses buttons
 	// for, such as music; nil means nothing ever is.
 	Busy func() bool
-	Log  *slog.Logger
+	// Elsewhere reports that the TV shows something other than this
+	// computer: another input, or one of its own apps. Whoever watches that
+	// presses no buttons here, and is not to have the TV switched off under
+	// them. Nil, or false, where that is not known.
+	Elsewhere func() bool
+	// LastElsewhere reports when the TV last turned to something else and
+	// when it last came back; zero times for never. May be nil.
+	LastElsewhere func() (left, back time.Time)
+	Log           *slog.Logger
 }
 
 // Status is sent to the dashboard and the phone remote.
@@ -112,6 +120,12 @@ type Status struct {
 	// Idle says the TV is about to be switched off because nobody pressed
 	// anything for a while; any button stops that.
 	Idle bool `json:"idle,omitempty"`
+	// Elsewhere says the TV shows something other than this computer;
+	// LeftAt and BackAt are when it last turned to something else and when
+	// it last came back, where it ever said so.
+	Elsewhere bool       `json:"elsewhere,omitempty"`
+	LeftAt    *time.Time `json:"leftAt,omitempty"`
+	BackAt    *time.Time `json:"backAt,omitempty"`
 }
 
 // settle is how long a TV may take to report "standby" after being told to.
@@ -190,6 +204,15 @@ func (s *Service) statusLocked() Status {
 		at := s.sleepAt
 		st.SleepAt = &at
 	}
+	st.Elsewhere = s.opt.Elsewhere != nil && s.opt.Elsewhere()
+	if s.opt.LastElsewhere != nil {
+		if left, back := s.opt.LastElsewhere(); !left.IsZero() {
+			st.LeftAt = &left
+			if !back.IsZero() && !back.Before(left) {
+				st.BackAt = &back
+			}
+		}
+	}
 	if s.opt.Off != nil {
 		st.Off = s.opt.Off.String()
 	}
@@ -240,9 +263,18 @@ func (s *Service) Step(ctx context.Context, now time.Time) {
 	// Nobody has pressed anything for long enough: the TV is given a minute's
 	// notice through the sleep timer, which says so on screen. Any button
 	// takes it back. While the TV is off, or something is being watched or
-	// listened to, the time does not count.
-	if s.active || s.lastActivity.IsZero() || s.asleep || (s.opt.AppRunning != nil && s.opt.AppRunning()) || (s.opt.Busy != nil && s.opt.Busy()) {
+	// listened to, the time does not count; nor while the TV shows something
+	// else, where the buttons that are pressed do not come here.
+	elsewhere := s.opt.Elsewhere != nil && s.opt.Elsewhere()
+	if s.active || s.lastActivity.IsZero() || s.asleep || elsewhere || (s.opt.AppRunning != nil && s.opt.AppRunning()) || (s.opt.Busy != nil && s.opt.Busy()) {
 		s.lastActivity, s.active = now, false
+	}
+	// The minute's notice was running when the TV turned to something else:
+	// nobody saw it, and it is taken back.
+	withdrawn := false
+	if elsewhere && s.idleArmed && !s.sleepAt.IsZero() {
+		s.sleepAt, s.sleepMinutes, s.idleArmed = time.Time{}, 0, false
+		sleepDue, withdrawn = false, true
 	}
 	idleNotice := false
 	if s.opt.IdleOff > 0 && !sleepDue && s.sleepAt.IsZero() && now.Sub(s.lastActivity) >= s.opt.IdleOff-time.Minute {
@@ -253,6 +285,10 @@ func (s *Service) Step(ctx context.Context, now time.Time) {
 	s.mu.Unlock()
 	if idleNotice {
 		s.opt.Log.Info("nobody has pressed anything for a while: the TV is switched off in a minute")
+		tell(idleStatus)
+	}
+	if withdrawn {
+		s.opt.Log.Info("the TV shows something else: it is not switched off for want of a button")
 		tell(idleStatus)
 	}
 
@@ -276,8 +312,9 @@ func (s *Service) Step(ctx context.Context, now time.Time) {
 		}
 		return
 	case pending:
-		if s.opt.AppRunning() {
-			// Someone is watching: try again on the following checks.
+		if s.opt.AppRunning() || elsewhere {
+			// Someone is watching, here or on another of the TV's inputs:
+			// try again on the following checks.
 			return
 		}
 		s.mu.Lock()

@@ -49,6 +49,7 @@ func (c *Controller) Show(ctx context.Context, address string) error {
 		return err
 	}
 	c.active.Store(false)
+	c.seen.away() // asked for from the dashboard: the TV shows the other device now
 	return nil
 }
 

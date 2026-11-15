@@ -289,6 +289,14 @@ func main() {
 		*c.dst = &clock
 	}
 	tvOpts.IdleOff = cfg.TV.IdleOff.Duration
+	// The TV says when it turns to another input or to its own apps.
+	tvOpts.Elsewhere = func() bool {
+		if pretendTV != nil {
+			return pretendTV.Elsewhere()
+		}
+		return cecControl.Elsewhere()
+	}
+	tvOpts.LastElsewhere = cecControl.LastElsewhere
 	// Music behind the dashboard is something going on, though nobody
 	// presses anything for it: from an app, or from a phone.
 	var speakers *receivers.Service
