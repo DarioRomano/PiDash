@@ -96,6 +96,7 @@ type Server struct {
 	photoState string
 	pin        pinGuard
 	version    string
+	standalone bool
 	urlFile    string
 	static     fs.FS
 
@@ -157,6 +158,8 @@ type Deps struct {
 	Power power.Control
 	// Version is the PiDash version, shown on the phone remote.
 	Version string
+	// Standalone is set where only the dashboard is served (a container).
+	Standalone bool
 	// Notices are start-up problems to show on the TV.
 	Notices []string
 	// URLFile is where the address actually in use is recorded for the
@@ -175,7 +178,7 @@ type Deps struct {
 func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	k, am, ps, newRunner := d.Kiosk, d.Apps, d.Photos, d.NewRunner
 	s := &Server{cfg: cfg, log: log, hub: newHub(), kiosk: k, apps: am, photos: ps, input: d.Input, tv: d.TV,
-		pin: pinGuard{pin: cfg.Remote.PIN}, version: d.Version, urlFile: d.URLFile, notices: d.Notices,
+		pin: pinGuard{pin: cfg.Remote.PIN}, version: d.Version, standalone: d.Standalone, urlFile: d.URLFile, notices: d.Notices,
 		settings: d.Settings, baseListen: d.BaseListen, started: time.Now().UnixMilli(), restart: make(chan struct{}),
 		static: static, mux: http.NewServeMux()}
 	s.runner = newRunner(func(e providers.Entry) { s.hub.broadcast("state", e) })
@@ -485,6 +488,7 @@ func (s *Server) clientConfig() config.Client {
 	c.WhatsNew = whatsNew
 	c.Radar = c.Radar && s.radar != nil
 	c.Version = s.version
+	c.Standalone = s.standalone
 	c.Started = s.started
 	s.noticeMu.Lock()
 	c.Notices = append([]string{}, s.notices...)

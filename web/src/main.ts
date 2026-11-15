@@ -277,6 +277,8 @@ const help = new Help($("#help"), () => syncPanels());
 // --- Wi-Fi for visitors ---------------------------------------------------------
 
 let guestWifi = "";
+/** Only the dashboard is served (a container): there is no desktop behind it, and no machine to switch off. */
+let standalone = false;
 const wifiPanel: WifiPanel = new WifiPanel($("#wifi-panel"), () => syncPanels());
 
 // --- About this photo, and favourites -------------------------------------------
@@ -673,8 +675,10 @@ function railItems(): RailItem[] {
   if (guestWifi) items.push({ id: WIFI_ID, label: "Guest Wi-Fi", glyph: WIFI_GLYPH, sub: guestWifi });
   items.push({ id: STATUS_ID, label: "Status", glyph: STATUS_GLYPH });
   items.push({ id: SETTINGS_ID, label: "Settings", glyph: GEAR_GLYPH, sub: update.version ? "Update available" : undefined, notice: !!update.version });
-  items.push({ id: EXIT_ID, label: "Desktop", glyph: EXIT_GLYPH });
-  items.push({ id: POWER_ID, label: "Power", glyph: POWER_GLYPH });
+  if (!standalone) {
+    items.push({ id: EXIT_ID, label: "Desktop", glyph: EXIT_GLYPH });
+    items.push({ id: POWER_ID, label: "Power", glyph: POWER_GLYPH });
+  }
   // Tiles of PiDash's own that were hidden (Up on a tile, or the settings).
   return items.filter((i) => !hiddenTiles.has(OWN_TILES[i.id] ?? ""));
 }
@@ -871,8 +875,9 @@ function applyConfig(cfg: ClientConfig) {
   const locale = d.locale || (d.language && d.language !== "en" ? d.language : "");
   clock.configure(d.clock_24h, locale);
   setSounds(d.sounds ?? true);
-  if ((cfg.guest_wifi ?? "") !== guestWifi) {
+  if ((cfg.guest_wifi ?? "") !== guestWifi || !!cfg.standalone !== standalone) {
     guestWifi = cfg.guest_wifi ?? "";
+    standalone = !!cfg.standalone;
     rail.setItems(railItems());
   }
   stillBackground = d.background === "still";

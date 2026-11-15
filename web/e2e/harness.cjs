@@ -24,7 +24,7 @@ function freePort() {
 }
 
 /** Starts a backend with the given config.toml text; returns its address and a stop function. */
-async function startPiDash(config = "", extraEnv = {}) {
+async function startPiDash(config = "", extraEnv = {}, extraArgs = []) {
   if (!fs.existsSync(BINARY)) throw new Error(`${BINARY} is missing: run "make build" first`);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pidash-e2e-"));
   const cfg = path.join(dir, "config", "config.toml");
@@ -34,7 +34,7 @@ async function startPiDash(config = "", extraEnv = {}) {
   const env = { ...process.env, XDG_CONFIG_HOME: path.join(dir, "xdg-config"), XDG_DATA_HOME: path.join(dir, "data"), XDG_CACHE_HOME: path.join(dir, "cache"), XDG_RUNTIME_DIR: path.join(dir, "run"), XDG_DATA_DIRS: path.join(dir, "share"), ...extraEnv };
   fs.mkdirSync(env.XDG_RUNTIME_DIR, { recursive: true });
   let log = "";
-  const child = spawn(BINARY, ["-config", cfg, "-listen", `127.0.0.1:${port}`, "-mock"], { env, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(BINARY, ["-config", cfg, "-listen", `127.0.0.1:${port}`, "-mock", ...extraArgs], { env, stdio: ["ignore", "pipe", "pipe"] });
   child.stdout.on("data", (d) => (log += d));
   child.stderr.on("data", (d) => (log += d));
   const base = `http://127.0.0.1:${port}`;

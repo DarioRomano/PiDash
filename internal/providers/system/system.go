@@ -6,6 +6,8 @@ import (
 	"context"
 	"net"
 	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -100,12 +102,9 @@ func (p *Provider) Fetch(_ context.Context) (any, error) {
 		s.MemTotalMB = total / 1024
 		s.MemUsedMB = (total - avail) / 1024
 	}
-	if b, err := os.ReadFile("/sys/class/thermal/thermal_zone0/temp"); err == nil {
-		if v, err := strconv.ParseFloat(strings.TrimSpace(string(b)), 64); err == nil {
-			t := v / 1000
-			s.CPUTempC = &t
-			s.Hot = p.judge(t)
-		}
+	if t, ok := cpuTemp(thermalDir); ok {
+		s.CPUTempC = &t
+		s.Hot = p.judge(t)
 	}
 	if ifaces, err := net.Interfaces(); err == nil {
 		for _, it := range ifaces {
@@ -121,4 +120,47 @@ func (p *Provider) Fetch(_ context.Context) (any, error) {
 		}
 	}
 	return s, nil
+}
+
+// thermalDir is where the kernel lists its temperature sensors.
+var thermalDir = "/sys/class/thermal"
+
+// cpuTemp reads the processor's temperature in degrees Celsius. A Raspberry
+// Pi has one sensor; other boards and PCs have several, of which the one
+// named after the processor is wanted, not the battery's or the Wi-Fi's.
+func cpuTemp(dir string) (float64, bool) {
+	zones, _ := filepath.Glob(filepath.Join(dir, "thermal_zone*"))
+	sort.Strings(zones)
+	best, bestRank := "", 99
+	for _, z := range zones {
+		kind, _ := os.ReadFile(filepath.Join(z, "type"))
+		name := strings.ToLower(strings.TrimSpace(string(kind)))
+		rank := 9
+		switch {
+		case strings.Contains(name, "x86_pkg") || strings.Contains(name, "cpu") || strings.Contains(name, "soc"):
+			rank = 0
+		case strings.Contains(name, "core") || strings.Contains(name, "pkg") || strings.Contains(name, "k10temp"):
+			rank = 1
+		case strings.Contains(name, "acpitz"):
+			rank = 2
+		case strings.Contains(name, "wifi") || strings.Contains(name, "iwl") || strings.Contains(name, "bat") || strings.Contains(name, "nvme") || strings.Contains(name, "gpu"):
+			rank = 20
+		}
+		if rank < bestRank {
+			best, bestRank = z, rank
+		}
+	}
+	if best == "" || bestRank >= 20 {
+		return 0, false
+	}
+	b, err := os.ReadFile(filepath.Join(best, "temp"))
+	if err != nil {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(strings.TrimSpace(string(b)), 64)
+	// A sensor that is not connected reports nonsense.
+	if err != nil || v <= 0 || v > 150000 {
+		return 0, false
+	}
+	return v / 1000, true
 }

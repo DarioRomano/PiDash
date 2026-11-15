@@ -30,12 +30,36 @@ else
   exit 1
 fi
 
-# Pick whichever Chromium binary this image ships.
+# A program that is a "snap" (Chromium on Ubuntu): a link into /snap, or the
+# small script Ubuntu puts in its place.
+is_snap() {
+  case "$(readlink -f "$(command -v "$1")" 2>/dev/null)" in
+    /snap/* | */snap) return 0 ;;
+  esac
+  head -c 2048 "$(command -v "$1")" 2>/dev/null | grep -qa '/snap/bin/'
+}
+
+# Pick the browser this machine has: Chromium, or Google Chrome where that is
+# what is installed. One that is not a snap is taken first.
 CHROMIUM=""
-for c in chromium chromium-browser; do
-  if command -v "$c" >/dev/null 2>&1; then CHROMIUM="$c"; break; fi
+SNAP=""
+for c in chromium chromium-browser google-chrome-stable google-chrome; do
+  command -v "$c" >/dev/null 2>&1 || continue
+  if is_snap "$c"; then
+    [ -n "$SNAP" ] || SNAP="$c"
+    continue
+  fi
+  CHROMIUM="$c"
+  break
 done
-[ -n "$CHROMIUM" ] || { echo "chromium not found: sudo apt install chromium" >&2; exit 1; }
+if [ -z "$CHROMIUM" ] && [ -n "$SNAP" ]; then
+  CHROMIUM="$SNAP"
+  # A snap is kept out of hidden folders such as ~/.cache: its profile goes
+  # where it is allowed to write.
+  PROFILE="$HOME/snap/chromium/common/pidash-chromium"
+  mkdir -p "$PROFILE"
+fi
+[ -n "$CHROMIUM" ] || { echo "neither Chromium nor Google Chrome was found: sudo apt install chromium" >&2; exit 1; }
 
 # Never show the "Chromium didn't shut down correctly" bubble after a power cut.
 PREFS="$PROFILE/Default/Preferences"

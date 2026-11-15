@@ -1,0 +1,26 @@
+# PiDash in a container: the dashboard for any browser on your network.
+# Copy this file to compose.yml, set the folder of your pictures, and run
+#
+#   docker compose up -d
+#
+# then open http://<this computer>:8080 . The pictures mounted at /photos are
+# shown; everything else is chosen on the settings page, at /settings.
+services:
+  pidash:
+    image: ghcr.io/darioromano/pidash:latest
+    # Or build it from this checkout:
+    # build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # Times of day (the night clock, "on this day") follow this.
+      TZ: Europe/Zurich
+    volumes:
+      # Saved settings, an optional config.toml, caches.
+      - pidash-data:/data
+      # Your pictures; PiDash only reads them.
+      - /path/to/your/pictures:/photos:ro
+
+volumes:
+  pidash-data:

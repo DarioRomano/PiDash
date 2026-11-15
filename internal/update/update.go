@@ -49,6 +49,9 @@ type Options struct {
 	// never interrupts that.
 	Busy func() bool
 	Log  *slog.Logger
+	// Fixed says why this copy never updates itself, where that is known
+	// from the start (a container). Empty where it may.
+	Fixed string
 
 	// For tests.
 	LatestURL string
@@ -93,6 +96,9 @@ func New(opt Options) *Service {
 
 // reason says why this copy cannot update itself, or "" when it can.
 func (s *Service) reason() string {
+	if s.opt.Fixed != "" {
+		return s.opt.Fixed
+	}
 	if _, ok := parse(s.opt.Current); !ok {
 		return "This is a development build, not a release."
 	}

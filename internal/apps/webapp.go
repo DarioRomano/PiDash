@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -82,9 +83,23 @@ func PrepareWebApp(app config.App, dataDir string, env []string, log *slog.Logge
 		}, nil
 
 	case config.BrowserChromium:
-		bin, err := findBinary("chromium", "chromium-browser")
+		bin, err := ChromiumBinary()
 		if err != nil {
-			return WebLaunch{}, fmt.Errorf("Chromium is not installed (sudo apt install chromium): %w", err)
+			return WebLaunch{}, fmt.Errorf("neither Chromium nor Google Chrome is installed (sudo apt install chromium): %w", err)
+		}
+		if isSnap(bin) {
+			// A snap is kept out of hidden folders such as ~/.local: the
+			// app's profile goes where the snap is allowed to write.
+			if home, err := os.UserHomeDir(); err == nil {
+				profile = filepath.Join(home, "snap", "chromium", "common", "pidash", app.ID)
+				if err := os.MkdirAll(profile, 0o700); err != nil {
+					return WebLaunch{}, err
+				}
+			}
+			if len(extensions) > 0 {
+				log.Warn("this Chromium is a snap, which cannot read the folder with the app's browser extensions; they are not loaded", "app", app.ID)
+				extensions = nil
+			}
 		}
 		clearChromiumCrashFlag(profile)
 		platform := "x11"
@@ -253,6 +268,60 @@ func clearChromiumCrashFlag(profile string) {
 	if !bytes.Equal(fixed, data) {
 		_ = os.WriteFile(prefs, fixed, 0o600)
 	}
+}
+
+// chromiumNames are the browsers of Chromium's kind, as their programs are
+// called: Chromium itself, as Raspberry Pi OS and Debian have it, and Google
+// Chrome, which a PC may have instead.
+var chromiumNames = []string{"chromium", "chromium-browser", "google-chrome-stable", "google-chrome"}
+
+// ChromiumBinary finds the browser that shows website apps. On a PC, Google
+// Chrome is taken first where it is installed: it brings the module that
+// Netflix and other paid services ask for, which Chromium there lacks (on a
+// Raspberry Pi, Chromium has it). A Chromium that is a "snap", as on
+// Ubuntu, comes last: it is kept from reading the folders PiDash keeps the
+// apps' profiles in.
+func ChromiumBinary() (string, error) {
+	names := chromiumNames
+	if runtime.GOARCH == "amd64" {
+		names = []string{"google-chrome-stable", "google-chrome", "chromium", "chromium-browser"}
+	}
+	snap := ""
+	var firstErr error
+	for _, n := range names {
+		p, err := exec.LookPath(n)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if isSnap(p) {
+			if snap == "" {
+				snap = p
+			}
+			continue
+		}
+		return p, nil
+	}
+	if snap != "" {
+		return snap, nil
+	}
+	return "", firstErr
+}
+
+// isSnap reports whether a program is a "snap": a link into /snap, or the
+// small script that Ubuntu puts in a program's place to start its snap.
+func isSnap(path string) bool {
+	if real, err := filepath.EvalSymlinks(path); err == nil && (strings.HasPrefix(real, "/snap/") || filepath.Base(real) == "snap") {
+		return true
+	}
+	fi, err := os.Stat(path)
+	if err != nil || fi.Size() > 4096 {
+		return false
+	}
+	data, err := os.ReadFile(path)
+	return err == nil && strings.HasPrefix(string(data), "#!") && strings.Contains(string(data), "/snap/bin/")
 }
 
 func findBinary(names ...string) (string, error) {

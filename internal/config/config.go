@@ -907,6 +907,22 @@ func (c Config) validate() error {
 	return nil
 }
 
+// OnlyTheDashboard takes out of the settings everything that needs the
+// machine PiDash runs on: apps on its desktop, the TV on its HDMI cable, its
+// sound, its controllers. It is what a container is run with, where there is
+// only the dashboard to serve.
+func (c *Config) OnlyTheDashboard() {
+	c.Apps = nil
+	c.Games = Games{}
+	c.Videos = Videos{}
+	c.TV = TV{}
+	c.Kiosk = Kiosk{}
+	c.Remote.MouseKeyboard = false
+	c.Update.Auto = false
+	c.Bluetooth.DisconnectWithTV = false
+	c.Sound.RemoteVolume = false
+}
+
 // Client is the subset of the configuration sent to the browser.
 type Client struct {
 	Display Display           `json:"display"`
@@ -941,6 +957,9 @@ type Client struct {
 	// ArtOn whether they are what is showing.
 	Art   bool `json:"art"`
 	ArtOn bool `json:"art_on"`
+	// Standalone is whether only the dashboard is served (a container):
+	// there is no desktop to leave for and no machine to switch off.
+	Standalone bool `json:"standalone"`
 }
 
 // ForClient returns the browser-facing view of the configuration.

@@ -60,7 +60,7 @@ func ioctl(fd int, req uintptr, arg unsafe.Pointer) error {
 // example because the TV was off when the dashboard started.
 func (c *Controller) Follow(ctx context.Context, log *slog.Logger) {
 	var wg sync.WaitGroup
-	for _, dev := range c.Devices {
+	for _, dev := range c.adapters() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

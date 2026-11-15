@@ -293,6 +293,7 @@ const list: Record<string, string> = {
   "An update is being installed; PiDash restarts by itself.": "Eine Aktualisierung wird installiert; PiDash startet von selbst neu.",
   "This is a development build, not a release.": "Dies ist ein Entwicklungsstand, keine veröffentlichte Version.",
   "PiDash was not installed with its installer, so it cannot update itself.": "PiDash wurde nicht mit seinem Installationsprogramm installiert und kann sich daher nicht selbst aktualisieren.",
+  "PiDash runs in a container here: a new version comes with a new image. Apps, sound, Bluetooth and the TV's remote need PiDash installed on the computer itself.": "PiDash läuft hier in einem Container: Eine neue Version kommt mit einem neuen Image. Apps, Ton, Bluetooth und die Fernbedienung des Fernsehers brauchen ein auf dem Computer selbst installiertes PiDash.",
   "Install new versions automatically": "Neue Versionen automatisch installieren",
   "Installed at night, between three and five, and never while an app is open.": "Installiert wird nachts zwischen drei und fünf Uhr, und nie, solange eine App geöffnet ist.",
   "Look for a new version": "Nach neuer Version suchen",

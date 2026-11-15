@@ -2,7 +2,8 @@
 # PiDash installer and updater.
 #
 # Install or update to the latest release on a Raspberry Pi running Raspberry
-# Pi OS with desktop, as your normal user:
+# Pi OS with desktop, or on another ARM board or a PC with a Linux desktop, as
+# your normal user:
 #
 #   curl -fsSL https://raw.githubusercontent.com/DarioRomano/PiDash/main/install.sh | bash
 #
@@ -44,7 +45,7 @@ main() {
       ;;
   esac
   if [ "$(uname -s)" != "Linux" ]; then
-    echo "PiDash runs on Linux (Raspberry Pi OS)." >&2
+    echo "PiDash runs on Linux: Raspberry Pi OS above all. Elsewhere there is the container, see the README." >&2
     exit 1
   fi
 

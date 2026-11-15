@@ -1,0 +1,14 @@
+# What the image is built from is cmd/, internal/, web/ and the Go module
+# files; the rest only makes the build slower to start.
+.git
+.github
+bin
+dist
+site
+scripts
+deploy
+web/node_modules
+web/dist
+web/e2e
+*.md
+*.log

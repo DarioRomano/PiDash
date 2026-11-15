@@ -262,14 +262,14 @@
             <option value="60">60</option>
           </select>
         </label>
-        <label class="field">
+        <label class="field" data-device>
           <span>Picture sent to the TV while PiDash runs</span>
           <select id="sys-resolution">
             <option value="desktop">As the Pi's desktop is set</option>
             <option value="1080p">1920 × 1080: a quarter of the work at 4K</option>
           </select>
         </label>
-        <p class="hint">
+        <p class="hint" data-device>
           At 3840 × 2160 the Pi has four times as many pixels to fill as at 1920 × 1080, for everything it draws.
           With the second choice a 4K TV is sent 1920 × 1080 while the dashboard and its apps run, and enlarges the
           picture itself; small lettering is a little softer. When you leave for the desktop it gets its own size
@@ -311,7 +311,7 @@
           </select>
         </label>
         <p class="hint">The picture darkens over the hour after sunset and is back to normal at sunrise.</p>
-        <label class="field">
+        <label class="field" data-device>
           <span>Switch the TV off when no button was pressed for</span>
           <select id="tv-idle">
             <option value="0">Never</option>
@@ -324,13 +324,13 @@
             <option value="240">4 hours</option>
           </select>
         </label>
-        <p class="hint">
+        <p class="hint" data-device>
           Only while the dashboard shows: not during an app, and not while music or the radio plays. The TV says so a
           minute before, and any button keeps it on. Needs a TV that can be switched over HDMI.
         </p>
       </section>
 
-      <section class="card" data-group="apps">
+      <section class="card" data-group="apps" data-device>
         <h2>Apps</h2>
         <p class="hint">These appear in the app row on the TV, in this order.</p>
         <ul id="app-list"></ul>
@@ -392,7 +392,7 @@
         <label class="check"><input type="checkbox" class="own-tile" data-tile="power" /><span>Power</span></label>
       </section>
 
-      <section class="card" data-group="apps">
+      <section class="card" data-group="apps" data-device>
         <h2>Other devices on the TV</h2>
         <p class="hint">
           A games console, a set-top box: each gets a tile in the app row that has the TV show it, so the
@@ -443,7 +443,7 @@
         </div>
       </section>
 
-      <section class="card" id="snd-card" data-group="sound">
+      <section class="card" id="snd-card" data-group="sound" data-device>
         <h2>Sound</h2>
         <p class="hint">
           Where the Pi's sound comes out, and how loud. Headphones and speakers are connected under Bluetooth below;
@@ -469,7 +469,7 @@
         <label class="check"><input id="snd-follow" type="checkbox" /><span>Switch to headphones or a speaker when they connect, and back when they disconnect</span></label>
       </section>
 
-      <section class="card" id="bt-card" data-group="sound">
+      <section class="card" id="bt-card" data-group="sound" data-device>
         <h2>Bluetooth</h2>
         <p class="hint">
           Game controllers, headphones, speakers and keyboards. A device paired here connects by itself when it is
@@ -492,7 +492,7 @@
         <p id="bt-result" class="result"></p>
       </section>
 
-      <section class="card" data-group="apps">
+      <section class="card" data-group="apps" data-device>
         <h2>Videos</h2>
         <p class="hint">
           Films and home videos, behind a "Videos" tile in the app row: folders to walk through with the remote,

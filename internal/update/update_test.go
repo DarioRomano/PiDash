@@ -117,6 +117,16 @@ func TestWhenItCannotUpdateItself(t *testing.T) {
 		t.Errorf("status = %+v", st)
 	}
 
+	// In a container a new version is a new image: said, and never installed.
+	boxed, ran, _, _ := newService(t, "v0.3.1", &tag, true)
+	boxed.opt.Fixed = "PiDash runs in a container here."
+	if st := boxed.Status(); st.Possible || st.Reason != "PiDash runs in a container here." {
+		t.Errorf("status = %+v", st)
+	}
+	if err := boxed.Install(); err == nil || len(*ran) != 0 {
+		t.Errorf("a container updated itself: %v, %v", err, *ran)
+	}
+
 	// The release page being away is reported and changes nothing.
 	tag = ""
 	s, _, _, _ := newService(t, "v0.3.1", &tag, true)

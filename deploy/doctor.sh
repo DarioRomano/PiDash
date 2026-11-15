@@ -32,10 +32,15 @@ echo "login screen: $(cat /etc/X11/default-display-manager 2>/dev/null || echo '
 echo "running: $(pgrep -x -l 'labwc|wayfire|gnome-shell|mutter|kwin_wayland|Xorg|Xwayland' 2>/dev/null | awk '{print $2}' | sort -u | tr '\n' ' ')"
 
 section "Browsers"
-for b in chromium chromium-browser firefox firefox-esr; do
+for b in chromium chromium-browser google-chrome-stable google-chrome firefox firefox-esr; do
   if have "$b"; then echo "$b: $(command -v "$b")  $("$b" --version 2>/dev/null | head -n 1)"; fi
 done
-have chromium || have chromium-browser || echo "Chromium is missing: sudo apt install chromium"
+have chromium || have chromium-browser || have google-chrome-stable || have google-chrome || echo "Neither Chromium nor Google Chrome is installed: sudo apt install chromium"
+for b in chromium chromium-browser; do
+  if have "$b" && { case "$(readlink -f "$(command -v "$b")")" in /snap/* | */snap) true ;; *) head -c 2048 "$(command -v "$b")" | grep -qa '/snap/bin/' ;; esac; }; then
+    echo "$b is a snap. It works for the dashboard, but website apps cannot load browser extensions with it; Google Chrome, or Chromium from a package, has no such limit."
+  fi
+done
 
 section "Video player"
 if have mpv; then echo "mpv: $(command -v mpv)  $(mpv --version 2>/dev/null | head -n 1)"

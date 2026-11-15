@@ -313,3 +313,56 @@ func TestAdBlockerOutsideFirefoxIsLeftAside(t *testing.T) {
 		t.Errorf("apps = %+v", cfg.Apps)
 	}
 }
+
+func TestOnlyTheDashboardLeavesOutWhatIsOfTheMachine(t *testing.T) {
+	cfg, err := load(t, `
+[weather]
+location = "Zurich"
+
+[photos]
+source = "folder"
+[photos.folder]
+path = "/photos"
+
+[[apps]]
+id = "youtube"
+url = "https://www.youtube.com/tv"
+
+[[radio]]
+name = "A station"
+url = "https://example.org/stream"
+
+[tv]
+off = "23:00"
+idle_off = "30m"
+[[tv.inputs]]
+name = "Console"
+port = 2
+
+[videos]
+source = "folder"
+folders = ["/films"]
+
+[games]
+moonlight = true
+
+[update]
+auto = true
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.OnlyTheDashboard()
+	if len(cfg.Apps) != 0 || cfg.TV.Off != "" || cfg.TV.IdleOff.Duration != 0 || len(cfg.TV.Inputs) != 0 ||
+		cfg.Videos.Source != VideoSourceNone || cfg.Games.Moonlight || cfg.Update.Auto || cfg.Kiosk.Unit != "" || cfg.Kiosk.Watchdog {
+		t.Errorf("something of the machine is left: %+v", cfg)
+	}
+	// What a browser anywhere can show stays.
+	if cfg.Weather.Location != "Zurich" || cfg.Photos.Folder.Path != "/photos" || len(cfg.Radio) != 1 {
+		t.Errorf("the dashboard lost something: %+v", cfg)
+	}
+	client := cfg.ForClient()
+	if client.Videos || len(client.TVInputs) != 0 {
+		t.Errorf("the page is told of videos or other devices: %+v", client)
+	}
+}

@@ -1,12 +1,13 @@
 #!/bin/bash
-# Installs PiDash on an EXISTING Raspberry Pi OS desktop, for the current user.
+# Installs PiDash on an EXISTING Linux desktop, for the current user: Raspberry
+# Pi OS above all, and Debian, Ubuntu, Fedora or Arch on other boards and PCs.
 #
-# It does not change how the Pi boots and does not touch your desktop:
+# It does not change how the machine boots and does not touch your desktop:
 #   - files go to   ~/.local/share/pidash  and  ~/.config/pidash
 #   - two systemd USER units (backend + fullscreen browser)
 #   - a "PiDash" entry in the desktop menu
-#   - apt packages only if missing: chromium, v4l-utils (CEC), curl, fonts-inter,
-#     firefox (YouTube app), libwidevinecdm0 (DRM module for the Netflix app)
+#   - packages only if missing: chromium, v4l-utils (CEC), curl, the Inter
+#     typeface, firefox, and on Raspberry Pi OS libwidevinecdm0 (for Netflix)
 #   - one rule under /etc/udev/rules.d, so the TV remote's buttons reach apps
 # Remove everything again with deploy/uninstall.sh.
 #
@@ -80,36 +81,92 @@ MENU_DIR="$HOME/.local/share/applications"
 AUTOSTART_DIR="$HOME/.config/autostart"
 
 echo "==> Checking packages"
+# The same things go by different names in different distributions. PiDash is
+# made on Raspberry Pi OS, which like Debian and Ubuntu uses apt; Fedora's dnf
+# and Arch's pacman are known too. Elsewhere, what is missing is only named.
+if command -v apt-get >/dev/null 2>&1; then PM=apt
+elif command -v dnf >/dev/null 2>&1; then PM=dnf
+elif command -v pacman >/dev/null 2>&1; then PM=pacman
+else PM=none; fi
+
+# pkg THING prints the names this system may know the package for a thing by.
+pkg() {
+  case "$PM:$1" in
+    *:browser) echo chromium ;;
+    *:cec) echo v4l-utils ;;
+    *:curl) echo curl ;;
+    apt:font) echo fonts-inter ;;
+    dnf:font) echo rsms-inter-fonts ;;
+    pacman:font) echo inter-font ;;
+    apt:firefox) echo firefox firefox-esr ;;
+    *:firefox) echo firefox ;;
+    apt:widevine) echo libwidevinecdm0 ;;
+    pacman:pactl) echo libpulse ;;
+    *:pactl) echo pulseaudio-utils ;;
+    *:wlr-randr) echo wlr-randr ;;
+    *:chvt) echo kbd ;;
+    *:wtype) echo wtype ;;
+    *:xdotool) echo xdotool ;;
+  esac
+}
+# offered NAME: whether this system's package source has a package of that name.
+offered() {
+  case "$PM" in
+    apt) apt-cache show "$1" >/dev/null 2>&1 ;;
+    dnf) dnf -q info "$1" >/dev/null 2>&1 ;;
+    pacman) pacman -Si "$1" >/dev/null 2>&1 ;;
+    *) return 1 ;;
+  esac
+}
 missing=()
-command -v chromium >/dev/null 2>&1 || command -v chromium-browser >/dev/null 2>&1 || missing+=(chromium)
-command -v cec-ctl >/dev/null 2>&1 || missing+=(v4l-utils)
-command -v curl >/dev/null 2>&1 || missing+=(curl)
-fc-list 2>/dev/null | grep -qi '/inter' || missing+=(fonts-inter)
+without=()
+# want THING WHAT-FOR: notes the package to install, or that there is none here.
+want() {
+  local name
+  for name in $(pkg "$1"); do
+    if offered "$name"; then missing+=("$name"); return 0; fi
+  done
+  without+=("$2")
+}
+
+command -v chromium >/dev/null 2>&1 || command -v chromium-browser >/dev/null 2>&1 || command -v google-chrome-stable >/dev/null 2>&1 || command -v google-chrome >/dev/null 2>&1 \
+  || want browser "Chromium or Google Chrome, which shows the dashboard: install one of them"
+command -v cec-ctl >/dev/null 2>&1 || want cec "cec-ctl (v4l-utils), for the TV's remote and switching the TV on and off over HDMI"
+command -v curl >/dev/null 2>&1 || want curl "curl"
+fc-list 2>/dev/null | grep -qi '/inter' || want font "the typeface Inter; another one is used without it"
 # Website apps set to Firefox (for its ad blocker, uBlock Origin) need it.
-command -v firefox >/dev/null 2>&1 || command -v firefox-esr >/dev/null 2>&1 || missing+=(firefox)
-# Netflix only plays with the Widevine DRM module, which Raspberry Pi OS packages for Chromium.
-if ! dpkg -s libwidevinecdm0 >/dev/null 2>&1 && apt-cache show libwidevinecdm0 >/dev/null 2>&1; then
-  missing+=(libwidevinecdm0)
-fi
+command -v firefox >/dev/null 2>&1 || command -v firefox-esr >/dev/null 2>&1 || want firefox "Firefox, only for website apps set to use it"
+# Netflix only plays with the Widevine DRM module, which Raspberry Pi OS packages
+# for Chromium. On a PC, Google Chrome brings it; other systems do without.
+if [ "$PM" = apt ] && ! dpkg -s libwidevinecdm0 >/dev/null 2>&1 && offered libwidevinecdm0; then missing+=(libwidevinecdm0); fi
 # Chooses the sound output and its volume from the settings page.
-if ! command -v pactl >/dev/null 2>&1 && apt-cache show pulseaudio-utils >/dev/null 2>&1; then missing+=(pulseaudio-utils); fi
+command -v pactl >/dev/null 2>&1 || want pactl "pactl, for choosing the sound output in the settings"
 # Sets the picture sent to the TV, for the "1920 x 1080 while the dashboard runs" setting.
-if ! command -v wlr-randr >/dev/null 2>&1 && apt-cache show wlr-randr >/dev/null 2>&1; then missing+=(wlr-randr); fi
+command -v wlr-randr >/dev/null 2>&1 || want wlr-randr "wlr-randr, for the setting that sends the TV a smaller picture"
 if [ "$CONSOLE_APPS" -eq 1 ]; then
-  command -v chvt >/dev/null 2>&1 || missing+=(kbd)
+  command -v chvt >/dev/null 2>&1 || want chvt "chvt (kbd), for apps on their own virtual terminal"
 fi
 if [ "$PHONE_INPUT" -eq 1 ]; then
   # Typing text into apps: wtype on the Wayland desktop, xdotool on X11.
-  for tool in wtype xdotool; do
-    if ! command -v "$tool" >/dev/null 2>&1 && apt-cache show "$tool" >/dev/null 2>&1; then missing+=("$tool"); fi
-  done
+  command -v wtype >/dev/null 2>&1 || want wtype "wtype, for typing from the phone on a Wayland desktop"
+  command -v xdotool >/dev/null 2>&1 || want xdotool "xdotool, for typing from the phone on an X11 desktop"
 fi
 if [ ${#missing[@]} -gt 0 ]; then
   echo "    installing: ${missing[*]} (needs sudo)"
-  sudo apt-get update -qq
-  sudo apt-get install -y --no-install-recommends "${missing[@]}"
+  case "$PM" in
+    apt)
+      sudo apt-get update -qq
+      sudo apt-get install -y --no-install-recommends "${missing[@]}"
+      ;;
+    dnf) sudo dnf install -y "${missing[@]}" ;;
+    pacman) sudo pacman -S --needed --noconfirm "${missing[@]}" ;;
+  esac
 else
   echo "    nothing to install"
+fi
+if [ ${#without[@]} -gt 0 ]; then
+  echo "    not found in this system's packages; PiDash works without, less these:"
+  printf '      - %s\n' "${without[@]}"
 fi
 
 echo "==> Installing files to $APP_DIR"

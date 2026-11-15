@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -31,8 +33,9 @@ type Runner func(ctx context.Context, args ...string) (string, error)
 
 // Controller sends CEC commands through the adapter that has a TV attached.
 type Controller struct {
-	// Run executes cec-ctl; Devices are the adapters to try. A Pi 5 has one
-	// per HDMI port.
+	// Run executes cec-ctl; Devices are the adapters to try. Empty means
+	// every adapter the machine has: a Pi has one per HDMI port, a PC has
+	// one when a CEC adapter is plugged into USB.
 	Run     Runner
 	Devices []string
 	// OSDName is how the Pi appears in the TV's input list.
@@ -54,7 +57,7 @@ func New() *Controller {
 			out, err := exec.CommandContext(ctx, "cec-ctl", args...).CombinedOutput()
 			return string(out), err
 		},
-		Devices: []string{"/dev/cec0", "/dev/cec1"},
+		Devices: nil, // whatever adapters there are: see adapters
 		OSDName: "PiDash",
 	}
 }
@@ -64,7 +67,7 @@ func (c *Controller) Available() bool {
 	if _, err := exec.LookPath("cec-ctl"); err != nil {
 		return false
 	}
-	for _, d := range c.Devices {
+	for _, d := range c.adapters() {
 		if _, err := os.Stat(d); err == nil {
 			return true
 		}
@@ -90,7 +93,7 @@ type adapter struct {
 // find returns the adapter with a TV attached: the one that has been given a
 // valid physical address by the TV.
 func (c *Controller) find(ctx context.Context) (adapter, error) {
-	for _, dev := range c.Devices {
+	for _, dev := range c.adapters() {
 		if _, err := os.Stat(dev); err != nil && c.usesRealDevices() {
 			continue
 		}
@@ -114,7 +117,7 @@ func (c *Controller) find(ctx context.Context) (adapter, error) {
 
 // usesRealDevices is false in tests, where the device paths do not exist.
 func (c *Controller) usesRealDevices() bool {
-	for _, d := range c.Devices {
+	for _, d := range c.adapters() {
 		if strings.HasPrefix(d, "/dev/") {
 			return true
 		}
@@ -251,4 +254,19 @@ func (c *Controller) PowerStatus(ctx context.Context) (Power, error) {
 		}
 	}
 	return PowerUnknown, nil
+}
+
+// adapters returns the CEC adapters to try: the ones that were named, or
+// every one the kernel knows of.
+func (c *Controller) adapters() []string {
+	if len(c.Devices) > 0 {
+		return c.Devices
+	}
+	found, _ := filepath.Glob("/dev/cec[0-9]*")
+	sort.Strings(found)
+	if len(found) == 0 {
+		// None right now: the usual two of a Pi, so that one appearing later is found.
+		return []string{"/dev/cec0", "/dev/cec1"}
+	}
+	return found
 }

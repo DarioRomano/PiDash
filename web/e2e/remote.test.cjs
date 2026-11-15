@@ -2773,3 +2773,44 @@ test("art mode: paintings in place of the photos, with their label, and back aga
     await own.stop();
   }
 });
+
+test("in a container only the dashboard is served: no apps, nothing of the machine, and the settings say so", async () => {
+  // The settings name apps, another device on the TV and a time to switch it off: none of it applies there.
+  const own = await startPiDash(APPS + '\n[tv]\noff = "23:00"\n[[tv.inputs]]\nname = "Console"\nport = 2\n', {}, ["-standalone"]);
+  try {
+    const cfg = await (await fetch(own.base + "/api/config")).json();
+    assert.equal(cfg.standalone, true);
+    assert.deepEqual(cfg.tv_inputs, []);
+    assert.deepEqual((await (await fetch(own.base + "/api/apps")).json()).apps, []);
+
+    const { page, remote } = await ready(own.base);
+    await remote.press("select");
+    await page.waitForFunction(() => document.getElementById("rail").classList.contains("open"));
+    const row = await tiles(page);
+    for (const gone of ["Netflix", "YouTube", "Console", "Desktop", "Power", "Bluetooth", "Sound"]) assert.ok(!row.includes(gone), `${gone} is offered: ${row}`);
+    for (const kept of ["Weather", "Status", "Settings"]) assert.ok(row.includes(kept), `${kept} is missing: ${row}`);
+    assert.deepEqual(page.problems, []);
+    await page.context().close();
+
+    // The settings page leaves out what is about the machine, and says how a container is updated.
+    const settings = await openPage(own.base, "/settings");
+    await settings.waitForSelector("#main:not([hidden])");
+    await settings.waitForFunction(() => /container/.test(document.getElementById("up-status").textContent));
+    const shown = await settings.evaluate(() => ({
+      groups: [...document.querySelectorAll("#groups button")].filter((b) => !b.hidden).map((b) => b.dataset.group),
+      cards: [...document.querySelectorAll("#main section.card")].filter((c) => !c.hidden).map((c) => c.querySelector("h2").textContent),
+      fields: ["sys-resolution", "tv-idle"].map((id) => document.getElementById(id).closest("label").hidden),
+      update: document.getElementById("up-buttons").hidden,
+    }));
+    assert.deepEqual(shown.groups, ["screen", "photos", "info", "apps", "home", "system"]);
+    for (const gone of ["Apps", "Other devices on the TV", "Videos", "Sound", "Bluetooth"]) assert.ok(!shown.cards.includes(gone), `${gone} is offered: ${shown.cards}`);
+    for (const kept of ["Weather", "Background photos", "Radio", "Night", "Updates", "Backup"]) assert.ok(shown.cards.includes(kept), `${kept} is missing: ${shown.cards}`);
+    assert.deepEqual(shown.fields, [true, true]);
+    assert.equal(shown.update, true);
+    assert.equal((await fetch(own.base + "/api/update/install", { method: "POST" })).status >= 400, true);
+    assert.deepEqual(settings.problems, []);
+    await settings.context().close();
+  } finally {
+    await own.stop();
+  }
+});

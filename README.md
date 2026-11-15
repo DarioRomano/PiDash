@@ -1,7 +1,9 @@
 # PiDash
 
-A fast, good-looking dashboard for your TV, running on a Raspberry Pi 5 and
-controlled with the TV's own remote (HDMI-CEC) or your phone.
+A fast, good-looking dashboard for your TV, running on a Raspberry Pi and
+controlled with the TV's own remote (HDMI-CEC) or your phone. It is made for
+the Raspberry Pi 5, and also runs on a Pi 4, on other ARM boards, on an
+ordinary PC, and as a container: see [Other computers](#other-computers).
 
 - **Ambient screen**: photo slideshow with clock, date and weather overlaid.
 - **Zero extra hardware**: the TV remote works over HDMI-CEC. A phone remote is built in.
@@ -30,8 +32,9 @@ with its own profile: close it and you are back on your desktop, exactly as you
 left it. It installs into your home directory, plus one small system rule for
 the TV remote, and can be removed again.
 
-Requirements: a Raspberry Pi 5 running Raspberry Pi OS with desktop (Bookworm or
-newer), connected to the TV and to the internet.
+Requirements: a Raspberry Pi 5 or 4 running Raspberry Pi OS with desktop
+(Bookworm or newer), connected to the TV and to the internet. For anything
+else, see [Other computers](#other-computers).
 
 Open a terminal on the Pi, or connect with SSH, and run this as your normal
 user:
@@ -106,6 +109,103 @@ What the installer does:
 | One system rule, so the TV remote's buttons reach apps | `/etc/udev/rules.d/70-pidash-uinput.rules` |
 | What you save on the settings page | `~/.config/pidash/settings.json` |
 | Only with `--phone-input` | `wtype`/`xdotool` for typing, see [Phone as mouse and keyboard](#phone-as-mouse-and-keyboard) |
+
+## Other computers
+
+PiDash is one program without dependencies of its own, built for 64-bit ARM,
+32-bit ARM and x86-64. The installer above picks the right one, and installs
+what PiDash uses with `apt`, `dnf` or `pacman`, whichever the system has. What
+a system does not offer is named at the end, with what PiDash does without it.
+
+PiDash is developed for the Raspberry Pi 5 on Raspberry Pi OS. The rest of
+this section is what is known about other machines; less of it has been tried
+on the real thing. `bash ~/.local/share/pidash/doctor.sh` says what a machine
+has and lacks.
+
+| Computer | What to expect |
+|----------|----------------|
+| Raspberry Pi 5 | What PiDash is made for. A 4K TV is fine; see [Performance](#performance) |
+| Raspberry Pi 4, Pi 400 | Everything works the same way. It is two to three times slower than a Pi 5: on a 4K TV choose **1920 × 1080** as the picture sent to the TV, and the **Power saver** preset, both under [Performance](#performance) |
+| Raspberry Pi 3, Zero 2 W | The dashboard with photos, clock and weather runs. With 1 GB of memory or less, website apps such as YouTube do not run well beside it |
+| Other ARM boards (Orange Pi, Radxa Rock, Odroid, …) | Needs a Linux with a desktop, systemd and Chromium. The TV's remote works where the board's Linux has an HDMI-CEC driver, which shows as `/dev/cec0`; many vendor images have none. Sites with copy protection (Netflix and the like) need Widevine, which outside Raspberry Pi OS is rarely there for ARM |
+| PC or mini PC (x86-64) | Debian, Ubuntu, Fedora, Arch and their relatives. Google Chrome is used when it is installed, Chromium otherwise; Chrome brings Widevine. A PC's HDMI socket has no CEC: see below |
+
+**The TV's remote on a PC.** Graphics cards do not pass HDMI-CEC on, so the
+TV's remote does not reach a PC by itself. What works instead:
+
+- a USB CEC adapter that Linux has a driver for, such as the Pulse-Eight one.
+  Once it shows as `/dev/cec0`, PiDash uses it like the Pi's own: the remote's
+  buttons, switching the TV on and off, the volume;
+- a remote with a USB receiver, an "air mouse", or a FLIRC receiver, all of
+  which are keyboards to Linux;
+- a game controller, a keyboard, or the phone remote.
+
+Without CEC, what is about the TV itself is simply not offered: switching it
+on and off, the sleep timer, other devices on the TV.
+
+**Desktops.** PiDash is a fullscreen browser window on the desktop that is
+there. Bringing an app's window to the front needs `wlrctl` (Wayland desktops
+built on wlroots: labwc, Sway, Wayfire) or `xdotool` (X11); sending the TV a
+smaller picture needs `wlr-randr`. GNOME and KDE on Wayland offer neither to
+other programs: the dashboard and the apps run there, but those two things do
+not, and typing from the phone does not either. An X11 session has all of it.
+
+**Ubuntu's Chromium** is a snap, which may only write inside `~/snap`. PiDash
+keeps its browser profiles there for it, and cannot hand it
+[extensions](#browser-extensions-for-a-website-app). Installing Google Chrome
+avoids both.
+
+**Temperature.** The status page and [Keeping the Pi cool](#keeping-the-pi-cool)
+read the processor's temperature from Linux's thermal zones, whatever the
+machine calls them. Where there is none (a virtual machine), neither is shown.
+
+### In a container
+
+A container has no desktop, no HDMI cable and no sound of its own. In one,
+PiDash serves **the dashboard for any browser**: the photos, the clock, the
+weather with the rain radar, the calendar, places, trips, the photo quiz, art
+mode, the radio and the settings page. Open it on a tablet on the wall, in a
+smart TV's browser, or in a kiosk browser on some other machine. Apps, the
+TV's remote over HDMI, sound outputs, Bluetooth and videos are not part of
+it: they need PiDash installed on the computer that is plugged into the TV.
+
+```sh
+docker run -d --name pidash --restart unless-stopped \
+  -p 8080:8080 \
+  -e TZ=Europe/Zurich \
+  -v pidash-data:/data \
+  -v /path/to/your/pictures:/photos:ro \
+  ghcr.io/darioromano/pidash:latest
+```
+
+Then open `http://<that computer>:8080`. The image is built for x86-64 and
+for 64-bit and 32-bit ARM, so it runs on a NAS, a home server or a Pi alike.
+[compose.example.yml](compose.example.yml) is the same as a Compose file.
+
+| | |
+|---|---|
+| `/photos` | Pictures mounted here are shown, with nothing to set up. PiDash only reads them. Photos from a Synology NAS are set up on the settings page instead, as on a Pi |
+| `/data` | Everything PiDash keeps: what is saved on the settings page (`settings.json`), its caches, and a `config.toml` if you put one there. Without one the built-in settings apply |
+| `TZ` | Your time zone, for the times of the night mode and "on this day" |
+| Port 8080 | The dashboard at `/`, the settings at `/settings` |
+
+In the browser, the arrow keys, Enter and Escape do what the remote's buttons
+do on a TV; a smart TV's browser sends them from its own remote.
+
+**Updating** is pulling the new image (`docker compose pull && docker compose
+up -d`); the settings page says which version runs. A version can be pinned
+with its tag, such as `ghcr.io/darioromano/pidash:v0.12.0`.
+
+**Building it yourself**: `docker build -t pidash .` in a checkout. The
+container runs as an unprivileged user (65532) without a shell; if you mount a
+folder of your own at `/data`, it must be writable by that user, or run the
+container with `--user "$(id -u):$(id -g)"`.
+
+PiDash has no login of its own, in a container as on a Pi: it is meant for the
+home network, not for a port opened to the internet. A settings PIN
+([Lock](#lock)) keeps people at home from changing things.
+
+The same mode without Docker is `pidash -standalone`.
 
 ## Using it
 
@@ -1940,12 +2040,20 @@ Pi OS and for ordinary PCs, and publishes them as a GitHub release with
 generated notes and checksums. From that moment the one-line installer installs
 the new version, and `update.sh` on every Pi picks it up.
 
+A second job then builds the [container image](#in-a-container) for x86-64 and
+ARM and pushes it to `ghcr.io/darioromano/pidash`, tagged with the version
+and, unless it is a pre-release, `latest`. The release does not wait for it.
+The first time, GitHub creates the package as private: make it public once
+under the repository's **Packages**, in the package's settings, so that
+`docker pull` works without a login.
+
 - Versions follow `vMAJOR.MINOR.PATCH`. A suffix such as `v0.3.0-rc.1` makes a
   pre-release, which the installer skips unless asked for by name.
 - `make dist` builds the same packages locally into `dist/`, to inspect them or
   to install from a file: unpack one and run `bash deploy/install.sh` inside it.
 - Every push and pull request runs the same checks and a package build in
-  GitHub Actions (`.github/workflows/ci.yml`).
+  GitHub Actions (`.github/workflows/ci.yml`), and builds the container image
+  and starts it.
 - The download address can be redirected with `PIDASH_BASE_URL`, for a mirror
   or for testing a release before it is published.
 
@@ -1976,7 +2084,9 @@ internal/wifi/       the code a phone scans to join the Wi-Fi for visitors
 deploy/              the installer run on the Pi, uninstaller, systemd units, kiosk launcher
 install.sh           one-line installer and updater: downloads a release and runs deploy/install.sh
 scripts/dist.sh      builds the release packages
-.github/workflows/   CI on every push, and the release build on a version tag
+Dockerfile           the container image: the dashboard alone, for any browser
+compose.example.yml  the same as a Compose file
+.github/workflows/   CI on every push, and the release build and container image on a version tag
 ```
 
 ## License

@@ -1087,10 +1087,25 @@ window.addEventListener("hashchange", () => showGroup(wantedGroup()));
 let asked = wantedGroup();
 showGroup(asked);
 
+/**
+ * Where only the dashboard is served (a container), what is about the
+ * machine itself is not offered: its apps, its TV, its videos.
+ */
+async function leaveOutTheMachine() {
+  try {
+    const cfg = await (await fetch("/api/config", { cache: "no-store" })).json();
+    if (!cfg.standalone) return;
+    for (const el of document.querySelectorAll<HTMLElement>("[data-device]")) el.hidden = true;
+  } catch {
+    /* everything stays on offer */
+  }
+}
+
 async function load() {
   const res = await fetch("/api/settings", { cache: "no-store" });
   if (!res.ok) throw new Error(await res.text());
   fill(await res.json());
+  await leaveOutTheMachine();
   $("groups").hidden = false;
   $("main").hidden = false;
   $("footer").hidden = false;

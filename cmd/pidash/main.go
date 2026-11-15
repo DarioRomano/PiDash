@@ -58,6 +58,8 @@ func main() {
 		cecCmd    = flag.String("cec", "", "talk to the TV over HDMI-CEC and exit: setup, on, off or status")
 		screenCmd = flag.String("screen", "", "set the picture sent to the TV and exit: dashboard (as the settings say) or restore")
 		checkCfg  = flag.Bool("check-config", false, "check the settings file given with -config and exit")
+		alone     = flag.Bool("standalone", false, "serve only the dashboard, for any browser: nothing of this machine (apps, TV, sound, Bluetooth) is touched; for a container")
+		health    = flag.Bool("healthcheck", false, "ask the PiDash running on this machine whether it is well, and exit: 0 if so")
 	)
 	flag.Parse()
 
@@ -74,6 +76,9 @@ func main() {
 	problems := logring.New(30)
 	log := slog.New(problems.Handler(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 
+	if *health {
+		os.Exit(healthcheck(*cfgPath, *listen))
+	}
 	if *cecCmd != "" {
 		os.Exit(runCEC(*cecCmd, *cfgPath))
 	}
@@ -82,6 +87,15 @@ func main() {
 	}
 
 	cfg, err := config.Load(*cfgPath)
+	if *alone && !*checkCfg && errors.Is(err, fs.ErrNotExist) {
+		// A container that was given no settings file: the built-in settings,
+		// and what is chosen on the settings page.
+		log.Info("no settings file; using the built-in settings", "path", *cfgPath)
+		cfg, err = config.Default(), nil
+	}
+	if *alone && err == nil {
+		mountedPhotos(&cfg, os.Getenv("PIDASH_PHOTOS"))
+	}
 	if *checkCfg {
 		if err != nil {
 			fmt.Println("Problem in the settings:", err)
@@ -125,6 +139,9 @@ func main() {
 		notices = append(notices, "The settings saved on the settings page no longer fit config.toml and were ignored: "+err.Error())
 	} else {
 		cfg = effective
+	}
+	if *alone {
+		cfg.OnlyTheDashboard()
 	}
 	if *execApp != "" {
 		// Does not return on success.
@@ -177,8 +194,11 @@ func main() {
 		return providers.NewRunner(log, publish, ps...)
 	}
 
+	// What is of this machine is left alone in development, and where only
+	// the dashboard is served.
+	bare := *mock || *alone
 	var appBackend apps.Backend = &apps.Mock{Log: log}
-	if !*mock {
+	if !bare {
 		exe, err := os.Executable()
 		if err != nil {
 			log.Error("locate own binary", "err", err)
@@ -194,7 +214,7 @@ func main() {
 		appBackend = &apps.Systemd{Exe: exe, ConfigPath: absCfg, Log: log}
 	}
 	appManager := apps.NewManager(cfg.Apps, appBackend, log)
-	if !*mock {
+	if !bare {
 		// Keeps the keyboard, and with it the remote, on the app that is open.
 		appManager.Focus = &apps.Focuser{Env: func() []string { return apps.DesktopEnv(os.Environ()) }, Log: log}
 	}
@@ -294,8 +314,12 @@ func main() {
 	}
 
 	// New releases: reported on the settings page, installed at night if wanted.
+	updateNote := ""
+	if *alone {
+		updateNote = "PiDash runs in a container here: a new version comes with a new image. Apps, sound, Bluetooth and the TV's remote need PiDash installed on the computer itself."
+	}
 	updater := update.New(update.Options{
-		Current: version, Auto: cfg.Update.Auto, Log: log,
+		Current: version, Auto: cfg.Update.Auto, Log: log, Fixed: updateNote,
 		Busy: func() bool { return appManager.Status().Running != "" },
 	})
 
@@ -303,7 +327,7 @@ func main() {
 	kioskControl := kiosk.New(cfg.Kiosk.Unit, *mock, log)
 	// The settings may have changed what picture the TV gets while the
 	// dashboard runs: saving them starts this program anew, and it is done here.
-	if !*mock && kioskControl.Available() {
+	if !bare && kioskControl.Available() {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			running := kioskControl.Active(ctx)
@@ -319,29 +343,41 @@ func main() {
 		}()
 	}
 	var watchdog *kiosk.Watchdog
-	if cfg.Kiosk.Watchdog && !*mock && kioskControl.Available() {
+	if cfg.Kiosk.Watchdog && !bare && kioskControl.Available() {
 		watchdog = &kiosk.Watchdog{Browser: kioskControl, Log: log,
 			Paused: func() bool { return appManager.Status().Running != "" }}
 	}
 
 	// Bluetooth devices, managed from the settings page.
-	var blue bluetooth.Manager = bluetooth.NewMock()
-	if !*mock {
+	var blue bluetooth.Manager
+	switch {
+	case *alone: // none of this machine's
+	case *mock:
+		blue = bluetooth.NewMock()
+	default:
 		real := bluetooth.New(log)
 		defer real.Close()
 		blue = real
 	}
 
 	// Where the sound goes, also chosen on the settings page.
-	var audio sound.Manager = sound.NewMock()
-	if !*mock {
+	var audio sound.Manager
+	switch {
+	case *alone:
+	case *mock:
+		audio = sound.NewMock()
+	default:
 		audio = &sound.Pactl{}
 	}
 
 	// Restarting the Pi and switching it off, from the app row. In
 	// development the computer is left alone.
-	var powerControl power.Control = &power.Mock{}
-	if !*mock {
+	var powerControl power.Control
+	switch {
+	case *alone:
+	case *mock:
+		powerControl = &power.Mock{}
+	default:
 		powerControl = &power.System{Log: log}
 	}
 
@@ -349,16 +385,18 @@ func main() {
 	var player server.Player
 	var follow func(context.Context)
 	var srv *server.Server
-	if *mock {
+	switch {
+	case *alone:
+	case *mock:
 		player = &playing.Mock{OnChange: func(t *playing.Track) { srv.PlayingChanged(t) }}
-	} else {
+	default:
 		real := &playing.Service{Log: log, OnChange: func(t *playing.Track) { srv.PlayingChanged(t) }}
 		player, follow = real, real.Run
 	}
 
 	// The TV remote, keyboards and game controllers, read below the desktop.
 	var remote *input.Remote
-	if !*mock {
+	if !bare {
 		remote = &input.Remote{
 			Actions: remoteActions, ExitKeys: exitKeys, Hold: cfg.Input.AppExitHold.Duration, Log: log,
 			AppRunning: func() bool { return appManager.Status().Running != "" },
@@ -458,7 +496,7 @@ func main() {
 		Art:    artService(cfg, *mock, version, log),
 		Videos: films, PretendTV: pretendTV, Radar: rainRadar(cfg, *mock, version),
 		Kiosk: kioskControl, Apps: appManager, Photos: photoService,
-		Input: phoneInput, TV: tvService, Version: version, NewRunner: newRunner, Updater: updater, PhotoStatePath: photoStatePath(), TestHooks: *mock,
+		Input: phoneInput, TV: tvService, Version: version, Standalone: *alone, NewRunner: newRunner, Updater: updater, PhotoStatePath: photoStatePath(), TestHooks: *mock,
 		Notices: notices, URLFile: server.URLFile(), Settings: store, BaseListen: baseListen,
 		Remote: remote, Problems: problems, Bluetooth: blue, Sound: audio, Watchdog: watchdog, Playing: player, Games: library, Power: powerControl, Maps: mapTiles(cfg, version),
 	})
@@ -469,7 +507,7 @@ func main() {
 	if library != nil {
 		go library.Run(ctx)
 	}
-	if !*mock {
+	if !bare {
 		go remote.Run(ctx)
 		if watchdog != nil {
 			go watchdog.Run(ctx)

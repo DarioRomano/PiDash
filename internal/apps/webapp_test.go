@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -234,5 +235,50 @@ func TestExtensionsInAnAppsFolderAreLoaded(t *testing.T) {
 		if want := filepath.Join(bin, map[string]string{config.BrowserChromium: "chromium", config.BrowserFirefox: "firefox"}[app.Browser]); launch.Argv[0] != want {
 			t.Errorf("%s runs in %s, want %s", app.ID, launch.Argv[0], want)
 		}
+	}
+}
+
+func TestWhichBrowserShowsWebsiteApps(t *testing.T) {
+	// Nothing installed.
+	fakeBrowsers(t)
+	if _, err := ChromiumBinary(); err == nil {
+		t.Fatal("a browser was found where there is none")
+	}
+	// Chromium alone, under either of its names.
+	for _, name := range []string{"chromium", "chromium-browser"} {
+		bin := fakeBrowsers(t, name)
+		if got, err := ChromiumBinary(); err != nil || got != filepath.Join(bin, name) {
+			t.Errorf("with only %s: %q %v", name, got, err)
+		}
+	}
+	// Google Chrome alone: a PC without Chromium.
+	bin := fakeBrowsers(t, "google-chrome-stable")
+	if got, err := ChromiumBinary(); err != nil || got != filepath.Join(bin, "google-chrome-stable") {
+		t.Errorf("with only Chrome: %q %v", got, err)
+	}
+	// Both: Chrome on a PC, Chromium on a Raspberry Pi and other ARM boards.
+	bin = fakeBrowsers(t, "chromium", "google-chrome-stable")
+	want := "chromium"
+	if runtime.GOARCH == "amd64" {
+		want = "google-chrome-stable"
+	}
+	if got, _ := ChromiumBinary(); got != filepath.Join(bin, want) {
+		t.Errorf("with both: %q, want %s", got, want)
+	}
+	// A Chromium that is a snap comes after one that is not, and is still
+	// better than nothing.
+	bin = fakeBrowsers(t, "google-chrome")
+	snap := filepath.Join(bin, "chromium-browser")
+	if err := os.WriteFile(snap, []byte("#!/bin/sh\nexec /snap/bin/chromium \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := ChromiumBinary(); got != filepath.Join(bin, "google-chrome") {
+		t.Errorf("beside a snap: %q", got)
+	}
+	if err := os.Remove(filepath.Join(bin, "google-chrome")); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ChromiumBinary(); err != nil || got != snap {
+		t.Errorf("with only a snap: %q %v", got, err)
 	}
 }

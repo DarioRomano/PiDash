@@ -97,3 +97,48 @@ jobs:
               --title "PiDash $TAG" --generate-notes "${extra[@]}"
           fi
           echo "Published: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"
+
+  # The same version as a container image on ghcr.io, for amd64 and ARM. It
+  # follows the release and cannot hold it up: if this fails, the packages
+  # above are published all the same, and the job can be run again.
+  image:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      TAG: ${{ inputs.version || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Name the image
+        id: name
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          tags="$image:$TAG"
+          # A version like v0.3.0-rc.1 is not what "latest" should give.
+          case "$TAG" in *-*) ;; *) tags="$tags,$image:latest" ;; esac
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+
+      # The pages and the program are built on this machine for each kind of
+      # computer (see the Dockerfile), so nothing has to be emulated.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          build-args: VERSION=${{ env.TAG }}
+          tags: ${{ steps.name.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ env.TAG }}
+            org.opencontainers.image.licenses=MIT
+          push: true
