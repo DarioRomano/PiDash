@@ -34,6 +34,7 @@ import (
 	"github.com/DarioRomano/PiDash/internal/providers/system"
 	"github.com/DarioRomano/PiDash/internal/providers/weather"
 	"github.com/DarioRomano/PiDash/internal/radar"
+	"github.com/DarioRomano/PiDash/internal/receivers"
 	"github.com/DarioRomano/PiDash/internal/screen"
 	"github.com/DarioRomano/PiDash/internal/server"
 	"github.com/DarioRomano/PiDash/internal/settings"
@@ -60,6 +61,7 @@ func main() {
 		checkCfg  = flag.Bool("check-config", false, "check the settings file given with -config and exit")
 		alone     = flag.Bool("standalone", false, "serve only the dashboard, for any browser: nothing of this machine (apps, TV, sound, Bluetooth) is touched; for a container")
 		health    = flag.Bool("healthcheck", false, "ask the PiDash running on this machine whether it is well, and exit: 0 if so")
+		speakerEv = flag.Bool("speaker-event", false, "internal: pass on what the Spotify speaker says is playing")
 	)
 	flag.Parse()
 
@@ -78,6 +80,13 @@ func main() {
 
 	if *health {
 		os.Exit(healthcheck(*cfgPath, *listen))
+	}
+	if *speakerEv {
+		// Started by librespot, many times a song: quick, and quiet.
+		if err := receivers.SendEvent(); err != nil {
+			os.Exit(1)
+		}
+		return
 	}
 	if *cecCmd != "" {
 		os.Exit(runCEC(*cecCmd, *cfgPath))
@@ -275,8 +284,10 @@ func main() {
 		*c.dst = &clock
 	}
 	tvOpts.IdleOff = cfg.TV.IdleOff.Duration
-	// Music behind the dashboard is something going on, though nobody presses anything for it.
-	tvOpts.Busy = func() bool { return appManager.Status().Background != "" }
+	// Music behind the dashboard is something going on, though nobody
+	// presses anything for it: from an app, or from a phone.
+	var speakers *receivers.Service
+	tvOpts.Busy = func() bool { return appManager.Status().Background != "" || (speakers != nil && speakers.Playing()) }
 	tvService := tv.New(tvOpts)
 	// What the TV says over HDMI tells whether anyone can see the dashboard.
 	cecControl.OnTVStandby = tvService.NoteStandby
@@ -385,13 +396,39 @@ func main() {
 	var player server.Player
 	var follow func(context.Context)
 	var srv *server.Server
+	// What the dashboard is told when a player on the Pi says something
+	// new: that, unless a phone is playing on the Pi (see below).
+	shown := func(t *playing.Track) *playing.Track { return t }
 	switch {
 	case *alone:
 	case *mock:
-		player = &playing.Mock{OnChange: func(t *playing.Track) { srv.PlayingChanged(t) }}
+		player = &playing.Mock{OnChange: func(t *playing.Track) { srv.PlayingChanged(shown(t)) }}
 	default:
-		real := &playing.Service{Log: log, OnChange: func(t *playing.Track) { srv.PlayingChanged(t) }}
+		real := &playing.Service{Log: log, OnChange: func(t *playing.Track) { srv.PlayingChanged(shown(t)) }}
 		player, follow = real, real.Run
+	}
+
+	// The Pi as a speaker for phones: Spotify Connect and AirPlay. What a
+	// phone plays is shown like any other music.
+	if !*alone {
+		exe, _ := os.Executable()
+		dir := ""
+		if data, err := apps.DataDir(); err == nil {
+			dir = filepath.Join(data, "speakers")
+		}
+		on := dir != "" && exe != ""
+		var onPi receivers.Player
+		if player != nil {
+			onPi = player
+		}
+		speakers = receivers.New(receivers.Options{
+			Name: cfg.Sound.SpeakerName, Spotify: on && cfg.Sound.SpotifyConnect, AirPlay: on && cfg.Sound.AirPlay,
+			Dir: dir, Exe: exe, Log: log,
+		})
+		both := receivers.Both{Speakers: speakers, Others: onPi}
+		speakers.OnChange(func() { srv.PlayingChanged(both.Current()) })
+		shown = func(*playing.Track) *playing.Track { return both.Current() }
+		player = both
 	}
 
 	// The TV remote, keyboards and game controllers, read below the desktop.
@@ -496,7 +533,7 @@ func main() {
 		Art:    artService(cfg, *mock, version, log),
 		Videos: films, PretendTV: pretendTV, Radar: rainRadar(cfg, *mock, version),
 		Kiosk: kioskControl, Apps: appManager, Photos: photoService,
-		Input: phoneInput, TV: tvService, Version: version, Standalone: *alone, NewRunner: newRunner, Updater: updater, PhotoStatePath: photoStatePath(), TestHooks: *mock,
+		Input: phoneInput, TV: tvService, Version: version, Standalone: *alone, Speakers: speakers, NewRunner: newRunner, Updater: updater, PhotoStatePath: photoStatePath(), TestHooks: *mock,
 		Notices: notices, URLFile: server.URLFile(), Settings: store, BaseListen: baseListen,
 		Remote: remote, Problems: problems, Bluetooth: blue, Sound: audio, Watchdog: watchdog, Playing: player, Games: library, Power: powerControl, Maps: mapTiles(cfg, version),
 	})
@@ -506,6 +543,14 @@ func main() {
 
 	if library != nil {
 		go library.Run(ctx)
+	}
+	var speakersDone chan struct{}
+	if speakers != nil {
+		speakersDone = make(chan struct{})
+		go func() {
+			speakers.Run(ctx)
+			close(speakersDone)
+		}()
 	}
 	if !bare {
 		go remote.Run(ctx)
@@ -521,6 +566,15 @@ func main() {
 
 	log.Info("pidash starting", "version", version, "config", *cfgPath)
 	err = srv.Run(ctx)
+	// The speakers for phones end with this program, also when it starts
+	// itself anew: left running, they would be in their successors' way.
+	stop()
+	if speakersDone != nil {
+		select {
+		case <-speakersDone:
+		case <-time.After(5 * time.Second):
+		}
+	}
 	if errors.Is(err, server.ErrRestart) {
 		// Start again in place to apply saved settings. Under systemd the
 		// service simply keeps running, with the same process id.

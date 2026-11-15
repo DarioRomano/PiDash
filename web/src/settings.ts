@@ -74,7 +74,7 @@ interface Info {
   screen: { nightStart: string; nightEnd: string; language: string; clockPosition: string; clockSize: string; clockStyle?: string; eveningDim?: string; view: string; caption?: string; weatherDetail?: string; lockView?: boolean; background: string; performance?: string; tiles?: string; backgroundFps?: number; sounds?: boolean };
   calendar: { links: CalendarLink[] };
   home: { url: string; tokenSet: boolean; entities: string[] };
-  system: { autoUpdate: boolean; cooling?: boolean; soundFollows?: boolean; resolution?: string; idleOffMinutes?: number; bluetoothOff?: boolean; games?: boolean; gamesPage?: boolean; gamesOnController?: boolean };
+  system: { autoUpdate: boolean; cooling?: boolean; soundFollows?: boolean; spotifySpeaker?: boolean; airplaySpeaker?: boolean; speakerName?: string; resolution?: string; idleOffMinutes?: number; bluetoothOff?: boolean; games?: boolean; gamesPage?: boolean; gamesOnController?: boolean };
   hiddenTiles?: string[];
   lock: { set: boolean };
   wifi?: { name: string; passwordSet?: boolean; open?: boolean; hidden?: boolean };
@@ -223,6 +223,9 @@ function readForm() {
       autoUpdate: $<HTMLInputElement>("sys-auto").checked,
       cooling: $<HTMLInputElement>("sys-cool").checked,
       soundFollows: $<HTMLInputElement>("snd-follow").checked,
+      spotifySpeaker: $<HTMLInputElement>("spk-spotify").checked,
+      airplaySpeaker: $<HTMLInputElement>("spk-airplay").checked,
+      speakerName: val("spk-name").trim(),
       resolution: val("sys-resolution"),
       idleOffMinutes: Number(val("tv-idle")) || 0,
       bluetoothOff: $<HTMLInputElement>("bt-off").checked,
@@ -334,6 +337,10 @@ function fill(i: Info) {
   $<HTMLInputElement>("sys-auto").checked = i.system.autoUpdate;
   $<HTMLInputElement>("sys-cool").checked = i.system.cooling ?? true;
   $<HTMLInputElement>("snd-follow").checked = i.system.soundFollows ?? true;
+  $<HTMLInputElement>("spk-spotify").checked = !!i.system.spotifySpeaker;
+  $<HTMLInputElement>("spk-airplay").checked = !!i.system.airplaySpeaker;
+  $<HTMLInputElement>("spk-name").value = i.system.speakerName ?? "";
+  void showSpeakers();
   $<HTMLSelectElement>("sys-resolution").value = i.system.resolution || "desktop";
   const idle = $<HTMLSelectElement>("tv-idle");
   const minutes = String(i.system.idleOffMinutes ?? 0);
@@ -537,6 +544,39 @@ $("b-file").addEventListener("change", async () => {
     setResult(out, "The Pi did not answer.", "error");
   }
 });
+
+// --- The Pi as a speaker for phones ---------------------------------------------------------
+
+interface SpeakerState {
+  on: boolean;
+  installed: boolean;
+  running: boolean;
+  problem?: string;
+}
+
+/** Says under each of the two kinds how it is doing: running, not installed, or what went wrong. */
+async function showSpeakers() {
+  let status: { name: string; spotify: SpeakerState; airplay: SpeakerState } | null = null;
+  try {
+    const res = await fetch("/api/speakers", { cache: "no-store" });
+    if (res.ok) status = await res.json();
+  } catch {
+    /* said below */
+  }
+  const say = (id: string, st: SpeakerState | undefined, program: string) => {
+    const out = $(id);
+    let text = "";
+    if (!st) text = "";
+    else if (!st.installed) text = t("Its program, {program}, is not on the Pi yet. The guide says how to install it: Speaker for phones.", { program });
+    else if (st.on && st.running) text = t("Running, as “{name}”.", { name: status?.name ?? "" });
+    else if (st.on) text = t("Not running: {problem}", { problem: st.problem || t("it is being started") });
+    out.textContent = text;
+    out.hidden = text === "";
+    out.dataset.noTranslate = "";
+  };
+  say("spk-spotify-state", status?.spotify, "librespot");
+  say("spk-airplay-state", status?.airplay, "shairport-sync");
+}
 
 // --- Updates -----------------------------------------------------------------------------
 
@@ -1138,7 +1178,7 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
-for (const id of ["w-location", "w-units", "w-radar", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "p-map", "n-start", "n-end", "h-url", "h-token", "sys-auto", "tv-idle", "bt-off", "p-odd", "p-art", "sys-resolution", "sys-cool", "snd-follow", "sys-games", "sys-games-page", "sys-games-pad", "v-source", "v-folders", "l-pin", "wf-name", "wf-pass", "wf-open", "wf-hidden", "d-language", "d-position", "d-size", "d-style", "d-dim", "d-caption", "d-weather", "d-lock", "d-background", "d-performance", "d-tiles", "d-fps", "d-sounds"]) {
+for (const id of ["w-location", "w-units", "w-radar", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "p-map", "n-start", "n-end", "h-url", "h-token", "sys-auto", "tv-idle", "bt-off", "p-odd", "p-art", "sys-resolution", "sys-cool", "snd-follow", "spk-spotify", "spk-airplay", "spk-name", "sys-games", "sys-games-page", "sys-games-pad", "v-source", "v-folders", "l-pin", "wf-name", "wf-pass", "wf-open", "wf-hidden", "d-language", "d-position", "d-size", "d-style", "d-dim", "d-caption", "d-weather", "d-lock", "d-background", "d-performance", "d-tiles", "d-fps", "d-sounds"]) {
   $(id).addEventListener("input", refresh);
   $(id).addEventListener("change", refresh);
 }

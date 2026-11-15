@@ -330,6 +330,13 @@ type Sound struct {
 	// volume while the sound goes to headphones or a speaker rather than to
 	// the TV, whose own volume buttons do nothing for those.
 	RemoteVolume bool `toml:"remote_volume"`
+	// SpotifyConnect and AirPlay make the Pi a speaker that phones can play
+	// to, for the Spotify app and for Apple devices. Each needs its program
+	// on the Pi: librespot and shairport-sync.
+	SpotifyConnect bool `toml:"spotify_connect"`
+	AirPlay        bool `toml:"airplay"`
+	// SpeakerName is what the Pi is called in those apps.
+	SpeakerName string `toml:"speaker_name"`
 }
 
 // TV configures the daily power schedule over HDMI-CEC.
@@ -809,6 +816,9 @@ func (c *Config) Finish() error {
 	if c.Input.AppExitHold.Duration < 0 || c.Input.AppExitHold.Duration > 10*time.Second {
 		return fmt.Errorf("input.app_exit_hold must be between 0s and 10s")
 	}
+	if name := c.Sound.SpeakerName; len(name) > 60 || strings.ContainsAny(name, "\r\n") {
+		return fmt.Errorf("sound.speaker_name must be one line of at most 60 characters")
+	}
 	if n := c.Input.AppExitPresses; n != 0 && (n < 2 || n > 6) {
 		return fmt.Errorf("input.app_exit_presses must be 0 (off) or between 2 and 6, got %d", n)
 	}
@@ -935,6 +945,7 @@ func (c *Config) OnlyTheDashboard() {
 	c.Update.Auto = false
 	c.Bluetooth.DisconnectWithTV = false
 	c.Sound.RemoteVolume = false
+	c.Sound.SpotifyConnect, c.Sound.AirPlay = false, false
 }
 
 // Client is the subset of the configuration sent to the browser.

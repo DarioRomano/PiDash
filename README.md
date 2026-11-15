@@ -655,6 +655,46 @@ on the dashboard and inside apps; the dashboard shows the new level for a
 moment. With the sound on the TV they are the next and the previous photo, as
 before. `remote_volume = false` under `[sound]` switches this off.
 
+### Speaker for phones
+
+The Pi can be a speaker that phones play to: you choose the music in the
+Spotify app, or on an iPhone, iPad or Mac, pick the TV as where it should
+play, and it plays here, with the title and cover on the dashboard like any
+other music ([Now playing](#now-playing)). The TV is not switched off for
+want of a button while it plays.
+
+PiDash does not speak Spotify's or Apple's language itself. Two well-known
+programs do, and PiDash runs them when they are installed and switched on
+under **Settings, Sound and Bluetooth, Speaker for phones**:
+
+| | Program | Getting it |
+|---|---|---|
+| Spotify (Spotify Connect; needs Spotify Premium) | `librespot` | Not among Raspberry Pi OS's packages. The [raspotify](https://github.com/dtcooper/raspotify) project offers it as a package for the Pi; on Arch it is `librespot` |
+| AirPlay (sound from Apple devices) | `shairport-sync` | `sudo apt install shairport-sync` |
+
+Installed as packages, both start a copy of their own for the whole system,
+which would be in the way of PiDash's. Running the installer with
+`--speakers` installs what the system offers and switches those copies off;
+by hand it is `sudo systemctl disable --now shairport-sync raspotify`.
+
+PiDash starts them under the name set on the settings page ("PiDash" unless
+you choose another), and has their sound go through the desktop's sound, so
+that it comes out where **Sound** sends it: the TV, or headphones. The card
+on the settings page says for each whether it runs, and if not, what the
+program said. In `config.toml` this is `spotify_connect`, `airplay` and
+`speaker_name` under `[sound]`.
+
+Things to know:
+
+- Play, pause and skip are on the phone. The remote's buttons do nothing
+  for music that a phone plays.
+- The title and cover need a recent librespot (0.5 or newer); an older one
+  plays without saying what. The cover is fetched from Spotify by the Pi.
+- Debian's shairport-sync is the classic AirPlay: one speaker, sound only.
+  Playing to several rooms at once (AirPlay 2) needs a copy built for it.
+- With two phones playing at once, the dashboard shows the one that began
+  last. A phone's music comes before music an app on the Pi plays.
+
 ### Bluetooth
 
 **Quickly, from the dashboard.** ▲ and the last button of

@@ -115,6 +115,11 @@ type System struct {
 	// SoundFollows moves the sound to Bluetooth headphones when they
 	// connect. Absent leaves config.toml in charge.
 	SoundFollows *bool `json:"soundFollows,omitempty"`
+	// SpotifySpeaker and AirPlaySpeaker make the Pi a speaker for phones;
+	// SpeakerName is what it is called there.
+	SpotifySpeaker *bool   `json:"spotifySpeaker,omitempty"`
+	AirPlaySpeaker *bool   `json:"airplaySpeaker,omitempty"`
+	SpeakerName    *string `json:"speakerName,omitempty"`
 	// Resolution is the picture the TV is sent while the dashboard runs:
 	// "desktop" or "1080p"; empty leaves config.toml in charge.
 	Resolution string `json:"resolution,omitempty"`
@@ -647,6 +652,15 @@ func applyPage(base config.Config, f File, installed []desktop.Entry) (config.Co
 		if sys.SoundFollows != nil {
 			cfg.Sound.FollowBluetooth = *sys.SoundFollows
 		}
+		if sys.SpotifySpeaker != nil {
+			cfg.Sound.SpotifyConnect = *sys.SpotifySpeaker
+		}
+		if sys.AirPlaySpeaker != nil {
+			cfg.Sound.AirPlay = *sys.AirPlaySpeaker
+		}
+		if sys.SpeakerName != nil {
+			cfg.Sound.SpeakerName = strings.TrimSpace(*sys.SpeakerName)
+		}
 		if sys.Resolution != "" {
 			cfg.Kiosk.Resolution = sys.Resolution
 		}
@@ -1010,7 +1024,7 @@ func (s *Store) View() View {
 			Sounds: boolPtr(cfg.Display.Sounds)},
 		Calendar:    Calendar{Links: []Link{}},
 		Home:        Home{URL: cfg.Home.URL, TokenSet: cfg.Home.Token != "", Entities: append([]string{}, cfg.Home.Entities...)},
-		System:      System{AutoUpdate: cfg.Update.Auto, Cooling: boolPtr(cfg.System.CoolAbove > 0), SoundFollows: boolPtr(cfg.Sound.FollowBluetooth), Resolution: cfg.Kiosk.Resolution, IdleOffMinutes: intPtr(int(cfg.TV.IdleOff.Duration / time.Minute)), BluetoothOff: boolPtr(cfg.Bluetooth.DisconnectWithTV), Games: boolPtr(cfg.Games.Moonlight || cfg.Games.RetroArch), GamesPage: boolPtr(cfg.Games.Page), GamesOnController: boolPtr(cfg.Games.OpenOnController)},
+		System:      System{AutoUpdate: cfg.Update.Auto, Cooling: boolPtr(cfg.System.CoolAbove > 0), SoundFollows: boolPtr(cfg.Sound.FollowBluetooth), SpotifySpeaker: boolPtr(cfg.Sound.SpotifyConnect), AirPlaySpeaker: boolPtr(cfg.Sound.AirPlay), SpeakerName: &cfg.Sound.SpeakerName, Resolution: cfg.Kiosk.Resolution, IdleOffMinutes: intPtr(int(cfg.TV.IdleOff.Duration / time.Minute)), BluetoothOff: boolPtr(cfg.Bluetooth.DisconnectWithTV), Games: boolPtr(cfg.Games.Moonlight || cfg.Games.RetroArch), GamesPage: boolPtr(cfg.Games.Page), GamesOnController: boolPtr(cfg.Games.OpenOnController)},
 		Lock:        Lock{Set: cfg.Remote.PIN != ""},
 		Wifi:        Wifi{Name: cfg.Wifi.Name, Hidden: cfg.Wifi.Hidden, PasswordSet: cfg.Wifi.Password != "", Open: cfg.Wifi.Name != "" && cfg.Wifi.Password == ""},
 		Videos:      Videos{Source: cfg.Videos.Source, Folders: append([]string{}, cfg.Videos.Folders...)},

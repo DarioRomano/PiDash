@@ -231,7 +231,7 @@ test("settings on a phone: the categories are a bar along the top", async () => 
     await phone.goto(pi.base + "/settings#bt-card"); // something in a category names the category
     await phone.waitForSelector("#main:not([hidden])");
     const shown = () => phone.evaluate(() => [...document.querySelectorAll("#main section.card")].filter((c) => c.getClientRects().length > 0).map((c) => c.querySelector("h2").textContent));
-    assert.deepEqual(await shown(), ["Sound", "Bluetooth"]);
+    assert.deepEqual(await shown(), ["Sound", "Speaker for phones", "Bluetooth"]);
     const bar = await phone.evaluate(() => {
       const nav = document.getElementById("groups").getBoundingClientRect();
       const current = document.querySelector("#groups .current").getBoundingClientRect();
@@ -2914,5 +2914,67 @@ test("settings: apps are added from cards with their pictures; one press where n
     await tv.context().close();
   } finally {
     await own.stop();
+  }
+});
+
+test("the Pi as a speaker for phones: what a phone plays through Spotify is on the dashboard, and the settings say how it is doing", async () => {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+  // A stand-in for librespot, the program that is the Spotify speaker: it
+  // tells its messenger of a song, as the real one does when a phone plays.
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "pidash-bin-"));
+  fs.writeFileSync(
+    path.join(bin, "librespot"),
+    `#!/bin/sh
+if [ "$1" = "--backend" ]; then echo "Available backends: - alsa (default) - pulseaudio"; exit 0; fi
+echo "$@" > "${bin}/args"
+while [ $# -gt 0 ]; do [ "$1" = "--onevent" ] && ev="$2"; shift; done
+while [ ! -e "${bin}/play" ]; do sleep 0.1; done
+PLAYER_EVENT=track_changed TRACK_ID=abc NAME="Both Sides Now" ARTISTS="Joni Mitchell" ALBUM="Clouds" $ev
+PLAYER_EVENT=playing TRACK_ID=abc $ev
+while [ ! -e "${bin}/stop" ]; do sleep 0.1; done
+PLAYER_EVENT=session_disconnected $ev
+exec sleep 600
+`,
+    { mode: 0o755 },
+  );
+  const own = await startPiDash(`${APPS}\n[sound]\nspotify_connect = true\nairplay = true\nspeaker_name = "Living room"\n`, { PATH: `${bin}:${process.env.PATH}` });
+  try {
+    const { page } = await ready(own.base);
+    const speakers = async () => (await fetch(own.base + "/api/speakers")).json();
+    for (let i = 0; i < 50 && !(await speakers()).spotify.running; i++) await new Promise((r) => setTimeout(r, 100));
+    const st = await speakers();
+    assert.deepEqual([st.name, st.spotify.on, st.spotify.installed, st.spotify.running], ["Living room", true, true, true]);
+    assert.deepEqual([st.airplay.on, st.airplay.installed, st.airplay.running], [true, false, false], "the AirPlay program is not on this machine");
+    assert.match(fs.readFileSync(path.join(bin, "args"), "utf8"), /--name Living room --device-type tv .*--backend pulseaudio --onevent \S+pidash -speaker-event/);
+
+    // A phone starts a song: the dashboard shows it.
+    assert.equal(await page.evaluate(() => document.getElementById("playing").hidden), true);
+    fs.writeFileSync(path.join(bin, "play"), "");
+    await page.waitForFunction(() => !document.getElementById("playing").hidden, null, { timeout: 10000 });
+    assert.deepEqual(await page.evaluate(() => [document.querySelector("#playing .playing-title").textContent, document.querySelector("#playing .playing-by").textContent]), ["Both Sides Now", "Joni Mitchell"]);
+    const now = await (await fetch(own.base + "/api/playing")).json();
+    assert.deepEqual([now.player, now.album, now.playing], ["Spotify", "Clouds", true]);
+    // Its buttons are on the phone.
+    assert.equal((await fetch(own.base + "/api/playing/playpause", { method: "POST" })).status, 409);
+
+    // The settings say that it runs, and under which name; and that the other kind is not installed.
+    const settings = await openPage(own.base, "/settings#sound");
+    await settings.waitForFunction(() => /Running/.test(document.getElementById("spk-spotify-state").textContent));
+    assert.equal(await settings.locator("#spk-spotify-state").innerText(), "Running, as “Living room”.");
+    assert.match(await settings.locator("#spk-airplay-state").innerText(), /shairport-sync, is not on the Pi yet/);
+    assert.deepEqual(await settings.evaluate(() => [document.getElementById("spk-spotify").checked, document.getElementById("spk-airplay").checked, document.getElementById("spk-name").value]), [true, true, "Living room"]);
+    assert.deepEqual(settings.problems, []);
+    await settings.context().close();
+
+    // The phone leaves: the card goes.
+    fs.writeFileSync(path.join(bin, "stop"), "");
+    await page.waitForFunction(() => document.getElementById("playing").hidden, null, { timeout: 10000 });
+    assert.deepEqual(page.problems, []);
+    await page.context().close();
+  } finally {
+    await own.stop();
+    fs.rmSync(bin, { recursive: true, force: true });
   }
 });

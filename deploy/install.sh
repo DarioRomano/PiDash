@@ -12,7 +12,7 @@
 # Remove everything again with deploy/uninstall.sh.
 #
 # Usage (as your normal user, NOT with sudo):
-#   bash deploy/install.sh [--autostart] [--console-apps] [--phone-input] [--binary PATH]
+#   bash deploy/install.sh [--autostart] [--console-apps] [--phone-input] [--speakers] [--binary PATH]
 #     --autostart     also open the dashboard automatically when the desktop starts
 #     --console-apps  allow apps with mode = "console" (Moonlight, Kodi, ...) to run
 #                     on their own virtual terminal. This is the one part that is
@@ -21,6 +21,10 @@
 #     --phone-input   install the small tool the phone remote uses for typing
 #                     text. To let the phone act as mouse and keyboard you also
 #                     need mouse_keyboard = true under [remote] in the settings.
+#     --speakers      install what makes the Pi a speaker for phones, where this
+#                     system offers it: shairport-sync (AirPlay) and librespot
+#                     (Spotify). Their own system services are switched off;
+#                     PiDash runs them when its settings say so.
 #     --binary        path to the pidash binary (default: looks next to deploy/)
 set -euo pipefail
 # Not every way of starting a script sets USER.
@@ -49,6 +53,7 @@ GIVEN_FLAGS=()
 AUTOSTART=0
 CONSOLE_APPS=0
 PHONE_INPUT=0
+SPEAKERS=0
 CONSOLE_VT="${PIDASH_CONSOLE_VT:-8}"
 BINARY=""
 while [ $# -gt 0 ]; do
@@ -56,8 +61,9 @@ while [ $# -gt 0 ]; do
     --autostart) AUTOSTART=1; GIVEN_FLAGS+=("$1") ;;
     --console-apps) CONSOLE_APPS=1; GIVEN_FLAGS+=("$1") ;;
     --phone-input) PHONE_INPUT=1; GIVEN_FLAGS+=("$1") ;;
+    --speakers) SPEAKERS=1; GIVEN_FLAGS+=("$1") ;;
     --binary) BINARY="${2:?--binary needs a path}"; shift ;;
-    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 1 ;;
   esac
   shift
@@ -107,6 +113,8 @@ pkg() {
     *:chvt) echo kbd ;;
     *:wtype) echo wtype ;;
     *:xdotool) echo xdotool ;;
+    *:airplay) echo shairport-sync ;;
+    *:spotify) echo librespot raspotify ;;
   esac
 }
 # offered NAME: whether this system's package source has a package of that name.
@@ -151,6 +159,10 @@ if [ "$PHONE_INPUT" -eq 1 ]; then
   command -v wtype >/dev/null 2>&1 || want wtype "wtype, for typing from the phone on a Wayland desktop"
   command -v xdotool >/dev/null 2>&1 || want xdotool "xdotool, for typing from the phone on an X11 desktop"
 fi
+if [ "$SPEAKERS" -eq 1 ]; then
+  command -v shairport-sync >/dev/null 2>&1 || want airplay "shairport-sync, the AirPlay speaker"
+  command -v librespot >/dev/null 2>&1 || want spotify "librespot, the Spotify speaker: see \"Speaker for phones\" in the README for where to get it"
+fi
 if [ ${#missing[@]} -gt 0 ]; then
   echo "    installing: ${missing[*]} (needs sudo)"
   case "$PM" in
@@ -167,6 +179,17 @@ fi
 if [ ${#without[@]} -gt 0 ]; then
   echo "    not found in this system's packages; PiDash works without, less these:"
   printf '      - %s\n' "${without[@]}"
+fi
+if [ "$SPEAKERS" -eq 1 ]; then
+  # Installed as packages, these start a copy of their own for the whole
+  # system. PiDash runs its own, under its name and with the desktop's
+  # sound; two copies would be in each other's way.
+  for unit in shairport-sync raspotify librespot; do
+    if systemctl is-enabled --quiet "$unit" 2>/dev/null || systemctl is-active --quiet "$unit" 2>/dev/null; then
+      echo "    switching off the system's own $unit service: PiDash runs it itself (needs sudo)"
+      sudo systemctl disable --now "$unit" >/dev/null 2>&1 || echo "    that did not work; by hand: sudo systemctl disable --now $unit"
+    fi
+  done
 fi
 
 echo "==> Installing files to $APP_DIR"

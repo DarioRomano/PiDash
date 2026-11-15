@@ -142,6 +142,11 @@ follow_bluetooth = true
 # volume, also inside apps. With the sound on the TV they keep what they
 # otherwise do (the next and the previous photo).
 remote_volume = true
+# The Pi as a speaker that phones play to; the README says which programs
+# this needs ("Speaker for phones"). Also on the settings page.
+spotify_connect = false   # appear in the Spotify app (needs librespot)
+airplay = false           # appear on Apple devices (needs shairport-sync)
+speaker_name = "PiDash"   # what it is called there
 
 [system]
 enabled = true

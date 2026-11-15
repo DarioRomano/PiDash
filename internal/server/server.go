@@ -39,6 +39,7 @@ import (
 	"github.com/DarioRomano/PiDash/internal/providers/weather"
 	"github.com/DarioRomano/PiDash/internal/radar"
 	"github.com/DarioRomano/PiDash/internal/radio"
+	"github.com/DarioRomano/PiDash/internal/receivers"
 	"github.com/DarioRomano/PiDash/internal/settings"
 	"github.com/DarioRomano/PiDash/internal/sound"
 	"github.com/DarioRomano/PiDash/internal/tv"
@@ -97,6 +98,7 @@ type Server struct {
 	pin        pinGuard
 	version    string
 	standalone bool
+	speakers   *receivers.Service
 	urlFile    string
 	static     fs.FS
 
@@ -160,6 +162,8 @@ type Deps struct {
 	Version string
 	// Standalone is set where only the dashboard is served (a container).
 	Standalone bool
+	// Speakers is the Pi as a speaker for phones; may be nil.
+	Speakers *receivers.Service
 	// Notices are start-up problems to show on the TV.
 	Notices []string
 	// URLFile is where the address actually in use is recorded for the
@@ -178,7 +182,7 @@ type Deps struct {
 func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	k, am, ps, newRunner := d.Kiosk, d.Apps, d.Photos, d.NewRunner
 	s := &Server{cfg: cfg, log: log, hub: newHub(), kiosk: k, apps: am, photos: ps, input: d.Input, tv: d.TV,
-		pin: pinGuard{pin: cfg.Remote.PIN}, version: d.Version, standalone: d.Standalone, urlFile: d.URLFile, notices: d.Notices,
+		pin: pinGuard{pin: cfg.Remote.PIN}, version: d.Version, standalone: d.Standalone, speakers: d.Speakers, urlFile: d.URLFile, notices: d.Notices,
 		settings: d.Settings, baseListen: d.BaseListen, started: time.Now().UnixMilli(), restart: make(chan struct{}),
 		static: static, mux: http.NewServeMux()}
 	s.runner = newRunner(func(e providers.Entry) { s.hub.broadcast("state", e) })
@@ -266,6 +270,10 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 		s.mux.HandleFunc("POST /api/test/playing", func(w http.ResponseWriter, r *http.Request) {
 			var track *playing.Track
 			mock, ok := s.player.(*playing.Mock)
+			if both, wrapped := s.player.(receivers.Both); wrapped {
+				// Behind what phones play is the pretend player of the Pi.
+				mock, ok = both.Others.(*playing.Mock)
+			}
 			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&track); err != nil || !ok {
 				http.Error(w, "bad request", http.StatusBadRequest)
 				return
@@ -300,6 +308,7 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("POST /api/apps/order", s.handleAppOrder)
 	s.mux.HandleFunc("GET /api/apps/{id}/icon", s.handleAppIcon)
 	s.mux.HandleFunc("GET /api/presets/{id}/icon", s.handlePresetIcon)
+	s.mux.HandleFunc("GET /api/speakers", s.handleSpeakers)
 	if ps != nil {
 		ps.OnChange(func(st photos.Status) { s.hub.broadcast("photos", st) })
 	}
@@ -767,6 +776,16 @@ func (s *Server) handleAppIcon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.ServeFile(w, r, icon.Path)
+}
+
+// handleSpeakers says how the Pi is doing as a speaker for phones: which of
+// the two kinds are switched on, installed and running.
+func (s *Server) handleSpeakers(w http.ResponseWriter, _ *http.Request) {
+	if s.speakers == nil {
+		http.Error(w, "not available here", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, s.speakers.Status())
 }
 
 // handlePresetIcon serves the picture of a ready-made app that is offered

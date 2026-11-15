@@ -472,6 +472,22 @@
         <label class="check"><input id="snd-follow" type="checkbox" /><span>Switch to headphones or a speaker when they connect, and back when they disconnect</span></label>
       </section>
 
+      <section class="card" id="spk-card" data-group="sound" data-device>
+        <h2>Speaker for phones</h2>
+        <p class="hint">
+          The TV as a speaker: the music is chosen on a phone and plays here, and the dashboard shows what is playing.
+          It goes where the sound above goes.
+        </p>
+        <label class="check"><input id="spk-spotify" type="checkbox" /><span>Spotify: appear in the Spotify app as a device to play on</span></label>
+        <p id="spk-spotify-state" class="hint"></p>
+        <label class="check"><input id="spk-airplay" type="checkbox" /><span>AirPlay: appear on iPhones, iPads and Macs as a speaker</span></label>
+        <p id="spk-airplay-state" class="hint"></p>
+        <label class="field">
+          <span>The name it appears under</span>
+          <input id="spk-name" type="text" maxlength="60" placeholder="PiDash" autocomplete="off" />
+        </label>
+      </section>
+
       <section class="card" id="bt-card" data-group="sound" data-device>
         <h2>Bluetooth</h2>
         <p class="hint">

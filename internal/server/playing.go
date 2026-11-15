@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DarioRomano/PiDash/internal/playing"
+	"github.com/DarioRomano/PiDash/internal/receivers"
 )
 
 // Player is what the server needs to know about the music that is playing.
@@ -44,6 +45,8 @@ func (s *Server) handlePlayingControl(w http.ResponseWriter, r *http.Request) {
 	switch err := s.player.Control(ctx, r.PathValue("button")); {
 	case errors.Is(err, playing.ErrNothing):
 		http.Error(w, err.Error(), http.StatusNotFound)
+	case errors.Is(err, receivers.ErrOnThePhone):
+		http.Error(w, err.Error(), http.StatusConflict)
 	case err != nil:
 		s.log.Info("now playing: button", "button", r.PathValue("button"), "err", err)
 		http.Error(w, "the player did not react", http.StatusBadGateway)
