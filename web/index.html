@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=1920, initial-scale=1" />
+    <title>PiDash</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="fit">
+    <div id="stage">
+      <div id="backdrop" aria-hidden="true">
+        <!-- The moving colours behind the clock while no photo is shown. -->
+        <canvas id="ambient"></canvas>
+        <div id="grain"></div>
+      </div>
+
+      <!-- Everything that is drawn on top of the photo. This part is nudged
+           by a few pixels now and then (see pixel_shift); the photo and its
+           darkening above stay put, so no edge of the screen is ever bare. -->
+      <div id="ui">
+        <!-- Darkens the photo where texts stand. It moves with them, and reaches past the screen's edges. -->
+        <div id="scrim" aria-hidden="true"></div>
+      <main id="overlay" data-density="compact">
+        <section id="clock">
+          <!-- The clock with hands, for those who chose it in the settings. -->
+          <svg id="dial" viewBox="-100 -100 200 200" aria-hidden="true">
+            <g id="dial-marks"></g>
+            <line id="dial-hour" x1="0" y1="10" x2="0" y2="-50" />
+            <line id="dial-minute" x1="0" y1="14" x2="0" y2="-82" />
+            <circle r="5.500" />
+          </svg>
+          <div id="time"><span id="hm">--:--</span><span id="ampm"></span></div>
+          <div id="date">&nbsp;</div>
+        </section>
+        <section id="caption"></section>
+        <!-- Opposite the clock: the next calendar events, and under them the weather. -->
+        <aside id="side">
+          <section id="agenda" hidden></section>
+          <section id="weather" hidden></section>
+        </aside>
+      </main>
+
+      <aside id="status">
+        <span id="conn" class="dot" title="Connection"></span>
+        <span id="stale" hidden>stale</span>
+        <span id="debug" hidden></span>
+      </aside>
+
+      <nav id="rail" aria-hidden="true">
+        <div id="rail-strip"></div>
+        <div id="rail-hint"></div>
+      </nav>
+
+      <section id="weather-panel" aria-hidden="true"></section>
+
+      <!-- Shown while a mouse, touchpad or touch screen is in use. -->
+      <div id="hud" aria-label="Controls"></div>
+
+      <section id="help" aria-hidden="true"></section>
+
+      <section id="status-panel" aria-hidden="true"></section>
+
+      <section id="wifi-panel" aria-hidden="true"></section>
+
+      <!-- The volume of headphones or a speaker, while it is being changed. -->
+      <div id="volume" aria-hidden="true"><span class="vol-name"></span><span class="vol-track"><span class="vol-level"></span></span><span class="vol-number"></span></div>
+      <!-- Shown while the slideshow is held with play/pause. -->
+      <div id="held" aria-hidden="true"><span>❚❚</span> <span>Photo held</span></div>
+      <section id="whatsnew" aria-hidden="true"></section>
+      <section id="photo-bar" aria-hidden="true"></section>
+      <section id="photo-info" aria-hidden="true"></section>
+      <!-- A page of things to choose from: the games, the videos. -->
+      <section id="grid-page" aria-hidden="true"></section>
+      <!-- Where the photos were taken: a list of places beside a map. -->
+      <section id="places" aria-hidden="true"></section>
+      <!-- A quiz about the photos: which year, and where. -->
+      <section id="quiz" aria-hidden="true"></section>
+      <!-- Where it rained in the last hour, over a map. -->
+      <section id="radar" aria-hidden="true"></section>
+      <section id="menu" aria-hidden="true"></section>
+
+      <!-- Darkens everything a little in the evening, for those who chose it. -->
+      <div id="dim" aria-hidden="true"></div>
+
+      <div id="toast" role="status"></div>
+
+      <div id="exit-hint" role="status">Keep holding to exit to the desktop…</div>
+      </div>
+    </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

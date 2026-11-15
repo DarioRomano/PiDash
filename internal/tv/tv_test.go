@@ -1,0 +1,377 @@
+package tv
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"log/slog"
+	"testing"
+	"time"
+
+	"github.com/DarioRomano/PiDash/internal/cec"
+)
+
+type fakeTV struct {
+	power    cec.Power
+	standbys int
+	wakes    int
+	silent   bool // a TV that does not report its power state
+}
+
+func (f *fakeTV) Available() bool { return true }
+func (f *fakeTV) Standby(context.Context) error {
+	f.standbys++
+	f.power = cec.PowerStandby
+	return nil
+}
+func (f *fakeTV) Wake(context.Context) error {
+	f.wakes++
+	f.power = cec.PowerOn
+	return nil
+}
+func (f *fakeTV) PowerStatus(context.Context) (cec.Power, error) {
+	if f.silent {
+		return cec.PowerUnknown, nil
+	}
+	return f.power, nil
+}
+
+func at(day, hour, minute int) time.Time {
+	return time.Date(2026, 11, day, hour, minute, 0, 0, time.UTC)
+}
+
+func newService(tvSet *fakeTV, appRunning *bool) *Service {
+	off, on := Clock{23, 30}, Clock{6, 30}
+	return New(Options{
+		Off: &off, On: &on, TV: tvSet,
+		AppRunning: func() bool { return *appRunning },
+		Log:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+}
+
+func TestParseClock(t *testing.T) {
+	for in, want := range map[string]Clock{"23:30": {23, 30}, "06:05": {6, 5}, " 0:00 ": {0, 0}} {
+		if got, err := ParseClock(in); err != nil || got != want {
+			t.Errorf("ParseClock(%q) = %v, %v", in, got, err)
+		}
+	}
+	for _, bad := range []string{"", "24:00", "12:60", "12", "noon", "12:5", "-1:00"} {
+		if _, err := ParseClock(bad); err == nil {
+			t.Errorf("ParseClock(%q) should fail", bad)
+		}
+	}
+}
+
+func TestNightlyOffAndMorningOn(t *testing.T) {
+	set := &fakeTV{power: cec.PowerOn}
+	running := false
+	s := newService(set, &running)
+	ctx := context.Background()
+
+	s.Step(ctx, at(13, 23, 0)) // backend starts in the evening: nothing happens
+	s.Step(ctx, at(13, 23, 29))
+	if set.standbys != 0 {
+		t.Fatal("switched off before the configured time")
+	}
+	s.Step(ctx, at(13, 23, 30))
+	if set.standbys != 1 || !s.Status().Asleep {
+		t.Fatalf("23:30: standbys=%d asleep=%v", set.standbys, s.Status().Asleep)
+	}
+	s.Step(ctx, at(13, 23, 31))
+	s.Step(ctx, at(14, 3, 0))
+	if set.standbys != 1 {
+		t.Errorf("standby was sent again during the night: %d", set.standbys)
+	}
+	s.Step(ctx, at(14, 6, 30))
+	if set.wakes != 1 || s.Status().Asleep {
+		t.Errorf("06:30: wakes=%d asleep=%v", set.wakes, s.Status().Asleep)
+	}
+	s.Step(ctx, at(14, 23, 30))
+	if set.standbys != 2 {
+		t.Errorf("second night: standbys=%d", set.standbys)
+	}
+}
+
+func TestStartingDuringTheNightDoesNothing(t *testing.T) {
+	set := &fakeTV{power: cec.PowerOn}
+	running := false
+	s := newService(set, &running)
+	// The Pi is rebooted at 02:00. The TV is left alone until the next scheduled time.
+	s.Step(context.Background(), at(14, 2, 0))
+	s.Step(context.Background(), at(14, 2, 1))
+	if set.standbys != 0 || set.wakes != 0 || s.Status().Asleep {
+		t.Errorf("standbys=%d wakes=%d asleep=%v", set.standbys, set.wakes, s.Status().Asleep)
+	}
+}
+
+func TestTVIsNotSwitchedOffWhileSomethingIsPlaying(t *testing.T) {
+	set := &fakeTV{power: cec.PowerOn}
+	running := true
+	s := newService(set, &running)
+	ctx := context.Background()
+
+	s.Step(ctx, at(13, 23, 29))
+	s.Step(ctx, at(13, 23, 30))
+	s.Step(ctx, at(14, 0, 15))
+	if set.standbys != 0 {
+		t.Fatal("the TV was switched off during a film")
+	}
+	running = false // the film ends
+	s.Step(ctx, at(14, 0, 16))
+	if set.standbys != 1 {
+		t.Errorf("after the app closed: standbys=%d", set.standbys)
+	}
+
+	// If the film runs until morning, the pending switch-off is dropped.
+	set2 := &fakeTV{power: cec.PowerOn}
+	running = true
+	s2 := newService(set2, &running)
+	s2.Step(ctx, at(13, 23, 29))
+	s2.Step(ctx, at(13, 23, 30))
+	s2.Step(ctx, at(14, 6, 30))
+	running = false
+	s2.Step(ctx, at(14, 6, 31))
+	if set2.standbys != 0 {
+		t.Errorf("TV switched off in the morning after an all-night session: %d", set2.standbys)
+	}
+}
+
+func TestDashboardWakesWhenTheTVIsSwitchedOnByHand(t *testing.T) {
+	set := &fakeTV{power: cec.PowerOn}
+	running := false
+	s := newService(set, &running)
+	ctx := context.Background()
+	var changes []bool
+	s.OnChange(func(st Status) { changes = append(changes, st.Asleep) })
+
+	s.Step(ctx, at(13, 23, 29))
+	s.Step(ctx, at(13, 23, 30))
+	s.Step(ctx, at(13, 23, 31))
+	if !s.Status().Asleep {
+		t.Fatal("should be asleep")
+	}
+	set.power = cec.PowerOn // someone presses the power button at 1 am
+	s.Step(ctx, at(14, 1, 0))
+	if s.Status().Asleep {
+		t.Error("still asleep after the TV was switched on by hand")
+	}
+	if len(changes) < 2 || changes[0] != true || changes[len(changes)-1] != false {
+		t.Errorf("status changes = %v", changes)
+	}
+	s.Step(ctx, at(14, 1, 1))
+	if set.standbys != 1 {
+		t.Errorf("the TV was switched off again: %d", set.standbys)
+	}
+}
+
+func TestTVThatDoesNotReportItsStateIsNotAssumedOffForLong(t *testing.T) {
+	set := &fakeTV{power: cec.PowerOn, silent: true}
+	running := false
+	s := newService(set, &running)
+	ctx := context.Background()
+	s.Step(ctx, at(13, 23, 29))
+	s.Step(ctx, at(13, 23, 30))
+	s.Step(ctx, at(13, 23, 30).Add(30*time.Second))
+	if !s.Status().Asleep {
+		t.Error("should be assumed off right after the command")
+	}
+	s.Step(ctx, at(13, 23, 33))
+	if s.Status().Asleep {
+		t.Error("without confirmation from the TV the dashboard must not stay asleep")
+	}
+}
+
+func TestManualPower(t *testing.T) {
+	set := &fakeTV{power: cec.PowerOn}
+	running := true // manual control ignores what is playing
+	s := newService(set, &running)
+	ctx := context.Background()
+	if err := s.SetPower(ctx, false); err != nil || set.standbys != 1 || !s.Status().Asleep {
+		t.Errorf("off: err=%v standbys=%d asleep=%v", err, set.standbys, s.Status().Asleep)
+	}
+	if err := s.SetPower(ctx, true); err != nil || set.wakes != 1 || s.Status().Asleep {
+		t.Errorf("on: err=%v wakes=%d asleep=%v", err, set.wakes, s.Status().Asleep)
+	}
+	if st := s.Status(); st.Off != "23:30" || st.On != "06:30" || !st.Available {
+		t.Errorf("status = %+v", st)
+	}
+}
+
+func TestSleepTimer(t *testing.T) {
+	fake := &fakeTV{power: cec.PowerOn}
+	stopped := 0
+	s := New(Options{TV: fake, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), OnSleep: func() { stopped++ }})
+	start := time.Now()
+	s.Step(context.Background(), start)
+
+	st := s.SetSleep(30)
+	if st.SleepAt == nil || st.SleepMinutes != 30 {
+		t.Fatalf("status = %+v", st)
+	}
+	s.Step(context.Background(), start.Add(29*time.Minute))
+	if fake.standbys != 0 {
+		t.Fatal("the TV was switched off early")
+	}
+	s.Step(context.Background(), start.Add(31*time.Minute))
+	if fake.standbys != 1 || stopped != 1 || s.Status().SleepAt != nil {
+		t.Errorf("standbys %d, apps stopped %d, status %+v; want one of each and the timer cleared", fake.standbys, stopped, s.Status())
+	}
+
+	// Cancelled in time, nothing happens.
+	s.SetSleep(10)
+	s.SetSleep(0)
+	s.Step(context.Background(), start.Add(3*time.Hour))
+	if fake.standbys != 1 {
+		t.Errorf("a cancelled timer switched the TV off")
+	}
+}
+
+func TestTheDashboardRestsWhileTheTVIsOff(t *testing.T) {
+	fake := &fakeTV{power: cec.PowerOn}
+	var seen []bool
+	s := New(Options{TV: fake, Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	s.OnChange(func(st Status) { seen = append(seen, st.Asleep) })
+	start := time.Now()
+	s.Step(context.Background(), start)
+	if s.Status().Asleep {
+		t.Fatal("asleep although the TV reports that it is on")
+	}
+
+	// Switched off with the TV's own remote: found out within a minute.
+	fake.power = cec.PowerStandby
+	s.Step(context.Background(), start.Add(30*time.Second)) // too soon to ask again
+	if s.Status().Asleep {
+		t.Error("the TV was asked more often than once a minute")
+	}
+	s.Step(context.Background(), start.Add(61*time.Second))
+	if !s.Status().Asleep {
+		t.Fatal("still drawing a minute after the TV went to standby")
+	}
+	// And switched on again.
+	fake.power = cec.PowerOn
+	s.Step(context.Background(), start.Add(122*time.Second))
+	if s.Status().Asleep {
+		t.Fatal("still resting after the TV came back on")
+	}
+
+	// A TV that announces standby is believed at once...
+	s.NoteStandby()
+	if !s.Status().Asleep {
+		t.Fatal("the TV's announcement was ignored")
+	}
+	// ...its chatter while shutting down is not taken for being on again...
+	s.NoteAwake()
+	if !s.Status().Asleep {
+		t.Error("woken by the TV's last words")
+	}
+	// ...but a sign of life later is, even from a TV that never answers questions.
+	fake.silent = true
+	s.mu.Lock()
+	s.heardStandby = time.Now().Add(-time.Minute)
+	s.mu.Unlock()
+	s.Step(context.Background(), start.Add(200*time.Second))
+	if !s.Status().Asleep {
+		t.Error("a TV that does not answer was assumed to be on")
+	}
+	s.NoteAwake()
+	if s.Status().Asleep {
+		t.Error("a button press did not wake the dashboard")
+	}
+	if got, want := fmt.Sprint(seen), "[true false true false]"; got != want {
+		t.Errorf("changes reported = %s, want %s", got, want)
+	}
+}
+
+func TestAControllerWakesATVThatIsInStandby(t *testing.T) {
+	set := &fakeTV{power: cec.PowerStandby}
+	running := false
+	s := newService(set, &running)
+	s.NoteStandby()
+
+	woke, err := s.WakeIfOff(context.Background())
+	if err != nil || !woke || set.wakes != 1 {
+		t.Fatalf("woke = %v, err = %v, wakes = %d; want the TV switched on once", woke, err, set.wakes)
+	}
+	if s.Status().Asleep {
+		t.Error("the dashboard should carry on once the TV was switched on")
+	}
+	// The controller connecting and its logo button arrive together: one wake.
+	if woke, _ := s.WakeIfOff(context.Background()); woke || set.wakes != 1 {
+		t.Errorf("a second request right away woke the TV again (wakes = %d)", set.wakes)
+	}
+}
+
+func TestAControllerLeavesATVThatIsOnAlone(t *testing.T) {
+	// The TV is on, perhaps showing another input: its input is not taken away.
+	set := &fakeTV{power: cec.PowerOn}
+	running := false
+	s := newService(set, &running)
+	if woke, err := s.WakeIfOff(context.Background()); woke || err != nil || set.wakes != 0 {
+		t.Errorf("woke = %v, err = %v, wakes = %d; want nothing done", woke, err, set.wakes)
+	}
+
+	// Believed to be off, but it says it is on: nothing is sent, and the
+	// dashboard carries on.
+	set = &fakeTV{power: cec.PowerOn}
+	s = newService(set, &running)
+	s.mu.Lock()
+	s.asleep = true
+	s.mu.Unlock()
+	if woke, _ := s.WakeIfOff(context.Background()); woke || set.wakes != 0 {
+		t.Errorf("a TV that is on was sent a wake-up (wakes = %d)", set.wakes)
+	}
+	if s.Status().Asleep {
+		t.Error("the TV said it is on; the dashboard should carry on")
+	}
+}
+
+func TestATVThatDoesNotSayIsTakenAsLastKnown(t *testing.T) {
+	running := false
+	// Last heard of going to standby: woken.
+	set := &fakeTV{silent: true}
+	s := newService(set, &running)
+	s.NoteStandby()
+	if woke, _ := s.WakeIfOff(context.Background()); !woke || set.wakes != 1 {
+		t.Errorf("woke = %v, wakes = %d; want it woken", woke, set.wakes)
+	}
+	// Not known to be off: left alone.
+	set = &fakeTV{silent: true}
+	s = newService(set, &running)
+	if woke, _ := s.WakeIfOff(context.Background()); woke || set.wakes != 0 {
+		t.Errorf("woke = %v, wakes = %d; want nothing done", woke, set.wakes)
+	}
+}
+
+func TestAControllerButtonOnlyMakesPiDashAskTheTV(t *testing.T) {
+	running := false
+	set := &fakeTV{power: cec.PowerStandby}
+	s := newService(set, &running)
+	s.NoteStandby()
+	s.Recheck(context.Background())
+	if set.wakes != 0 || !s.Status().Asleep {
+		t.Errorf("a button on a controller must not wake the TV: wakes = %d, asleep = %v", set.wakes, s.Status().Asleep)
+	}
+
+	set = &fakeTV{power: cec.PowerOn}
+	s = newService(set, &running)
+	s.mu.Lock()
+	s.asleep = true
+	s.mu.Unlock()
+	s.Recheck(context.Background())
+	if set.wakes != 0 || s.Status().Asleep {
+		t.Errorf("the TV is on after all: wakes = %d, asleep = %v; want the dashboard carrying on", set.wakes, s.Status().Asleep)
+	}
+}
+
+func TestTheLogoButtonsQuestionDoesNotUseUpItsWakeUp(t *testing.T) {
+	// The logo button both asks whether the TV is on and asks for it to be
+	// woken. Whichever comes first, the TV is woken.
+	running := false
+	set := &fakeTV{power: cec.PowerStandby}
+	s := newService(set, &running)
+	s.NoteStandby()
+	s.Recheck(context.Background())
+	if woke, _ := s.WakeIfOff(context.Background()); !woke || set.wakes != 1 {
+		t.Errorf("woke = %v, wakes = %d; want the TV woken although it was just asked", woke, set.wakes)
+	}
+}

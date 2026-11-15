@@ -1,0 +1,479 @@
+# PiDash configuration. Lives at ~/.config/pidash/config.toml on the Pi.
+# After editing: systemctl --user restart pidash
+#
+# Weather, background photos and apps are easier to set on the settings page:
+# open http://<pi-address>:8080/settings on your phone, or choose Settings on
+# the TV. What you save there is kept in settings.json next to this file and
+# takes precedence over the same sections here. Delete settings.json to return
+# to exactly what this file says.
+# Every key is optional; omitted keys use the built-in defaults shown here.
+
+[server]
+listen = ":8080"
+# PiDash answers when it is addressed by the Pi's address or by the kind of
+# name a home network gives (raspberrypi.local, pi.lan, a single word). A
+# name of your own must be listed here, or requests under it are refused:
+# names = ["tv.example.org"]
+
+[display]
+# Inset on every edge as a fraction of the screen, for TVs that overscan.
+# Prefer setting the TV to "Just Scan" / "Screen Fit" and leaving this small.
+safe_area = 0.03
+# Show the last raw key code and mapped action in the corner. Turn on while
+# mapping a new TV remote over CEC, off once everything works.
+debug_keys = true
+# How the time is shown: "bold" numbers, "slim" numbers, or "analog", a clock
+# with hands.
+clock_style = "bold"
+# Small sounds when the remote moves the highlight or chooses something.
+sounds = true
+# Nudge the UI by up to this many pixels every few minutes (OLED/plasma burn-in). 0 = off.
+pixel_shift = 4
+# Close the app row and return to the clock after this many seconds without a
+# key press. 0 = keep it open until Back is pressed.
+app_row_timeout = 30
+# Language of everything on screen: "en", "de", "fr" or "it". Messages that
+# come from the Pi itself, such as connection errors, stay in English.
+language = "en"
+# Where the clock sits: "bottom-left", "bottom-right", "top-left", "top-right".
+clock_position = "bottom-left"
+# "large", "medium" or "small".
+clock_size = "large"
+# What the dashboard shows beside the clock.
+#   caption         "on": a photo has its caption (album, place and date);
+#                   "off": it has none
+#   weather_detail  "off": no weather on the dashboard; "short": temperature
+#                   and conditions; "full": also the place, what it feels
+#                   like and the chance of rain
+# Down on the remote steps on from this to everything, to only the photo, and
+# back; lock_view = true keeps the dashboard as it is set. Up opens what can
+# be done with the photo on screen.
+caption = "off"
+weather_detail = "short"
+lock_view = false
+# From before the three above existed, and used where they are left out:
+# "clock", "details" (caption and full weather) or "photo" (start with
+# nothing but the photo).
+# view = "clock"
+# The background shown while there is no photo: "moving" drifts slowly and
+# reacts to the remote; "still" is painted once, which keeps the Pi cooler.
+background = "moving"
+# How much work the Pi does for the picture, and so how much power it draws
+# and how warm it gets:
+#   "smooth"    the moving background and moving photos are drawn 30 times
+#               a second
+#   "balanced"  the background 12 times a second, moving photos 15 times
+#   "saver"     the background 5 times a second and less finely; photos stand
+#               still instead of drifting, and video clips are left out
+# Menus are always drawn as fluidly as the screen allows, whatever is set here.
+performance = "balanced"
+# Pictures a second for the moving background, 1 to 60, whatever the setting
+# above says; 0 leaves it to that setting.
+background_fps = 0
+# (The largest saving at 4K is not here but under [kiosk]: resolution = "1080p".)
+# The tiles of the app row: "glow" (a glow in the icon's colour and soft
+# shadows) or "plain" (flat), which is less work for the Pi on a 4K screen.
+tiles = "glow"
+# Tiles of PiDash's own to leave out of the app row: any of "weather",
+# "sound", "bluetooth", "sleep", "videos", "places", "trips", "quiz", "wifi",
+# "status", "desktop", "power".
+hidden_tiles = []
+# Night mode: between these times the TV shows only a dim clock on black. Any
+# button brings the dashboard back for a minute. Leave both empty for none.
+# A time is "22:30", or follows the sun: "sunset", "sunrise", and either moved
+# by minutes, as in "sunset+120" or "sunrise-30". The sun's times are those of
+# the town under [weather], so following the sun needs the weather set up.
+night_start = ""
+night_end = ""
+# Darken the picture as the evening comes: it dims over the hour after sunset
+# and is back to normal at sunrise. "off", "light" or "strong".
+evening_dim = "off"
+clock_24h = true
+# BCP 47 locale for the date, e.g. "en-GB", "it-IT". Empty = browser default.
+locale = ""
+
+# --- Games ------------------------------------------------------------------------
+[games]
+# With Moonlight set up as an app, the games of the PC it is paired with get
+# tiles of their own: one press wakes the PC and starts that game. The list
+# is Moonlight's own; open the PC once in Moonlight to fill or refresh it.
+moonlight = true
+# The same for RetroArch: the games marked as favourites there, and the ones
+# played last, get tiles that start them directly. Needs RetroArch among the
+# apps.
+retroarch = true
+# All of them behind one "Games" tile that opens a page of covers. false
+# gives every game a tile in the app row instead.
+page = true
+# Open that page when a game controller switches the TV on.
+open_on_controller = true
+
+# --- Videos ------------------------------------------------------------------------
+# Films and home videos behind a "Videos" tile: folders to walk through with
+# the remote, a video plays full screen (mpv; sudo apt install mpv).
+[videos]
+# "folder" = folders on this Pi (a USB drive or a mounted share counts),
+# "synology" = shared folders of the NAS under [photos.synology], read with
+# the account given there; "" = no videos.
+source = ""
+# For "folder": full paths, e.g. ["/home/pi/Videos"].
+# For "synology": shared folders, e.g. ["/video"]; none offers all of them.
+folders = []
+# The program that plays them: "mpv", "vlc" or another command. Empty uses
+# mpv, or VLC where mpv is not installed.
+player = ""
+
+# --- Wi-Fi for visitors ----------------------------------------------------------
+# With a name set, the app row has a "Guest Wi-Fi" tile that shows a code to
+# scan with a phone's camera. Leave the password empty for an open network.
+[guest_wifi]
+name = ""
+password = ""
+hidden = false
+
+# --- Sound ----------------------------------------------------------------------
+# The output and its volume are chosen under Settings, Sound.
+[sound]
+# Move the sound to Bluetooth headphones or a speaker when they connect, and
+# back to where it was when they disconnect.
+follow_bluetooth = true
+# While the sound goes to headphones or a speaker, the TV's own volume buttons
+# do nothing for them. The remote's channel up and down buttons then set the
+# volume, also inside apps. With the sound on the TV they keep what they
+# otherwise do (the next and the previous photo).
+remote_volume = true
+
+[system]
+enabled = true
+interval = "10s"
+# Above this temperature (°C) the background stands still and photos stop
+# moving, until the Pi is 7° cooler again. A Pi 5 slows itself down from 80°.
+# 0 = never.
+cool_above = 75
+
+[kiosk]
+# systemd user unit that runs the fullscreen browser. It powers "Show on TV" and
+# "Exit to desktop" on the phone remote and hold-Back-to-exit on the TV remote.
+# Set to "" to disable those controls.
+unit = "pidash-kiosk.service"
+# The dashboard reports to PiDash every 20 seconds that it is alive. If it has
+# not for three minutes while it should be showing, its page has frozen or
+# crashed, and the browser is started again. At most three times an hour.
+watchdog = true
+# The picture the TV is sent while the dashboard runs. "desktop" leaves it as
+# the Pi's desktop is set. "1080p" switches a screen that is set to more than
+# 1920x1080 to that while the dashboard and its apps run, and back when you
+# leave for the desktop: a 4K picture has four times the pixels, and all
+# drawing costs four times as much. The TV enlarges the smaller picture
+# itself; it goes dark for a moment at each change.
+resolution = "desktop"
+
+# --- TV power schedule --------------------------------------------------------
+# Switch the TV off at night and on in the morning, over HDMI-CEC. Leave a time
+# empty to skip it: for example set only `off` so the TV is never switched on by
+# itself. The TV is not switched off while an app is open; that happens once you
+# are back on the dashboard. The phone remote also gets "TV on" / "TV off".
+[tv]
+off = ""    # e.g. "23:30"
+on = ""     # e.g. "06:30"
+# Switch the TV off when no button was pressed for this long, e.g. "30m";
+# "5m" is the least, "0s" is never. Only while the dashboard shows: not
+# during an app, and not while music or the radio plays.
+idle_off = "0s"
+# Switch the TV on whenever the dashboard starts. Off by default: the
+# dashboard also starts after a fault or an update, and while someone works on
+# the Pi from afar, and a TV in standby should then stay in standby. A TV
+# that is on is switched to the Pi's input either way.
+wake_on_start = false
+# Switching a game controller on (or pressing its logo button) while the TV is
+# in standby switches the TV on and to the Pi, the way a games console does.
+# A TV that is on and showing something else is left alone.
+wake_on_controller = true
+# Volume from a game controller, so the remote can stay on the table: hold the
+# logo button and press up or down. The TV is asked over HDMI to turn itself
+# up or down; with a soundbar or receiver on HDMI that sets the volume
+# instead, use volume_to = "audio".
+controller_volume = true
+volume_to = "tv"
+
+# Other devices on the TV, each a tile in the app row that has the TV show
+# it. port is the TV's HDMI socket, counted from 1; a device behind a
+# receiver or soundbar has an address like "1.2.0.0" instead.
+# [[tv.inputs]]
+# name = "PlayStation"
+# port = 2
+
+# --- Bluetooth -------------------------------------------------------------------
+[bluetooth]
+# When the TV goes off, disconnect game controllers, headphones and speakers,
+# so that they switch themselves off.
+disconnect_with_tv = true
+
+# --- Phone remote --------------------------------------------------------------
+[remote]
+# Let the phone act as a mouse and keyboard for whatever is on the TV: a
+# touchpad, typing, and the direction pad working inside apps like Netflix.
+# Needs a one-time setup:  bash deploy/install.sh --phone-input
+#
+# Read this before switching it on: it lets every device on your home network
+# control the Pi's desktop, including typing into a terminal. Leave it off on a
+# network you share with people you do not trust, or set a PIN below.
+mouse_keyboard = false
+# Optional. The phone asks for it once and remembers it. 4 to 32 characters.
+pin = ""
+
+# --- Weather ----------------------------------------------------------------
+# Current conditions in the corner of the screen, and a detail view with the
+# hourly and 7-day forecast: press OK, then OK again on the Weather tile.
+# Data comes from Open-Meteo.com; no account or key is needed.
+# Weather is off until you set a location (or coordinates).
+[weather]
+# Your town, e.g. "Zurich". Add a region or country to tell places with the
+# same name apart: "Portland, Maine". It is looked up once and remembered.
+location = ""
+# Or pin the exact spot instead (both are needed):
+# latitude = 47.3769
+# longitude = 8.5417
+# Label shown on the TV. Defaults to the name of the place that was found.
+# name = "Home"
+# "metric" = °C, km/h, mm.  "imperial" = °F, mph, inch.
+units = "metric"
+# How often the forecast is refreshed.
+interval = "15m"
+# The rain radar beside the forecast: where it rained in the last hour, over
+# a map. The pictures are fetched from RainViewer, which thereby learns the
+# region. Set to false for none.
+radar = true
+# Where the list of radar pictures comes from.
+# radar_url = "https://api.rainviewer.com/public/weather-maps.json"
+
+# --- Background photos ------------------------------------------------------
+# A slideshow behind the clock. Set `source`, fill in the matching section
+# below, restart the backend, then choose the folders on your phone:
+#   http://<pi-address>:8080/photos   (also linked from the phone remote)
+#
+# On the TV: left/right = previous/next photo, play/pause = hold the current
+# one, up = show the photo's folder and date.
+[photos]
+# "synology" = Synology Photos on your NAS, "folder" = a folder on this Pi,
+# "" = no photos.
+source = ""
+# How long each photo stays on screen.
+interval = "30s"
+# Slow pans and zooms while a photo is shown:
+#   "off"    photos stand still
+#   "whole"  gentle movement; the whole photo always stays in view, shown a
+#            little smaller on a blurred copy of itself
+#   "fill"   movement over a photo that fills the screen; its edges may
+#            drift out of view
+motion = "off"
+# Show two upright (portrait) photos side by side instead of one with empty
+# space beside it. Partners are neighbours from the same folder.
+pair_portraits = false
+# Start every round with the photos taken on today's date in earlier years.
+on_this_day = false
+# Also show video clips from the chosen folders and albums, without sound, up
+# to 45 seconds each. Clips over 90 MB, and ones the Pi's browser cannot play
+# (many phone videos in the HEVC format), are left out.
+videos = false
+# Offer art mode: paintings in the public domain from the Art Institute of
+# Chicago in place of the photos, switched to and back with ▲ on the
+# dashboard. Nothing is fetched from the museum before it is switched on.
+art = true
+# Leave out what is in a photo folder without being a photo for the wall:
+# screenshots (by their file name) and pictures smaller than 60 KB.
+skip_odd = true
+# "About this photo" in the app row shows a map when the photo knows where it
+# was taken. The map is fetched from OpenStreetMap, which thereby learns the
+# rough area (not the photo, and not the exact spot); each piece of map is
+# fetched once and kept on the Pi. Set to false for no map.
+map = true
+# Where the map comes from: any service with tiles in the usual scheme.
+# map_tiles = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+# How often the chosen folders are checked for new photos.
+refresh = "6h"
+# Disk space for prepared photos, in MB. The oldest are removed first.
+cache_mb = 2000
+
+# Synology Photos (DSM 7).
+# Tip: create a separate NAS user for PiDash that can only see the photos you
+# want on the TV. The account must not use 2-step verification.
+[photos.synology]
+# The address you use to open DSM in a browser.
+url = "http://YOUR-NAS:5000"
+username = ""
+password = ""
+# true accepts a self-signed HTTPS certificate (only needed for https:// addresses).
+insecure_tls = false
+# "original": prepare each photo from the full file for the sharpest picture.
+# "preview":  use the NAS's ready-made 1280-pixel preview. Faster, slightly soft.
+quality = "original"
+
+# A folder on this Pi, or a network share mounted on it. All its photos are
+# shown unless you narrow it down in the folder picker.
+[photos.folder]
+path = "/home/pi/Pictures"
+
+# --- Apps -------------------------------------------------------------------
+# Things you can launch from the dashboard: press OK to open the app row.
+# Add one [[apps]] block per app. An app is either a website or a program.
+#
+#   id          short unique name: a-z, 0-9 and "-"
+#   name        what the TV shows (defaults to id)
+#   icon        optional. Leave it out and PiDash uses the installed program's
+#               own icon, or a built-in one for YouTube, Netflix and Synology
+#               Photos. Set a path to an SVG/PNG to use your own.
+#
+# A website, shown fullscreen in its own browser profile (logins are remembered
+# and kept separate from your normal browser):
+#   url         full address, starting with http:// or https://
+#   browser     "chromium" (default) or "firefox"
+#   adblock     true installs uBlock Origin into that profile (Firefox only)
+#   user_agent  optional: pretend to be another device, for sites that only
+#               show their TV interface to TVs
+#
+# A program:
+#   command     what to run, exactly as you would type it in a terminal
+#   mode        "desktop" (default): runs on the desktop like any other program.
+#               "console": runs on its own virtual terminal, outside the desktop,
+#                          so the app drives the screen directly. Best for game
+#                          streaming and video players: lower latency, HDR and
+#                          refresh-rate switching. Needs a one-time setup:
+#                          bash deploy/install.sh --console-apps
+#
+# While an app is running, the phone remote shows "Back to dashboard".
+
+# YouTube's TV interface, made for remote controls: arrow keys and OK work.
+# The user agent makes YouTube serve the TV interface. For the normal site use
+# https://www.youtube.com/ and no user_agent.
+[[apps]]
+id = "youtube"
+name = "YouTube"
+url = "https://www.youtube.com/tv"
+browser = "chromium"
+user_agent = "Mozilla/5.0 (PS4; Leanback Shell) Gecko/20100101 Firefox/65.0 LeanbackShell/01.00.01.75 Sony PS4/ (PS4, , no, CH)"
+
+# Netflix in Chromium, which has the DRM module Netflix requires on the Pi.
+# Sign in once with a keyboard; the login is remembered.
+[[apps]]
+id = "netflix"
+name = "Netflix"
+url = "https://www.netflix.com/browse"
+
+# Synology Photos. Replace YOUR-NAS with your NAS address or name, then remove
+# the "# " in front of these lines. Use the address you open Synology Photos
+# with in a browser, for example:
+#   http://192.168.1.20:5000/?launchApp=SYNO.Foto.AppInstance
+#   https://photos.example.com/photo/
+#
+# [[apps]]
+# id = "synology-photos"
+# name = "Photos"
+# url = "http://YOUR-NAS:5000/?launchApp=SYNO.Foto.AppInstance"
+
+# More examples:
+#
+# [[apps]]
+# id = "moonlight"
+# name = "Moonlight"
+# command = "moonlight-qt"
+# mode = "console"
+#
+# [[apps]]
+# id = "kodi"
+# name = "Kodi"
+# command = "kodi-standalone"
+# mode = "console"
+#
+# [[apps]]
+# id = "steamlink"
+# name = "Steam Link"
+# command = "steamlink"
+
+# --- The TV remote ---------------------------------------------------------------
+# PiDash reads the TV remote itself, below the browser, because a remote's OK
+# and Back buttons are not keyboard keys and would otherwise do nothing:
+#   - on the dashboard, OK chooses and Back goes back
+#   - inside an app, OK is passed on as Enter and Back as Escape
+#   - holding Back (or Esc on a keyboard) for two seconds leaves the app;
+#     on the dashboard it returns to the desktop
+# Nothing needs to be set for that. The options below only add to it.
+#
+# Names are Linux key names. To see what a button on your remote is called:
+#   sudo apt install evtest && sudo evtest
+[input]
+# Extra keys that leave an app when held, besides Back/Exit and Esc.
+app_exit_keys = []
+# How long to hold. If your TV does not report held buttons, add a key you do
+# not otherwise need above (a colour key, say) and set this to "0s".
+app_exit_hold = "2s"
+
+# Inside website apps (YouTube, Netflix, …) a game controller presses
+# keyboard keys: stick and direction pad the arrows, the bottom button Enter,
+# the right one Escape, Start play/pause. Switch this off if a website reacts
+# to the controller by itself and everything happens twice.
+controller_in_websites = true
+
+# Extra remote buttons for the dashboard, for example the colour keys.
+# Actions are the same as under [input.keys] below; "none" switches one off.
+#
+# A game controller works as a remote without anything here: stick and
+# direction pad are the arrows, the bottom button is OK, the right one Back,
+# Start opens the app row. Its buttons can be changed here too (BTN_SOUTH,
+# BTN_EAST, BTN_NORTH, BTN_WEST, BTN_TL, BTN_TR, BTN_START, BTN_SELECT, BTN_MODE).
+[input.remote_keys]
+# KEY_RED = "weather"
+# KEY_BLUE = "settings"
+# BTN_NORTH = "weather"
+
+# --- Keys on the dashboard ----------------------------------------------------
+# Which key does what while the dashboard is showing: TV remote buttons and a
+# keyboard alike. The built-in keys are listed below. Entries you add here are
+# ADDED to them; you only need lines for keys you want to add or change. Set a
+# key to "none" to switch a built-in one off.
+#
+# Actions: up down left right select back menu home playpause weather settings help exit 0-9
+#   select     open the app row / choose           back    close, go back
+#   left/right previous / next photo               up/down more / less on screen
+#   menu       app row                             weather weather details
+#   playpause  hold or resume the slideshow        help    show all controls
+#   exit       return to the desktop (holding any "back" key 2 s does the same)
+#
+# Keys are named by their position (KeyboardEvent.code): KeyA, Digit1, F5,
+# ArrowUp, Enter, Space ... To find what a TV remote button sends, switch on
+# display.debug_keys and press it: the name appears in the corner.
+#
+# Built in:
+#   arrows = up/down/left/right      Enter, Space = select     Esc, Backspace = back
+#   Tab / Shift+Tab = right / left   PageUp / PageDown = left / right
+#   A = menu    W = weather    S = settings    P = playpause    H, F1, / = help
+#   F10 = exit  0-9 = tile in the app row       media play/pause = playpause
+[input.keys]
+# Examples:
+# ColorF0Red = "exit"
+# KeyW = "none"
+
+# --- Calendar ---------------------------------------------------------------
+# The next events, shown opposite the clock. Each entry is a calendar's link
+# in iCalendar form: Google Calendar's "Secret address in iCal format",
+# iCloud's public calendar link, Synology Calendar's published link.
+# Such a link lets anyone read the calendar: keep this file private.
+[calendar]
+urls = []
+# How many days ahead to look.
+days = 14
+
+# --- Smart home -------------------------------------------------------------
+# Lights, plugs, covers, scenes, scripts and sensor values from Home Assistant
+# as tiles in the app row. The token is a "long-lived access token" from your
+# Home Assistant profile page. Locks and alarm panels are never switched.
+[homeassistant]
+url = ""          # e.g. "http://homeassistant.local:8123"
+token = ""
+entities = []     # e.g. ["light.sofa", "scene.movie_night", "sensor.living_room_temperature"]
+
+# --- Updates ----------------------------------------------------------------
+[update]
+# Install new releases automatically, between three and five at night, never
+# while an app is open.
+auto = false

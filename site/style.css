@@ -1,0 +1,232 @@
+/* The project page. One dark theme, like the dashboard it shows: the
+   screenshots are the colour on this page, everything else stays out of
+   their way. */
+
+:root {
+  --bg: #0b0d12;
+  --panel: #131722;
+  --line: rgba(255, 255, 255, 0.09);
+  --fg: #f4f5f7;
+  --dim: #a6adbb;
+  --accent: #7cc4ff;
+  --width: 1120px;
+  --font: Inter, "Inter Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+* { box-sizing: border-box; margin: 0; }
+
+html { scroll-behavior: smooth; scroll-padding-top: 72px; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+body {
+  background:
+    radial-gradient(1100px 620px at 72% -140px, rgba(92, 122, 196, 0.22), transparent 70%),
+    radial-gradient(900px 560px at 8% 22%, rgba(196, 122, 150, 0.09), transparent 70%),
+    var(--bg);
+  background-repeat: no-repeat;
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 17px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:hover { text-decoration-thickness: 2px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+.hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* --- Top bar ------------------------------------------------------------------ */
+
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px max(20px, calc((100vw - var(--width)) / 2));
+  background: rgba(11, 13, 18, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--line);
+}
+.brand { display: inline-flex; align-items: center; gap: 10px; color: var(--fg); font-weight: 650; font-size: 19px; letter-spacing: -0.01em; text-decoration: none; }
+.brand svg { width: 26px; height: 26px; color: var(--accent); }
+.top nav { display: flex; gap: 6px; }
+.top nav a { color: var(--dim); text-decoration: none; font-size: 15px; padding: 6px 12px; border-radius: 9px; }
+.top nav a:hover { color: var(--fg); background: rgba(255, 255, 255, 0.06); }
+
+main { width: min(var(--width), 100% - 40px); margin: 0 auto; }
+
+/* --- Hero ---------------------------------------------------------------------- */
+
+.hero { padding: 84px 0 40px; text-align: center; }
+.eyebrow { color: var(--accent); font-size: 14px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; margin-bottom: 18px; }
+h1 {
+  font-size: clamp(36px, 6.2vw, 68px);
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+  max-width: 16ch;
+  margin: 0 auto 24px;
+  text-wrap: balance;
+}
+.lead { color: var(--dim); font-size: clamp(17px, 1.9vw, 20px); max-width: 62ch; margin: 0 auto; text-wrap: pretty; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 30px; }
+.button {
+  display: inline-block;
+  padding: 12px 22px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--fg);
+  font-weight: 600;
+  font-size: 16px;
+  text-decoration: none;
+  transition: background-color 0.15s ease, transform 0.15s ease;
+}
+.button:hover { background: rgba(255, 255, 255, 0.1); }
+.button:active { transform: translateY(1px); }
+.button.primary { background: var(--accent); border-color: var(--accent); color: #06121d; }
+.button.primary:hover { background: #a3d6ff; }
+
+/* --- Screenshots, framed like the TV they were taken for ------------------------ */
+
+.tv {
+  position: relative;
+  border-radius: 14px;
+  padding: 7px;
+  background: linear-gradient(160deg, #262b38, #0d0f15 60%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.1) inset, 0 30px 70px -20px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+.tv img { display: block; width: 100%; height: auto; border-radius: 8px; background: #05060a; }
+.tv.big { margin: 64px auto 0; padding: 10px; border-radius: 20px; }
+.tv.big img { border-radius: 11px; }
+/* The glow a bright screen throws on the wall behind it. */
+.tv.big::before {
+  content: "";
+  position: absolute;
+  inset: 6% 4% -4%;
+  z-index: -1;
+  background: radial-gradient(closest-side, rgba(255, 170, 130, 0.3), transparent);
+  filter: blur(46px);
+}
+
+/* --- Features ------------------------------------------------------------------- */
+
+.features { display: grid; gap: clamp(64px, 10vw, 128px); padding: clamp(72px, 10vw, 128px) 0; }
+.feature { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(28px, 5vw, 64px); align-items: center; }
+/* Every other one the other way round; the picture keeps the wider column. */
+.feature.flip { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
+.feature.flip .words { order: 2; }
+.feature h3 { font-size: clamp(26px, 3.2vw, 36px); line-height: 1.15; letter-spacing: -0.02em; margin-bottom: 16px; text-wrap: balance; }
+.feature p { color: var(--dim); text-wrap: pretty; }
+.feature ul { list-style: none; padding: 0; margin-top: 22px; display: grid; gap: 10px; }
+.feature li { position: relative; padding-left: 26px; }
+.feature li::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 0.62em;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* --- Good to know --------------------------------------------------------------- */
+
+.facts { padding-bottom: clamp(72px, 10vw, 128px); }
+h2 { font-size: clamp(30px, 4vw, 44px); letter-spacing: -0.025em; line-height: 1.1; margin-bottom: 36px; }
+.facts .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.facts .grid > div { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 24px 24px 26px; }
+.facts h3 { font-size: 19px; letter-spacing: -0.01em; margin-bottom: 8px; }
+.facts p { color: var(--dim); font-size: 16px; }
+
+/* --- Install -------------------------------------------------------------------- */
+
+.install {
+  margin-bottom: clamp(64px, 9vw, 110px);
+  padding: clamp(32px, 6vw, 64px);
+  border-radius: 28px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(124, 196, 255, 0.09), rgba(124, 196, 255, 0.02)), var(--panel);
+  text-align: center;
+}
+.install h2 { margin-bottom: 18px; }
+.command {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  max-width: 960px;
+  margin: 30px auto 0;
+  padding: 8px;
+  border-radius: 16px;
+  background: #06080c;
+  border: 1px solid var(--line);
+  text-align: left;
+}
+.command code {
+  flex: 1;
+  min-width: 0;
+  align-self: center;
+  padding: 8px 12px;
+  font-family: var(--mono);
+  font-size: 15px;
+  line-height: 1.5;
+  color: #dbe7f5;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.command button {
+  flex: 0 0 auto;
+  min-width: 92px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #06121d;
+  font: inherit;
+  font-weight: 650;
+  font-size: 15px;
+  cursor: pointer;
+}
+.command button:hover { background: #a3d6ff; }
+.small { color: var(--dim); font-size: 15px; max-width: 70ch; margin: 22px auto 0; text-wrap: pretty; }
+
+/* --- Foot ------------------------------------------------------------------------ */
+
+.foot {
+  width: min(var(--width), 100% - 40px);
+  margin: 0 auto;
+  padding: 28px 0 56px;
+  border-top: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 14px;
+  display: grid;
+  gap: 8px;
+}
+.foot p { max-width: 86ch; }
+
+/* --- Narrow screens -------------------------------------------------------------- */
+
+@media (max-width: 860px) {
+  .feature, .feature.flip { grid-template-columns: minmax(0, 1fr); }
+  .feature.flip .words { order: 0; }
+  .facts .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  body { font-size: 16px; }
+  .hero { padding-top: 52px; }
+  .top nav a { padding: 6px 8px; }
+  .facts .grid { grid-template-columns: 1fr; }
+  .command { flex-direction: column; }
+  .command code { align-self: stretch; } /* as wide as the box, and scrolls inside it */
+  .command button { padding: 12px; }
+  .tv.big { margin-top: 44px; padding: 6px; border-radius: 14px; }
+  .tv.big img { border-radius: 9px; }
+}

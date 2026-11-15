@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=PiDash
+Comment=Show the dashboard fullscreen on the TV
+Exec=@APP_DIR@/launch.sh
+Icon=video-display
+Terminal=false
+Categories=AudioVideo;Utility;
+StartupNotify=false

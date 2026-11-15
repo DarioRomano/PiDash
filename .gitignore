@@ -1,0 +1,8 @@
+bin/
+web/node_modules/
+web/dist/*
+!web/dist/.gitkeep
+*.log
+.DS_Store
+dist/
+__pycache__/

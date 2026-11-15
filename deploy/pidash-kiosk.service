@@ -1,0 +1,26 @@
+# systemd USER unit: ~/.config/systemd/user/pidash-kiosk.service
+# The fullscreen browser on the TV. It runs inside your normal desktop session:
+#   start: systemctl --user start pidash-kiosk    (or the PiDash menu entry / phone remote)
+#   stop:  systemctl --user stop pidash-kiosk     (or Alt+F4 / hold Back / phone remote)
+# Stopping it returns you to the desktop exactly as you left it.
+[Unit]
+Description=PiDash kiosk (fullscreen Chromium on the desktop session)
+Wants=pidash.service
+After=pidash.service
+
+[Service]
+Type=simple
+# If the settings ask for it, the TV is sent 1920x1080 while the dashboard
+# runs, and what the desktop is set to again once it has stopped. Without
+# that setting neither line does anything.
+ExecStartPre=-%h/.local/share/pidash/pidash -screen dashboard
+ExecStart=%h/.local/share/pidash/kiosk.sh
+ExecStopPost=-%h/.local/share/pidash/pidash -screen restore
+# Ask the TV to forward remote-control keys to the Pi, and to show the Pi if
+# the TV is on. A TV in standby stays in standby: the dashboard also starts
+# after a fault or while someone works on the Pi from afar. Failure is not
+# fatal (CEC disabled): the dashboard still works with keyboard/phone.
+ExecStartPost=-%h/.local/share/pidash/pidash -cec start
+# Restart after a crash, but a clean exit (Alt+F4, "Exit to desktop") stays stopped.
+Restart=on-failure
+RestartSec=3

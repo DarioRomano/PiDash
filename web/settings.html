@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0d12" />
+    <title>PiDash · Settings</title>
+    <link rel="stylesheet" href="/src/settings.css" />
+  </head>
+  <body>
+    <header>
+      <a id="back" href="/remote" class="back" aria-label="Back">‹</a>
+      <div>
+        <h1>Settings</h1>
+        <p id="status">Loading…</p>
+      </div>
+    </header>
+
+    <p id="tv-help" class="hint tv-help" hidden>
+      ▲ ▼ choose a category, ▶ or OK goes into it · OK chooses or opens the keyboard · Back returns. Long entries are easier on a phone or computer:
+      open this TV's address followed by <b>/settings</b>.
+    </p>
+
+    <div id="layout">
+      <nav id="groups" data-tv-side aria-label="Categories" hidden>
+        <button type="button" data-group="screen">Screen</button>
+        <button type="button" data-group="photos">Photos</button>
+        <button type="button" data-group="info">Weather and calendar</button>
+        <button type="button" data-group="apps">Apps and radio</button>
+        <button type="button" data-group="sound">Sound and Bluetooth</button>
+        <button type="button" data-group="home">Home and guests</button>
+        <button type="button" data-group="system">System</button>
+      </nav>
+    <main id="main" hidden>
+      <section class="card" data-group="info">
+        <h2>Weather</h2>
+        <label class="field">
+          <span>Town</span>
+          <input id="w-location" type="text" placeholder="for example Zurich, or Portland, Maine" autocomplete="off" />
+        </label>
+        <div class="pair">
+          <label class="field">
+            <span>Units</span>
+            <select id="w-units">
+              <option value="metric">°C, km/h</option>
+              <option value="imperial">°F, mph</option>
+            </select>
+          </label>
+          <button id="w-test" type="button" class="secondary">Check town</button>
+        </div>
+        <p id="w-result" class="result"></p>
+        <label class="check"><input id="w-radar" type="checkbox" /><span>Offer the rain radar beside the forecast</span></label>
+        <p class="hint">
+          Where it rained in the last hour, over a map: ▶ on the forecast opens it. The pictures are fetched from
+          RainViewer, which thereby learns the region, not more.
+        </p>
+        <p id="w-coords" class="hint" hidden>
+          config.toml pins the place by coordinates. Entering a town here replaces them.
+        </p>
+      </section>
+
+      <section class="card" data-group="photos">
+        <h2>Background photos</h2>
+        <label class="field">
+          <span>Photos come from</span>
+          <select id="p-source"></select>
+        </label>
+
+        <div id="p-synology" hidden>
+          <label class="field">
+            <span>NAS address</span>
+            <input id="s-url" type="url" placeholder="http://192.168.1.20:5000" autocomplete="off" autocapitalize="off" />
+          </label>
+          <label class="field">
+            <span>User name</span>
+            <input id="s-user" type="text" autocomplete="off" autocapitalize="off" />
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input id="s-pass" type="password" autocomplete="new-password" />
+          </label>
+          <label class="check"><input id="s-tls" type="checkbox" /><span>Accept a self-signed certificate (https only)</span></label>
+          <label class="field">
+            <span>Picture quality</span>
+            <select id="s-quality">
+              <option value="original">Sharpest: prepare from the full files</option>
+              <option value="preview">Faster: use the NAS's previews</option>
+            </select>
+          </label>
+          <button id="s-test" type="button" class="secondary wide">Test connection</button>
+          <p id="s-result" class="result"></p>
+          <p class="hint">
+            Use a NAS account without 2-step verification. A separate account that only sees the photos meant for the
+            TV is safest.
+          </p>
+        </div>
+        <p id="p-folder" class="hint" hidden></p>
+
+        <label class="field" id="p-interval-row">
+          <span>Seconds per photo</span>
+          <input id="p-interval" type="number" min="5" max="3600" step="5" inputmode="numeric" />
+        </label>
+        <label class="field" id="p-motion-row">
+          <span>Movement</span>
+          <select id="p-motion">
+            <option value="off">None: photos stand still</option>
+            <option value="whole">Gentle: slow pans and zooms, the whole photo always in view</option>
+            <option value="fill">Full screen: slow pans and zooms, edges may drift out of view</option>
+          </select>
+        </label>
+        <p id="p-motion-hint" class="hint"></p>
+        <label class="check" id="p-pairs-row"><input id="p-pairs" type="checkbox" /><span>Show two upright photos side by side</span></label>
+        <label class="check" id="p-today-row"><input id="p-today" type="checkbox" /><span>Start with photos taken on this day in earlier years</span></label>
+        <label class="check" id="p-videos-row"><input id="p-videos" type="checkbox" /><span>Also show video clips, without sound</span></label>
+        <label class="check"><input id="p-art" type="checkbox" /><span>Offer paintings in place of the photos</span></label>
+        <p class="hint">
+          ▲ on the dashboard then has "Art instead of photos": paintings in the public domain from the Art
+          Institute of Chicago, with their title and painter. They are fetched from the museum when art mode is
+          switched on, not before.
+        </p>
+        <label class="check" id="p-odd-row"><input id="p-odd" type="checkbox" /><span>Leave out screenshots and very small pictures</span></label>
+        <label class="check" id="p-map-row"><input id="p-map" type="checkbox" /><span>Show a map of where a photo was taken</span></label>
+        <p class="hint" id="p-map-hint">Under “About this photo” in the app row. The map comes from OpenStreetMap, which learns the rough area of the photo, nothing else.</p>
+        <div id="p-hidden-row" class="pair" hidden>
+          <p id="p-hidden" class="hint"></p>
+          <button id="p-unhide" type="button" class="secondary">Show them again</button>
+        </div>
+        <a id="p-folders" class="link" href="/photos" hidden>Choose folders and albums<span>›</span></a>
+      </section>
+
+      <section class="card" data-group="info">
+        <h2>Calendar</h2>
+        <p class="hint">
+          Shows your next events on the TV. It needs the calendar's link: in Google Calendar the "Secret address in
+          iCal format", in iCloud the link of a public calendar, in Synology Calendar the published link.
+        </p>
+        <ul id="cal-list" class="rows"></ul>
+        <label class="field">
+          <span>Calendar link</span>
+          <input id="cal-url" type="url" autocomplete="off" autocapitalize="off" placeholder="https://… or webcal://…" />
+        </label>
+        <div class="pair">
+          <button id="cal-test" type="button" class="secondary wide">Check link</button>
+          <button id="cal-add" type="button" class="secondary wide">Add to the list</button>
+        </div>
+        <p id="cal-result" class="result"></p>
+      </section>
+
+      <section class="card" data-group="home">
+        <h2>Smart home</h2>
+        <p class="hint">Lights, plugs, scenes and sensors from Home Assistant, as tiles in the app row.</p>
+        <label class="field">
+          <span>Address of Home Assistant</span>
+          <input id="h-url" type="url" autocomplete="off" autocapitalize="off" placeholder="http://homeassistant.local:8123" />
+        </label>
+        <label class="field">
+          <span>Access token</span>
+          <input id="h-token" type="password" autocomplete="new-password" />
+        </label>
+        <button id="h-connect" type="button" class="secondary wide">Connect and list devices</button>
+        <p id="h-result" class="result"></p>
+        <ul id="h-list" class="rows"></ul>
+        <div id="h-add" class="add" hidden>
+          <label class="field">
+            <span>Add a tile</span>
+            <select id="h-pick"></select>
+          </label>
+          <button id="h-add-btn" type="button" class="secondary wide">Add to the app row</button>
+        </div>
+        <p class="hint">
+          The token is made in Home Assistant: your profile, Security, Long-lived access tokens. Locks and alarms are
+          left out on purpose.
+        </p>
+      </section>
+
+      <section class="card" data-group="screen">
+        <h2>Screen</h2>
+        <label class="field">
+          <span>Language</span>
+          <select id="d-language"></select>
+        </label>
+        <label class="field">
+          <span>Clock position</span>
+          <select id="d-position">
+            <option value="bottom-left">Bottom left</option>
+            <option value="bottom-right">Bottom right</option>
+            <option value="top-left">Top left</option>
+            <option value="top-right">Top right</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Clock size</span>
+          <select id="d-size">
+            <option value="large">Large</option>
+            <option value="medium">Medium</option>
+            <option value="small">Small</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Clock style</span>
+          <select id="d-style">
+            <option value="bold">Bold numbers</option>
+            <option value="slim">Slim numbers</option>
+            <option value="analog">A clock with hands</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Under a photo</span>
+          <select id="d-caption">
+            <option value="off">Nothing</option>
+            <option value="on">Its album, place and date</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Weather on the dashboard</span>
+          <select id="d-weather">
+            <option value="off">None</option>
+            <option value="short">Temperature and conditions</option>
+            <option value="full">Also the place, what it feels like and the chance of rain</option>
+          </select>
+        </label>
+        <label class="check"><input id="d-lock" type="checkbox" /><span>Keep it like this: ▼ on the remote does not change what is shown</span></label>
+        <p class="hint">
+          Unless kept, ▼ steps from what is set here to everything, to only the photo, and back. ▲ opens what can be
+          done with the photo on screen: mark it as a favourite, hide it, see where it was taken.
+        </p>
+        <label class="field">
+          <span>Background without photos</span>
+          <select id="d-background">
+            <option value="moving">Moving shapes</option>
+            <option value="still">Still picture, which keeps the Pi cooler</option>
+          </select>
+        </label>
+        <label class="check"><input id="d-sounds" type="checkbox" /><span>Small sounds when using the remote</span></label>
+      </section>
+
+      <section class="card" data-group="screen">
+        <h2>Performance</h2>
+        <p class="hint">
+          How much work the Pi does for the picture behind the clock, and so how much power it draws and how warm it
+          gets. Menus are not slowed down by this: they, and the background's reaction to a button, are always drawn
+          as fluidly as the screen allows.
+        </p>
+        <label class="field">
+          <span>Preset</span>
+          <select id="d-performance">
+            <option value="smooth">Smooth: everything moves as fluidly as it can</option>
+            <option value="balanced">Balanced</option>
+            <option value="saver">Power saver: little movement, the least work</option>
+          </select>
+        </label>
+        <p id="d-performance-hint" class="hint"></p>
+        <label class="field">
+          <span>Moving background: pictures a second</span>
+          <select id="d-fps">
+            <option value="0">As the preset says</option>
+            <option value="5">5</option>
+            <option value="10">10</option>
+            <option value="15">15</option>
+            <option value="24">24</option>
+            <option value="30">30</option>
+            <option value="60">60</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Picture sent to the TV while PiDash runs</span>
+          <select id="sys-resolution">
+            <option value="desktop">As the Pi's desktop is set</option>
+            <option value="1080p">1920 × 1080: a quarter of the work at 4K</option>
+          </select>
+        </label>
+        <p class="hint">
+          At 3840 × 2160 the Pi has four times as many pixels to fill as at 1920 × 1080, for everything it draws.
+          With the second choice a 4K TV is sent 1920 × 1080 while the dashboard and its apps run, and enlarges the
+          picture itself; small lettering is a little softer. When you leave for the desktop it gets its own size
+          back. The TV goes dark for a moment at each change.
+        </p>
+        <label class="field">
+          <span>Tiles of the app row</span>
+          <select id="d-tiles">
+            <option value="glow">With a glow and soft shadows</option>
+            <option value="plain">Plain, which is less work at 4K</option>
+          </select>
+        </label>
+        <label class="check"><input id="sys-cool" type="checkbox" /><span>Pause movement while the Pi is hot</span></label>
+        <p class="hint">The background stands still and photos stop moving until the Pi has cooled down.</p>
+      </section>
+
+      <section class="card" data-group="screen">
+        <h2>Night</h2>
+        <p class="hint">
+          Between these times the TV shows only a dim clock on black. Any button brings the dashboard back for a
+          minute. Times that follow the sun are those of the town under Weather, and need the weather set up.
+        </p>
+        <div class="pair">
+          <label class="field">
+            <span>From</span>
+            <select id="n-start"></select>
+          </label>
+          <label class="field">
+            <span>Until</span>
+            <select id="n-end"></select>
+          </label>
+        </div>
+        <label class="field">
+          <span>Dim the picture in the evening</span>
+          <select id="d-dim">
+            <option value="off">Not at all</option>
+            <option value="light">A little</option>
+            <option value="strong">A lot</option>
+          </select>
+        </label>
+        <p class="hint">The picture darkens over the hour after sunset and is back to normal at sunrise.</p>
+        <label class="field">
+          <span>Switch the TV off when no button was pressed for</span>
+          <select id="tv-idle">
+            <option value="0">Never</option>
+            <option value="5">5 minutes</option>
+            <option value="10">10 minutes</option>
+            <option value="15">15 minutes</option>
+            <option value="30">30 minutes</option>
+            <option value="60">1 hour</option>
+            <option value="120">2 hours</option>
+            <option value="240">4 hours</option>
+          </select>
+        </label>
+        <p class="hint">
+          Only while the dashboard shows: not during an app, and not while music or the radio plays. The TV says so a
+          minute before, and any button keeps it on. Needs a TV that can be switched over HDMI.
+        </p>
+      </section>
+
+      <section class="card" data-group="apps">
+        <h2>Apps</h2>
+        <p class="hint">These appear in the app row on the TV, in this order.</p>
+        <ul id="app-list"></ul>
+        <label class="check"><input id="sys-games" type="checkbox" /><span>Show the games themselves</span></label>
+        <p class="hint">
+          With Moonlight in the list above, paired with the PC: the games of the PC. One press wakes the PC and
+          starts the game; open the PC once in Moonlight to fill or refresh the list. With RetroArch in the list:
+          the games marked as favourites there, and the ones played last. The game played last comes first.
+        </p>
+        <label class="check"><input id="sys-games-page" type="checkbox" /><span>On a page of their own</span></label>
+        <p class="hint">
+          One tile, Games, opens a page with the covers of all of them. Switched off, every game is a tile in the
+          app row, after the apps.
+        </p>
+        <label class="check"><input id="sys-games-pad" type="checkbox" /><span>Open that page when a controller switches the TV on</span></label>
+
+        <div class="add">
+          <label class="field">
+            <span>Add</span>
+            <select id="add-kind"></select>
+          </label>
+          <label class="field" id="add-installed-row" hidden>
+            <span>Program</span>
+            <select id="add-installed"></select>
+          </label>
+          <p id="add-desc" class="hint"></p>
+          <label class="field" id="add-name-row" hidden>
+            <span>Name</span>
+            <input id="add-name" type="text" autocomplete="off" />
+          </label>
+          <label class="field" id="add-url-row" hidden>
+            <span>Address</span>
+            <input id="add-url" type="url" autocomplete="off" autocapitalize="off" />
+          </label>
+          <label class="check" id="add-adblock-row" hidden><input id="add-adblock" type="checkbox" /><span>Block ads (opens in Firefox with uBlock Origin)</span></label>
+          <button id="add-btn" type="button" class="secondary wide">Add to the list</button>
+          <p id="add-result" class="result"></p>
+        </div>
+        <p class="hint">
+          A program that needs its own command or options can be added in
+          <code>~/.config/pidash/config.toml</code> on the Pi. It then shows up here to reorder or remove.
+        </p>
+      </section>
+
+      <section class="card" data-group="apps">
+        <h2>Other tiles in the app row</h2>
+        <p class="hint">Tiles of PiDash's own. Untick the ones you never use; ▲ on a tile in the app row hides it too. Settings always stays.</p>
+        <label class="check"><input type="checkbox" class="own-tile" data-tile="weather" /><span>Weather</span></label>
+        <label class="check"><input type="checkbox" class="own-tile" data-tile="bluetooth" /><span>Bluetooth</span></label>
+        <label class="check"><input type="checkbox" class="own-tile" data-tile="sound" /><span>Sound output</span></label>
+        <label class="check"><input type="checkbox" class="own-tile" data-tile="sleep" /><span>Sleep timer</span></label>
+        <label class="check"><input type="checkbox" class="own-tile" data-tile="videos" /><span>Videos</span></label>
+        <label class="check"><input type="checkbox" class="own-tile" data-tile="places" /><span>Places</span></label>
+        <label class="check"><input type="checkbox" class="own-tile" data-tile="trips" /><span>Trips</span></label>
+        <label class="check"><input type="checkbox" class="own-tile" data-tile="quiz" /><span>Photo quiz</span></label>
+        <label class="check"><input type="checkbox" class="own-tile" data-tile="wifi" /><span>Guest Wi-Fi</span></label>
+        <label class="check"><input type="checkbox" class="own-tile" data-tile="status" /><span>Status</span></label>
+        <label class="check"><input type="checkbox" class="own-tile" data-tile="desktop" /><span>Desktop</span></label>
+        <label class="check"><input type="checkbox" class="own-tile" data-tile="power" /><span>Power</span></label>
+      </section>
+
+      <section class="card" data-group="apps">
+        <h2>Other devices on the TV</h2>
+        <p class="hint">
+          A games console, a set-top box: each gets a tile in the app row that has the TV show it, so the
+          dashboard is where everything on the TV starts. To come back, choose the Pi's input with the TV's own
+          remote. Needs a TV that can be switched over HDMI.
+        </p>
+        <ul id="ti-list" class="rows"></ul>
+        <div class="pair">
+          <label class="field">
+            <span>Name</span>
+            <input id="ti-name" type="text" autocomplete="off" maxlength="40" placeholder="PlayStation" />
+          </label>
+          <label class="field">
+            <span>Plugged into</span>
+            <select id="ti-port">
+              <option value="1">HDMI 1</option>
+              <option value="2">HDMI 2</option>
+              <option value="3">HDMI 3</option>
+              <option value="4">HDMI 4</option>
+            </select>
+          </label>
+        </div>
+        <div class="pair">
+          <button id="ti-add" type="button" class="secondary wide">Add to the app row</button>
+          <button id="ti-find" type="button" class="secondary wide">Ask the TV what is connected</button>
+        </div>
+        <p id="ti-result" class="result"></p>
+      </section>
+
+      <section class="card" data-group="apps">
+        <h2>Radio</h2>
+        <p class="hint">Stations appear as tiles in the app row and play while the photos carry on. The remote's play button pauses.</p>
+        <ul id="r-list" class="rows"></ul>
+        <div class="pair">
+          <label class="field">
+            <span>Find a station by name</span>
+            <input id="r-query" type="text" autocomplete="off" />
+          </label>
+          <button id="r-search" type="button" class="secondary">Search</button>
+        </div>
+        <p id="r-result" class="result"></p>
+        <div id="r-add" class="add" hidden>
+          <label class="field">
+            <span>Found</span>
+            <select id="r-pick"></select>
+          </label>
+          <button id="r-add-btn" type="button" class="secondary wide">Add to the app row</button>
+        </div>
+      </section>
+
+      <section class="card" id="snd-card" data-group="sound">
+        <h2>Sound</h2>
+        <p class="hint">
+          Where the Pi's sound comes out, and how loud. Headphones and speakers are connected under Bluetooth below;
+          once connected they appear here.
+        </p>
+        <p id="snd-status" class="hint" hidden></p>
+        <div id="snd-body" class="add" hidden>
+          <label class="field">
+            <span>Sound comes out of</span>
+            <select id="snd-output"></select>
+          </label>
+          <div class="pair volume">
+            <button id="snd-down" type="button" class="secondary wide" aria-label="Quieter">−</button>
+            <output id="snd-level" data-no-translate></output>
+            <button id="snd-up" type="button" class="secondary wide" aria-label="Louder">+</button>
+          </div>
+          <div class="pair">
+            <button id="snd-mute" type="button" class="secondary wide">Mute</button>
+            <button id="snd-test" type="button" class="secondary wide">Play a test sound</button>
+          </div>
+        </div>
+        <p id="snd-result" class="result"></p>
+        <label class="check"><input id="snd-follow" type="checkbox" /><span>Switch to headphones or a speaker when they connect, and back when they disconnect</span></label>
+      </section>
+
+      <section class="card" id="bt-card" data-group="sound">
+        <h2>Bluetooth</h2>
+        <p class="hint">
+          Game controllers, headphones, speakers and keyboards. A device paired here connects by itself when it is
+          switched on.
+        </p>
+        <label class="check"><input id="bt-off" type="checkbox" /><span>Disconnect controllers and headphones when the TV goes off</span></label>
+        <p id="bt-status" class="hint" hidden></p>
+        <ul id="bt-list" class="rows"></ul>
+        <p id="bt-none" class="hint" hidden>No devices are paired yet.</p>
+        <div class="pair">
+          <button id="bt-search" type="button" class="secondary wide" hidden>Look for new devices</button>
+          <button id="bt-power" type="button" class="secondary wide" hidden>Switch Bluetooth off</button>
+        </div>
+        <p id="bt-how" class="hint" hidden>
+          Put the new device into pairing mode first: on most controllers, hold the pairing button until the light
+          flashes quickly. The search stops by itself after a minute.
+        </p>
+        <p id="bt-found-title" class="hint" hidden>Found nearby:</p>
+        <ul id="bt-found" class="rows"></ul>
+        <p id="bt-result" class="result"></p>
+      </section>
+
+      <section class="card" data-group="apps">
+        <h2>Videos</h2>
+        <p class="hint">
+          Films and home videos, behind a "Videos" tile in the app row: folders to walk through with the remote,
+          and a video plays full screen. A video that is broken off carries on where it stopped.
+        </p>
+        <label class="field">
+          <span>The videos are</span>
+          <select id="v-source">
+            <option value="">nowhere: no Videos tile</option>
+            <option value="folder">in a folder on this Pi</option>
+            <option value="synology">on the Synology NAS the photos come from</option>
+          </select>
+        </label>
+        <label class="field" id="v-folders-row">
+          <span id="v-folders-label">Folder</span>
+          <input id="v-folders" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" />
+        </label>
+        <p class="hint" id="v-hint-folder">
+          The full path, like /home/pi/Videos. A USB drive or a share of the NAS that is mounted on the Pi counts.
+          Several folders: put a semicolon between them.
+        </p>
+        <p class="hint" id="v-hint-synology">
+          The shared folder on the NAS, like /video; several with a semicolon between them. Left empty, every shared
+          folder the account may read is offered. The NAS account of the photos is used; it needs File Station's
+          permission and read access to the folder.
+        </p>
+        <p class="hint">
+          Videos are played by mpv, which the Pi may need first: sudo apt install mpv. On the remote: OK pauses,
+          ◀ ▶ go back 10 seconds and forward 30, ▲ ▼ five minutes, 1 subtitles, 2 language, Back stops.
+        </p>
+      </section>
+
+      <section class="card" data-group="home">
+        <h2>Wi-Fi for visitors</h2>
+        <p class="hint">
+          With a network entered here, the app row has a "Guest Wi-Fi" tile. It shows a code that visitors point
+          their phone's camera at to join, without anyone spelling out a password.
+        </p>
+        <label class="field">
+          <span>Name of the network</span>
+          <input id="wf-name" type="text" autocomplete="off" autocapitalize="off" maxlength="32" />
+        </label>
+        <label class="field" id="wf-pass-row">
+          <span>Password</span>
+          <input id="wf-pass" type="password" autocomplete="new-password" maxlength="63" />
+        </label>
+        <label class="check"><input id="wf-open" type="checkbox" /><span>This network has no password</span></label>
+        <label class="check"><input id="wf-hidden" type="checkbox" /><span>The network does not show its name</span></label>
+        <p class="hint">The password is shown on the TV to whoever opens that tile. A guest network of its own is the safest choice.</p>
+      </section>
+
+      <section class="card" data-group="system">
+        <h2>Lock</h2>
+        <p class="hint">With a PIN, settings can be looked at but not changed without it.</p>
+        <label class="field">
+          <span>PIN (4 to 12 digits)</span>
+          <input id="l-pin" type="password" inputmode="numeric" autocomplete="new-password" />
+        </label>
+        <button id="l-remove" type="button" class="secondary wide" hidden>Remove the lock</button>
+      </section>
+
+      <section class="card" data-group="system">
+        <h2>Updates</h2>
+        <p id="up-status" class="hint"></p>
+        <label class="check" id="up-auto-row"><input id="sys-auto" type="checkbox" /><span>Install new versions automatically</span></label>
+        <p class="hint" id="up-auto-hint">Installed at night, between three and five, and never while an app is open.</p>
+        <div class="pair" id="up-buttons">
+          <button id="up-check" type="button" class="secondary wide">Look for a new version</button>
+          <button id="up-install" type="button" class="secondary wide" hidden>Install it now</button>
+        </div>
+        <p id="up-result" class="result"></p>
+      </section>
+
+      <section class="card" data-group="system">
+        <h2>Backup</h2>
+        <p class="hint">
+          One file with everything set up here, to move to another Pi or a new memory card. It contains the passwords
+          and links stored on the Pi, so keep it to yourself.
+        </p>
+        <div class="pair" id="b-buttons">
+          <button id="b-save" type="button" class="secondary wide">Save a backup file</button>
+          <button id="b-load" type="button" class="secondary wide">Load a backup file</button>
+        </div>
+        <input id="b-file" type="file" accept="application/json,.json" hidden />
+        <p id="b-tv" class="hint" hidden>Files can only be saved and loaded on a computer or phone: open this TV's address followed by /settings there.</p>
+        <p id="b-result" class="result"></p>
+      </section>
+
+      <p id="kb-problem" class="hint warn" hidden></p>
+      <p id="version" class="hint center"></p>
+    </main>
+    </div>
+
+    <footer id="footer" hidden>
+      <span id="summary"></span>
+      <button id="save" disabled>Save</button>
+    </footer>
+
+    <script type="module" src="/src/settings.ts"></script>
+  </body>
+</html>

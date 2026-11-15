@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build the frontend
+        run: cd web && npm ci && npm run build
+
+      - name: Lint
+        run: make lint
+
+      # A stand-in for the Bluetooth service, for the tests of internal/bluetooth.
+      - name: Install the Bluetooth stand-in
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dbus-daemon python3-dbusmock
+
+      - name: Test
+        run: go test -race ./...
+
+      - name: End-to-end tests (the TV remote on the real pages)
+        run: |
+          go build -o bin/pidash ./cmd/pidash
+          (cd web && npm install --no-save playwright && npx playwright install --with-deps chromium)
+          make e2e
+
+      - name: Build the release packages
+        run: scripts/dist.sh ci
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pidash-packages
+          path: dist/
+          retention-days: 7

@@ -1,0 +1,15 @@
+// polkit rule: /etc/polkit-1/rules.d/50-pidash-console.rules
+// Installed only by `install.sh --console-apps`.
+//
+// Lets the desktop user start and stop PiDash console apps without a password
+// prompt. It covers only the pidash-console@<app>.service units and nothing else.
+polkit.addRule(function (action, subject) {
+  if (action.id !== "org.freedesktop.systemd1.manage-units") return;
+  if (subject.user !== "@USER@") return;
+  var unit = action.lookup("unit") || "";
+  var verb = action.lookup("verb") || "";
+  if (/^pidash-console@[a-z0-9-]+\.service$/.test(unit) &&
+      (verb === "start" || verb === "stop" || verb === "restart")) {
+    return polkit.Result.YES;
+  }
+});

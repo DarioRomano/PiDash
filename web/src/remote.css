@@ -1,0 +1,79 @@
+:root {
+  --bg: #0b0d12; --panel: #151925; --fg: #f4f5f7; --dim: #8b93a7; --accent: #7cc4ff;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, sans-serif; }
+body {
+  max-width: 420px; margin: 0 auto;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 18px; -webkit-tap-highlight-color: transparent;
+}
+header { display: flex; align-items: center; justify-content: space-between; }
+h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: #e5484d; }
+.dot.ok { background: #46a758; }
+
+button {
+  appearance: none; border: 0; border-radius: 16px; background: var(--panel); color: var(--fg);
+  font: inherit; font-size: 22px; font-weight: 500; padding: 18px; cursor: pointer;
+  touch-action: manipulation; transition: transform 0.08s, background 0.08s;
+}
+button:active { transform: scale(0.96); background: #1f2536; }
+
+.dpad {
+  display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
+  gap: 10px; aspect-ratio: 1; max-height: 50vh;
+}
+.dpad [data-action="up"]    { grid-area: 1 / 2; }
+.dpad [data-action="left"]  { grid-area: 2 / 1; }
+.dpad .ok                   { grid-area: 2 / 2; background: var(--accent); color: #0b0d12; font-weight: 700; border-radius: 50%; }
+.dpad [data-action="right"] { grid-area: 2 / 3; }
+.dpad [data-action="down"]  { grid-area: 3 / 2; }
+
+.row { display: flex; gap: 10px; }
+.row > * { flex: 1; }
+.numpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.numpad .zero { grid-column: 2; }
+input {
+  min-width: 0;
+  flex: 3; border: 0; border-radius: 16px; background: var(--panel); color: var(--fg);
+  font: inherit; font-size: 18px; padding: 16px;
+}
+input:focus { outline: 2px solid var(--accent); }
+
+#kiosk button { font-size: 17px; padding: 14px; }
+#kiosk button.current { outline: 2px solid var(--accent); color: var(--accent); }
+[hidden] { display: none !important; }
+
+#apps { display: flex; flex-direction: column; gap: 10px; }
+#app-list { display: flex; gap: 10px; overflow-x: auto; scrollbar-width: none; padding: 3px; margin: -3px; }
+#app-list button { flex: 0 0 auto; font-size: 17px; padding: 12px 16px; white-space: nowrap; display: flex; align-items: center; gap: 10px; }
+#app-list button img { width: 26px; height: 26px; object-fit: contain; }
+#app-list button.current { outline: 2px solid #46a758; color: #6fd08c; }
+#running { align-items: center; background: #12261a; border-radius: 16px; padding: 8px 8px 8px 16px; }
+#running-name { flex: 2; font-size: 16px; color: #6fd08c; }
+#app-stop { flex: 3; font-size: 17px; padding: 14px; background: #46a758; color: #06130a; font-weight: 600; }
+#app-msg { font-size: 14px; color: #f2a0a3; line-height: 1.35; }
+
+.link {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 16px 18px; border-radius: 16px; background: var(--panel); color: var(--fg);
+  font-size: 17px; text-decoration: none;
+}
+.link span { color: var(--dim); font-size: 22px; line-height: 1; }
+
+/* --- Touchpad ------------------------------------------------------------------ */
+#pad-box { display: flex; flex-direction: column; gap: 10px; }
+#pad {
+  height: 230px; border-radius: 18px; background: var(--panel); border: 1px solid #232a3b;
+  display: grid; place-items: center; text-align: center; color: var(--dim); font-size: 13px; line-height: 1.5;
+  touch-action: none; user-select: none; -webkit-user-select: none;
+}
+#pad.active { border-color: var(--accent); }
+#pad span { pointer-events: none; padding: 0 20px; }
+.row.small button { font-size: 16px; padding: 13px 6px; }
+#drag[aria-pressed="true"] { outline: 2px solid var(--accent); color: var(--accent); }
+.note { font-size: 14px; color: var(--dim); line-height: 1.4; }
+#textform button { flex: 0 0 92px; font-size: 17px; padding: 14px 6px; }
+#version { text-align: center; font-size: 12px; color: var(--dim); opacity: 0.7; padding-top: 4px; }

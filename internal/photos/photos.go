@@ -1,0 +1,1459 @@
+// Package photos provides the background slideshow: it indexes the photos in
+// the folders the user picked, and serves each one as a ready-to-show
+// FrameW x FrameH JPEG, rendered once and cached on disk.
+package photos
+
+import (
+	"context"
+	"crypto/sha1"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"math/rand/v2"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+)
+
+// How photos move on screen.
+const (
+	MotionOff   = "off"
+	MotionWhole = "whole" // slow pans and zooms; the whole photo always stays visible
+	MotionFill  = "fill"  // slow pans and zooms over a photo that fills the screen
+)
+
+// Folder is a place photos can be picked from.
+type Folder struct {
+	// ID identifies the folder to its source.
+	ID string `json:"id"`
+	// Name is the folder's own name; Path its full, human-readable location.
+	Name string `json:"name"`
+	Path string `json:"path"`
+	// Leaf marks a folder that cannot contain others, such as an album.
+	Leaf bool `json:"leaf,omitempty"`
+	// Detail is a short note for the picker, e.g. "12 items". It is not saved.
+	Detail string `json:"detail,omitempty"`
+}
+
+// Item is one photo.
+type Item struct {
+	// Key is unique, stable and URL-safe; it is the name in /photos/{key}.
+	Key string `json:"key"`
+	// Name is the file name; Folder the readable path of its folder.
+	Name   string    `json:"name"`
+	Folder string    `json:"folder"`
+	Taken  time.Time `json:"taken"`
+	// Place is where the photo was taken, when the source knows: "Lisbon, Portugal".
+	Place string `json:"place,omitempty"`
+	// Located says that Latitude and Longitude hold where the photo was taken.
+	Located   bool    `json:"-"`
+	Latitude  float64 `json:"-"`
+	Longitude float64 `json:"-"`
+	// WallClock says that Taken is the time the camera's clock showed, written
+	// down as if it were UTC, since the camera did not say where it was.
+	WallClock bool `json:"-"`
+	// Favourite is set on the photos handed out in slides.
+	Favourite bool `json:"favourite,omitempty"`
+	// Video marks a video clip; Size is its file size in bytes, when known.
+	Video bool  `json:"video,omitempty"`
+	Size  int64 `json:"-"`
+	// Version changes when the photo is edited, so stale renders are not reused.
+	Version string `json:"-"`
+	// ID is what the source needs to fetch the photo.
+	ID string `json:"-"`
+}
+
+// Source is where photos come from: Synology Photos, or a folder on disk.
+type Source interface {
+	// Label names the source for humans, e.g. "Synology Photos".
+	Label() string
+	// Folders lists the folders inside parent; parent "" lists the top level.
+	Folders(ctx context.Context, parent string) ([]Folder, error)
+	// Items lists the photos directly inside a folder (not its subfolders).
+	Items(ctx context.Context, folder Folder) ([]Item, error)
+	// Fetch returns the encoded image. With original=false a source that has
+	// ready-made smaller versions returns one of those instead of the full
+	// file. upright reports that the image is already rotated correctly.
+	Fetch(ctx context.Context, item Item, original bool) (data []byte, upright bool, err error)
+	// HasPreviews reports whether original=false gives a different, smaller image.
+	HasPreviews() bool
+	// DefaultSelection is used until the user has picked folders; may be empty.
+	DefaultSelection() Selection
+}
+
+// Selection is the user's choice of folders for the background.
+type Selection struct {
+	Folders []Folder `json:"folders"`
+	// Recursive also includes everything inside the chosen folders' subfolders.
+	Recursive bool `json:"recursive"`
+}
+
+// Status is sent to the dashboard and the folder picker.
+type Status struct {
+	Enabled bool   `json:"enabled"`
+	Source  string `json:"source"`
+	// Count is the number of photos currently in the slideshow.
+	Count    int  `json:"count"`
+	Indexing bool `json:"indexing"`
+	// Error is the last problem reaching the source; old photos keep showing.
+	Error           string    `json:"error,omitempty"`
+	IntervalSeconds int       `json:"intervalSeconds"`
+	Selection       Selection `json:"selection"`
+	// Version increases whenever the set of photos changes.
+	Version int `json:"version"`
+	// Motion is how photos move on screen: "off", "whole" or "fill".
+	// MotionZoom is the largest zoom at which a "whole" photo still fits.
+	Motion     string  `json:"motion"`
+	MotionZoom float64 `json:"motionZoom"`
+	// Pairs changes when more is known about which photos can be shown two
+	// at a time; the dashboard then fetches its upcoming photos again.
+	Pairs int `json:"pairs"`
+	// Hidden is the number of photos the person chose never to see again.
+	Hidden int `json:"hidden"`
+	// Favourites is the number of favourites in the slideshow;
+	// OnlyFavourites whether nothing else is shown.
+	Favourites     int  `json:"favourites"`
+	OnlyFavourites bool `json:"onlyFavourites"`
+	// New is the number of photos that appeared in the chosen folders and
+	// albums lately and were not looked at yet; NewIn names where most of
+	// them are.
+	New   int    `json:"new"`
+	NewIn string `json:"newIn,omitempty"`
+	// Located is the number of photos that say where they were taken.
+	Located int `json:"located"`
+	// Trips is the number of journeys the photos tell of.
+	Trips int `json:"trips"`
+	// Quiz says there are enough photos with a year or a place for the quiz.
+	Quiz bool `json:"quiz"`
+}
+
+// Options configure a Service.
+type Options struct {
+	Source Source
+	// Interval between photos on screen; Refresh between re-reads of the folders.
+	Interval time.Duration
+	Refresh  time.Duration
+	// PreferOriginal renders from the full file where possible (sharper) instead
+	// of the source's smaller preview.
+	PreferOriginal bool
+	// PairPortraits shows two upright photos side by side instead of one
+	// with empty space beside it.
+	PairPortraits bool
+	// OnThisDay puts photos taken on today's date in earlier years first.
+	OnThisDay bool
+	// ShowWhole keeps the whole picture in view also where photos stand
+	// still: for paintings, of which nothing should be cut off.
+	ShowWhole bool
+	// SkipOdd leaves out screenshots and very small pictures.
+	SkipOdd bool
+	// Places reads where the photos of a folder on disk were taken, for the
+	// map of all photos. Synology Photos says so without being asked.
+	Places bool
+	// Videos lets video clips the source lists into the slideshow, up to
+	// VideoMaxBytes each (default 90 MB).
+	Videos        bool
+	VideoMaxBytes int64
+	// Now is the clock, for tests; nil means time.Now.
+	Now func() time.Time
+	// Motion is "whole" to prepare photos for slow movement that never cuts
+	// them off, "fill" for movement over photos that fill the screen, or
+	// "off"/"" for photos that stand still.
+	Motion string
+	// StatePath stores the folder selection; CacheDir the rendered frames.
+	StatePath  string
+	CacheDir   string
+	CacheBytes int64
+	Log        *slog.Logger
+}
+
+const (
+	maxFolders = 5000
+	maxItems   = 200_000
+)
+
+// Service indexes the selected folders and serves rendered photos.
+type Service struct {
+	opt Options
+
+	mu        sync.Mutex
+	selection Selection
+	items     []Item
+	byKey     map[string]Item
+	version   int
+	indexing  bool
+	lastErr   string
+	onChange  func(Status)
+
+	reindex chan struct{}
+
+	// hidden are the keys of photos the person chose never to see again.
+	hidden map[string]bool
+	// known are the keys of every photo seen at the last complete reading,
+	// and fresh those that appeared since, with when: see new.go.
+	known map[string]bool
+	fresh map[string]time.Time
+	// favourites are the keys of the photos the person likes best.
+	favourites     map[string]bool
+	onlyFavourites bool
+
+	// shapes records which photos are upright, by shapeKey; pairs counts how
+	// often that knowledge grew. partners is the pairing worked out from it.
+	shapes map[string]string
+	// spots records where photos were taken, by shapeKey, for sources that
+	// only find out by looking into the file.
+	spots map[string]spot
+	// trips are the journeys worked out from the photos, for the state of
+	// the library that tripsFor names.
+	trips       []Trip
+	tripsFor    int
+	pairs       int
+	rescan      chan struct{}
+	partners    map[string]partner
+	partnersFor [2]int
+
+	renderSem chan struct{}
+	flightMu  sync.Mutex
+	flight    map[string]*flightCall
+	writes    int
+}
+
+type flightCall struct {
+	done chan struct{}
+	path string
+	err  error
+}
+
+// New creates a photo service. Call Run to start indexing.
+func New(opt Options) *Service {
+	if opt.Interval <= 0 {
+		opt.Interval = 30 * time.Second
+	}
+	if opt.Refresh <= 0 {
+		opt.Refresh = 6 * time.Hour
+	}
+	if opt.CacheBytes <= 0 {
+		opt.CacheBytes = 2 << 30
+	}
+	s := &Service{
+		opt:       opt,
+		byKey:     map[string]Item{},
+		onChange:  func(Status) {},
+		reindex:   make(chan struct{}, 1),
+		rescan:    make(chan struct{}, 1),
+		renderSem: make(chan struct{}, 1),
+		flight:    map[string]*flightCall{},
+	}
+	// Loaded here rather than in Run, so a choice made right after start-up
+	// can never be overwritten by the saved one.
+	sel, ok := s.loadSelection()
+	if !ok {
+		sel = opt.Source.DefaultSelection()
+	}
+	s.selection = sel
+	s.loadShapes()
+	s.loadSpots()
+	s.loadHidden()
+	s.loadFavourites()
+	s.loadNew()
+	return s
+}
+
+// OnChange registers a callback for status changes.
+func (s *Service) OnChange(fn func(Status)) {
+	s.mu.Lock()
+	s.onChange = fn
+	s.mu.Unlock()
+}
+
+// Status returns the current state.
+func (s *Service) Status() Status {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.statusLocked()
+}
+
+func (s *Service) statusLocked() Status {
+	sel := s.selection
+	if sel.Folders == nil {
+		sel.Folders = []Folder{}
+	}
+	newCount, newIn := s.newLocked()
+	located := 0
+	for _, it := range s.items {
+		if it.Located && !it.Video {
+			located++
+		}
+	}
+	return Status{
+		Located:         located,
+		Trips:           len(s.tripsLocked()),
+		Quiz:            s.quizStockLocked().askAny,
+		Enabled:         true,
+		Source:          s.opt.Source.Label(),
+		Count:           len(s.items),
+		Indexing:        s.indexing,
+		Error:           s.lastErr,
+		IntervalSeconds: int(s.opt.Interval / time.Second),
+		Selection:       sel,
+		Version:         s.version,
+		Motion:          s.motion(),
+		MotionZoom:      WholeZoom,
+		Pairs:           s.pairs,
+		Hidden:          len(s.hidden),
+		Favourites:      s.favouritesLocked(),
+		OnlyFavourites:  s.onlyFavourites,
+		New:             newCount,
+		NewIn:           newIn,
+	}
+}
+
+func (s *Service) notify() {
+	s.mu.Lock()
+	st, fn := s.statusLocked(), s.onChange
+	s.mu.Unlock()
+	fn(st)
+}
+
+func (s *Service) motion() string {
+	if s.opt.Motion == MotionWhole || s.opt.Motion == MotionFill {
+		return s.opt.Motion
+	}
+	return MotionOff
+}
+
+// Variant names how frames are rendered. It is part of the name of every
+// cached frame and of the address the dashboard loads it from, so changing
+// the setting never shows a frame prepared for the other one.
+func (s *Service) Variant() string {
+	if s.opt.Motion == MotionWhole || s.opt.ShowWhole {
+		return "whole"
+	}
+	return ""
+}
+
+func (s *Service) layout() Layout {
+	if s.opt.Motion == MotionWhole || s.opt.ShowWhole {
+		return LayoutWhole
+	}
+	return LayoutFill
+}
+
+// Run indexes now, whenever the selection changes, and periodically to pick up
+// new photos. It returns when ctx ends.
+func (s *Service) Run(ctx context.Context) {
+	if s.opt.CacheDir != "" {
+		_ = os.MkdirAll(s.opt.CacheDir, 0o700)
+		s.evict()
+	}
+
+	if s.opt.PairPortraits || s.opt.Places {
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-s.rescan:
+					if s.opt.PairPortraits {
+						s.scanShapes(ctx)
+					}
+					s.scanSpots(ctx)
+				}
+			}
+		}()
+	}
+
+	refresh := time.NewTicker(s.opt.Refresh)
+	defer refresh.Stop()
+	for {
+		s.index(ctx)
+		select {
+		case s.rescan <- struct{}{}:
+		default:
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.reindex:
+		case <-refresh.C:
+		}
+	}
+}
+
+// Folders lists the folders inside parent for the picker.
+func (s *Service) Folders(ctx context.Context, parent string) ([]Folder, error) {
+	folders, err := s.opt.Source.Folders(ctx, parent)
+	if folders == nil {
+		folders = []Folder{}
+	}
+	return folders, err
+}
+
+// SetSelection saves the user's choice of folders and re-indexes.
+func (s *Service) SetSelection(sel Selection) error {
+	if len(sel.Folders) > 500 {
+		return errors.New("too many folders selected")
+	}
+	seen := map[string]bool{}
+	clean := Selection{Recursive: sel.Recursive, Folders: []Folder{}}
+	for _, f := range sel.Folders {
+		if f.ID == "" || seen[f.ID] {
+			continue
+		}
+		seen[f.ID] = true
+		if f.Name == "" {
+			f.Name = f.ID
+		}
+		if f.Path == "" {
+			f.Path = f.Name
+		}
+		f.Detail = ""
+		clean.Folders = append(clean.Folders, f)
+	}
+	if err := s.saveSelection(clean); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.selection = clean
+	// Other folders: what they hold is not "new", it was only not chosen before.
+	s.known, s.fresh = nil, map[string]time.Time{}
+	s.saveNewLocked()
+	s.mu.Unlock()
+	select {
+	case s.reindex <- struct{}{}:
+	default:
+	}
+	s.notify()
+	return nil
+}
+
+func (s *Service) loadSelection() (Selection, bool) {
+	if s.opt.StatePath == "" {
+		return Selection{}, false
+	}
+	data, err := os.ReadFile(s.opt.StatePath)
+	if err != nil {
+		return Selection{}, false
+	}
+	var sel Selection
+	if err := json.Unmarshal(data, &sel); err != nil {
+		s.opt.Log.Warn("ignoring unreadable photo selection", "path", s.opt.StatePath, "err", err)
+		return Selection{}, false
+	}
+	return sel, true
+}
+
+func (s *Service) saveSelection(sel Selection) error {
+	if s.opt.StatePath == "" {
+		return nil
+	}
+	data, err := json.MarshalIndent(sel, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(s.opt.StatePath), 0o700); err != nil {
+		return err
+	}
+	tmp := s.opt.StatePath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, s.opt.StatePath)
+}
+
+// index reads the selected folders. If the source cannot be reached the
+// previous photos are kept, so the slideshow keeps running.
+func (s *Service) index(ctx context.Context) {
+	s.mu.Lock()
+	sel := s.selection
+	s.indexing = true
+	s.mu.Unlock()
+	s.notify()
+
+	start := time.Now()
+	items, err := s.collect(ctx, sel)
+
+	s.mu.Lock()
+	items = s.withoutHiddenLocked(items)
+	items = s.playableLocked(items)
+	s.withSpotsLocked(items)
+	s.indexing = false
+	switch {
+	case ctx.Err() != nil:
+		s.mu.Unlock()
+		return
+	case err != nil && len(items) == 0 && len(sel.Folders) > 0:
+		// Nothing could be read at all: keep what we had.
+		s.lastErr = err.Error()
+	default:
+		s.lastErr = ""
+		if err != nil {
+			s.lastErr = err.Error()
+		}
+		if !sameItems(s.items, items) {
+			s.items = items
+			s.byKey = make(map[string]Item, len(items))
+			for _, it := range items {
+				s.byKey[it.Key] = it
+			}
+			s.version++
+		}
+		// Only a complete reading can say what is new.
+		if err == nil {
+			s.noteNewLocked(items)
+		}
+	}
+	count, lastErr := len(s.items), s.lastErr
+	s.mu.Unlock()
+
+	if lastErr != "" {
+		s.opt.Log.Warn("photo index", "err", lastErr, "photos", count)
+	} else {
+		s.opt.Log.Info("photo index", "photos", count, "folders", len(sel.Folders), "took", time.Since(start).Round(time.Millisecond))
+	}
+	s.notify()
+}
+
+// collect walks the selected folders. It returns what it found together with
+// the first error, so one unreadable folder does not hide the others.
+func (s *Service) collect(ctx context.Context, sel Selection) ([]Item, error) {
+	var (
+		items    []Item
+		firstErr error
+		seenItem = map[string]bool{}
+		seenDir  = map[string]bool{}
+		queue    = append([]Folder{}, sel.Folders...)
+	)
+	for len(queue) > 0 && len(seenDir) < maxFolders && len(items) < maxItems {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		folder := queue[0]
+		queue = queue[1:]
+		if seenDir[folder.ID] {
+			continue
+		}
+		seenDir[folder.ID] = true
+
+		found, err := s.opt.Source.Items(ctx, folder)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("%s: %w", folder.Path, err)
+			}
+			continue
+		}
+		for _, it := range found {
+			if it.Key == "" || seenItem[it.Key] {
+				continue
+			}
+			seenItem[it.Key] = true
+			items = append(items, it)
+		}
+		if sel.Recursive {
+			children, err := s.opt.Source.Folders(ctx, folder.ID)
+			if err != nil {
+				if firstErr == nil {
+					firstErr = fmt.Errorf("%s: %w", folder.Path, err)
+				}
+				continue
+			}
+			queue = append(queue, children...)
+		}
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].Key < items[j].Key })
+	return items, firstErr
+}
+
+func sameItems(a, b []Item) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Key != b[i].Key || a[i].Version != b[i].Version {
+			return false
+		}
+	}
+	return true
+}
+
+// Playlist returns up to limit photos in random order.
+func (s *Service) Playlist(limit int) (version int, items []Item) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := len(s.items)
+	if limit <= 0 || limit > n {
+		limit = n
+	}
+	items = make([]Item, 0, limit)
+	for _, i := range rand.Perm(n)[:limit] {
+		items = append(items, s.items[i])
+	}
+	return s.version, items
+}
+
+// SetInterval changes how long a photo stays on screen, from now on.
+func (s *Service) SetInterval(d time.Duration) {
+	s.mu.Lock()
+	s.opt.Interval = d
+	s.mu.Unlock()
+	s.notify()
+}
+
+// SlidesTaken returns the photos taken on one day (month and day given), or
+// in one year (month 0), in the order they were taken.
+func (s *Service) SlidesTaken(year int, month time.Month, day, limit int) (version int, slides []Slide) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var order []int
+	for i, it := range s.items {
+		t := it.Taken
+		if t.Year() == year && (month == 0 || (t.Month() == month && t.Day() == day)) {
+			order = append(order, i)
+		}
+	}
+	sort.SliceStable(order, func(a, b int) bool {
+		x, y := s.items[order[a]], s.items[order[b]]
+		if !x.Taken.Equal(y.Taken) {
+			return x.Taken.Before(y.Taken)
+		}
+		return x.Key < y.Key
+	})
+	if limit <= 0 || limit > len(order) {
+		limit = len(order)
+	}
+	return s.version, s.slidesLocked(order, limit)
+}
+
+// pairSep joins the keys of two photos shown side by side.
+const pairSep = "+"
+
+// Slide is what is on screen at one time: a photo, or two upright photos
+// side by side.
+type Slide struct {
+	// Key is the name in /photos/{key}.
+	Key   string
+	Items []Item
+}
+
+// Slides returns up to limit slides in random order. With PairPortraits,
+// upright photos appear together with their partner.
+func (s *Service) Slides(limit int) (version int, slides []Slide) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	asked := limit
+	order := rand.Perm(len(s.items))
+	only := s.onlyFavourites && s.favouritesLocked() > 0
+	if only {
+		order = s.favouriteOrderLocked()
+	}
+	if n := len(order); limit <= 0 || limit > n {
+		limit = n
+	}
+	if s.opt.OnThisDay {
+		// Photos from this day in earlier years come first, still shuffled
+		// among themselves; the rest follow.
+		now := time.Now()
+		if s.opt.Now != nil {
+			now = s.opt.Now()
+		}
+		sort.SliceStable(order, func(a, b int) bool {
+			return onThisDay(s.items[order[a]].Taken, now) && !onThisDay(s.items[order[b]].Taken, now)
+		})
+	}
+	slides = s.slidesLocked(order, limit)
+	if !only {
+		slides = s.withFavouritesLocked(slides, asked)
+	}
+	return s.version, slides
+}
+
+// SlidesFrom returns the photos of one folder or album in the order they
+// were taken, starting after the photo with the key after: for staying with
+// an occasion instead of jumping around the whole library.
+func (s *Service) SlidesFrom(folder, after string, limit int) (version int, slides []Slide) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var order []int
+	for i, it := range s.items {
+		if it.Folder == folder {
+			order = append(order, i)
+		}
+	}
+	sort.SliceStable(order, func(a, b int) bool {
+		x, y := s.items[order[a]], s.items[order[b]]
+		if !x.Taken.Equal(y.Taken) {
+			return x.Taken.Before(y.Taken)
+		}
+		return x.Key < y.Key
+	})
+	// Carry on after the photo that is showing, and come round to the start.
+	firstKey, _, _ := strings.Cut(after, pairSep)
+	lastKey := after[strings.LastIndex(after, pairSep)+1:]
+	at := -1
+	for i, idx := range order {
+		if k := s.items[idx].Key; k == lastKey || k == firstKey {
+			at = i // of two side by side, the later one
+		}
+	}
+	if at >= 0 {
+		order = append(order[at+1:len(order):len(order)], order[:at]...)
+		// Without the photos on screen themselves.
+		kept := order[:0]
+		for _, idx := range order {
+			if k := s.items[idx].Key; k != lastKey && k != firstKey {
+				kept = append(kept, idx)
+			}
+		}
+		order = kept
+	}
+	if limit <= 0 || limit > len(order) {
+		limit = len(order)
+	}
+	return s.version, s.slidesLocked(order, limit)
+}
+
+// slidesLocked turns photos, given by their position in s.items, into slides
+// in that order, putting upright photos together with their partner.
+func (s *Service) slidesLocked(order []int, limit int) []Slide {
+	partners := s.partnersLocked()
+	used := make(map[string]bool, limit)
+	slides := make([]Slide, 0, limit)
+	for _, i := range order {
+		if len(slides) == limit {
+			break
+		}
+		item := s.items[i]
+		if used[item.Key] {
+			continue
+		}
+		used[item.Key] = true
+		item.Favourite = s.favourites[item.Key]
+		if p, ok := partners[item.Key]; ok && !used[p.other.Key] {
+			used[p.other.Key] = true
+			left, right := item, p.other
+			right.Favourite = s.favourites[right.Key]
+			if !p.first {
+				left, right = right, left
+			}
+			slides = append(slides, Slide{Key: left.Key + pairSep + right.Key, Items: []Item{left, right}})
+			continue
+		}
+		slides = append(slides, Slide{Key: item.Key, Items: []Item{item}})
+	}
+	return slides
+}
+
+type partner struct {
+	other Item
+	// first is true when this photo stands on the left.
+	first bool
+}
+
+// partnersLocked gives every upright photo that has one its partner. Pairs
+// are neighbours: photos from the same folder, in the order they were taken.
+// That keeps a pair from one occasion, and keeps pairs the same from one
+// shuffle to the next, so a prepared frame can be used again.
+func (s *Service) partnersLocked() map[string]partner {
+	if !s.opt.PairPortraits {
+		return nil
+	}
+	if s.partners != nil && s.partnersFor == [2]int{s.version, s.pairs} {
+		return s.partners
+	}
+	var upright []Item
+	for _, it := range s.items {
+		if s.shapes[shapeKey(it)] == shapePortrait {
+			upright = append(upright, it)
+		}
+	}
+	sort.Slice(upright, func(i, j int) bool {
+		a, b := upright[i], upright[j]
+		if a.Folder != b.Folder {
+			return a.Folder < b.Folder
+		}
+		if !a.Taken.Equal(b.Taken) {
+			return a.Taken.Before(b.Taken)
+		}
+		return a.Key < b.Key
+	})
+	out := make(map[string]partner, len(upright))
+	for i := 0; i+1 < len(upright); i++ {
+		a, b := upright[i], upright[i+1]
+		if a.Folder != b.Folder {
+			continue // the last one of a folder with an odd number stays alone
+		}
+		out[a.Key] = partner{other: b, first: true}
+		out[b.Key] = partner{other: a}
+		i++
+	}
+	s.partners, s.partnersFor = out, [2]int{s.version, s.pairs}
+	return out
+}
+
+// onThisDay reports whether a photo was taken on today's date in an earlier year.
+func onThisDay(taken, now time.Time) bool {
+	taken = taken.In(now.Location())
+	return taken.Month() == now.Month() && taken.Day() == now.Day() && taken.Year() < now.Year() && taken.Year() > 1990
+}
+
+// --- Photos the person does not want to see ---------------------------------------
+
+func (s *Service) hiddenPath() string {
+	if s.opt.StatePath == "" {
+		return ""
+	}
+	return strings.TrimSuffix(s.opt.StatePath, filepath.Ext(s.opt.StatePath)) + "-hidden.json"
+}
+
+func (s *Service) loadHidden() {
+	s.hidden = map[string]bool{}
+	if p := s.hiddenPath(); p != "" {
+		var keys []string
+		if data, err := os.ReadFile(p); err == nil && json.Unmarshal(data, &keys) == nil {
+			for _, k := range keys {
+				s.hidden[k] = true
+			}
+		}
+	}
+}
+
+func (s *Service) saveHiddenLocked() error {
+	p := s.hiddenPath()
+	if p == "" {
+		return nil
+	}
+	keys := make([]string, 0, len(s.hidden))
+	for k := range s.hidden {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	data, err := json.Marshal(keys)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(p+".tmp", data, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(p+".tmp", p)
+}
+
+func (s *Service) withoutHiddenLocked(items []Item) []Item {
+	if len(s.hidden) == 0 {
+		return items
+	}
+	out := items[:0:0]
+	for _, it := range items {
+		if !s.hidden[it.Key] {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+// Hide takes photos out of the slideshow for good. A key may name two photos
+// shown side by side ("a+b"). Unknown keys are ignored.
+func (s *Service) Hide(keys ...string) error {
+	s.mu.Lock()
+	changed := false
+	for _, key := range keys {
+		for _, k := range strings.Split(key, pairSep) {
+			if _, ok := s.byKey[k]; ok && !s.hidden[k] {
+				s.hidden[k] = true
+				delete(s.byKey, k)
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		s.mu.Unlock()
+		return nil
+	}
+	s.items = s.withoutHiddenLocked(s.items)
+	s.version++ // the dashboard moves on to another photo
+	err := s.saveHiddenLocked()
+	s.mu.Unlock()
+	s.notify()
+	return err
+}
+
+// Unhide brings hidden photos back: for taking back a "hide" that was a slip
+// of the thumb. A key may name two photos shown side by side ("a+b").
+func (s *Service) Unhide(keys ...string) error {
+	s.mu.Lock()
+	changed := false
+	for _, key := range keys {
+		for _, k := range strings.Split(key, pairSep) {
+			if s.hidden[k] {
+				delete(s.hidden, k)
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		s.mu.Unlock()
+		return nil
+	}
+	err := s.saveHiddenLocked()
+	s.mu.Unlock()
+	select {
+	case s.reindex <- struct{}{}:
+	default:
+	}
+	s.notify()
+	return err
+}
+
+// ShowHidden brings every hidden photo back.
+func (s *Service) ShowHidden() error {
+	s.mu.Lock()
+	s.hidden = map[string]bool{}
+	err := s.saveHiddenLocked()
+	s.mu.Unlock()
+	select {
+	case s.reindex <- struct{}{}:
+	default:
+	}
+	s.notify()
+	return err
+}
+
+// State is what a backup keeps of the slideshow: which folders and albums
+// were chosen, and which photos are hidden.
+type State struct {
+	Selection  Selection `json:"selection"`
+	Hidden     []string  `json:"hidden"`
+	Favourites []string  `json:"favourites,omitempty"`
+}
+
+// Export returns the slideshow's state for a backup.
+func (s *Service) Export() State {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := State{Selection: s.selection, Hidden: make([]string, 0, len(s.hidden))}
+	for k := range s.hidden {
+		st.Hidden = append(st.Hidden, k)
+	}
+	sort.Strings(st.Hidden)
+	st.Favourites = s.favouriteKeysLocked()
+	return st
+}
+
+// WriteState stores a backed-up state where a service started with the same
+// statePath will find it. It works without a running service, since the
+// backup may bring the photo source with it.
+func WriteState(statePath string, st State) error {
+	if statePath == "" {
+		return nil
+	}
+	tmp := &Service{opt: Options{StatePath: statePath}, hidden: map[string]bool{}, favourites: map[string]bool{}}
+	for _, k := range st.Hidden {
+		tmp.hidden[k] = true
+	}
+	for _, k := range st.Favourites {
+		tmp.favourites[k] = true
+	}
+	if err := tmp.saveSelection(st.Selection); err != nil {
+		return err
+	}
+	if err := tmp.saveFavouritesLocked(); err != nil {
+		return err
+	}
+	return tmp.saveHiddenLocked()
+}
+
+// --- Video clips ------------------------------------------------------------------
+
+// shapeUnplayable marks, in the shape table, a video the TV could not play.
+const shapeUnplayable = "x"
+
+// FilePather is implemented by sources whose photos are files on this
+// machine, which can be played from where they are.
+type FilePather interface {
+	FilePath(item Item) (string, error)
+}
+
+// playableLocked drops the videos that must not be shown: all of them when
+// videos are switched off, and otherwise those too large or known not to play.
+func (s *Service) playableLocked(items []Item) []Item {
+	limit := s.opt.VideoMaxBytes
+	if limit <= 0 {
+		limit = 90 << 20
+	}
+	out := items[:0:0]
+	for _, it := range items {
+		if it.Video && (!s.opt.Videos || it.Size > limit || s.shapes[shapeKey(it)] == shapeUnplayable) {
+			continue
+		}
+		if s.opt.SkipOdd && !it.Video && odd(it) {
+			continue
+		}
+		out = append(out, it)
+	}
+	return out
+}
+
+// Video returns the path of a video clip's file, fetching it into the cache
+// first when the source is not on this machine.
+func (s *Service) Video(ctx context.Context, key string) (path, name string, err error) {
+	s.mu.Lock()
+	item, ok := s.byKey[key]
+	s.mu.Unlock()
+	if !ok || !item.Video {
+		return "", "", ErrNotFound
+	}
+	if fp, ok := s.opt.Source.(FilePather); ok {
+		p, err := fp.FilePath(item)
+		return p, item.Name, err
+	}
+	sum := sha1.Sum([]byte(item.Key + "|" + item.Version))
+	path = filepath.Join(s.opt.CacheDir, hex.EncodeToString(sum[:12])+".vid")
+	if fi, err := os.Stat(path); err == nil && fi.Size() > 0 {
+		if time.Since(fi.ModTime()) > 24*time.Hour {
+			now := time.Now()
+			_ = os.Chtimes(path, now, now)
+		}
+		return path, item.Name, nil
+	}
+
+	// Several requests for the same clip share one download.
+	s.flightMu.Lock()
+	if call, ok := s.flight[path]; ok {
+		s.flightMu.Unlock()
+		select {
+		case <-call.done:
+			return call.path, item.Name, call.err
+		case <-ctx.Done():
+			return "", "", ctx.Err()
+		}
+	}
+	call := &flightCall{done: make(chan struct{})}
+	s.flight[path] = call
+	s.flightMu.Unlock()
+
+	work, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Minute)
+	data, _, ferr := s.opt.Source.Fetch(work, item, true)
+	cancel()
+	if ferr == nil {
+		ferr = os.WriteFile(path+".part", data, 0o600)
+	}
+	if ferr == nil {
+		ferr = os.Rename(path+".part", path)
+	}
+	if ferr == nil {
+		call.path = path
+		s.evict()
+	}
+	call.err = ferr
+	s.flightMu.Lock()
+	delete(s.flight, path)
+	s.flightMu.Unlock()
+	close(call.done)
+	return call.path, item.Name, call.err
+}
+
+// Unplayable records that the TV could not play a video clip, so it is not
+// tried again, and takes it out of the slideshow.
+func (s *Service) Unplayable(key string) {
+	s.mu.Lock()
+	item, ok := s.byKey[key]
+	if ok && item.Video {
+		s.shapes[shapeKey(item)] = shapeUnplayable
+		delete(s.byKey, key)
+		kept := s.items[:0:0]
+		for _, it := range s.items {
+			if it.Key != key {
+				kept = append(kept, it)
+			}
+		}
+		s.items = kept
+	}
+	s.mu.Unlock()
+	if ok && item.Video {
+		s.saveShapes()
+		s.notify()
+	}
+}
+
+// --- Which photos are upright ----------------------------------------------------
+
+const (
+	shapePortrait  = "p"
+	shapeLandscape = "l"
+)
+
+// shapeKey names a photo in the shape table; an edited photo is looked at again.
+func shapeKey(item Item) string { return item.Key + "|" + item.Version }
+
+// Peeker is implemented by sources that can return a small image of a photo,
+// enough to tell its shape, without transferring the whole file.
+type Peeker interface {
+	Peek(ctx context.Context, item Item) (data []byte, upright bool, err error)
+}
+
+// learnShape notes whether a photo is upright from image data that was
+// fetched anyway.
+func (s *Service) learnShape(item Item, data []byte, upright bool) {
+	if !s.opt.PairPortraits {
+		return
+	}
+	portrait, err := IsPortrait(data, upright)
+	if err != nil {
+		return
+	}
+	s.mu.Lock()
+	s.setShapeLocked(item, portrait)
+	s.mu.Unlock()
+}
+
+func (s *Service) setShapeLocked(item Item, portrait bool) {
+	shape := shapeLandscape
+	if portrait {
+		shape = shapePortrait
+	}
+	s.shapes[shapeKey(item)] = shape
+}
+
+func (s *Service) shapesPath() string {
+	if s.opt.CacheDir == "" {
+		return ""
+	}
+	return filepath.Join(s.opt.CacheDir, "shapes.json")
+}
+
+func (s *Service) loadShapes() {
+	s.shapes = map[string]string{}
+	if p := s.shapesPath(); p != "" && (s.opt.PairPortraits || s.opt.Videos) {
+		if data, err := os.ReadFile(p); err == nil {
+			_ = json.Unmarshal(data, &s.shapes)
+		}
+	}
+}
+
+// saveShapes stores what is known, leaving out photos that are gone.
+func (s *Service) saveShapes() {
+	p := s.shapesPath()
+	if p == "" {
+		return
+	}
+	s.mu.Lock()
+	if len(s.items) > 0 {
+		current := make(map[string]string, len(s.items))
+		for _, it := range s.items {
+			if shape, ok := s.shapes[shapeKey(it)]; ok {
+				current[shapeKey(it)] = shape
+			}
+		}
+		// Videos that do not play are no longer among the items; remember them all the same.
+		for k, shape := range s.shapes {
+			if shape == shapeUnplayable {
+				current[k] = shape
+			}
+		}
+		s.shapes = current
+	}
+	data, err := json.Marshal(s.shapes)
+	s.mu.Unlock()
+	if err != nil {
+		return
+	}
+	if err := os.WriteFile(p+".tmp", data, 0o600); err == nil {
+		_ = os.Rename(p+".tmp", p)
+	}
+}
+
+// scanShapes looks at every photo whose shape is not known yet. It reads
+// only a small image of each, so a large library takes minutes, once.
+func (s *Service) scanShapes(ctx context.Context) {
+	s.mu.Lock()
+	var todo []Item
+	for _, it := range s.items {
+		if _, ok := s.shapes[shapeKey(it)]; !ok && !it.Video {
+			todo = append(todo, it)
+		}
+	}
+	s.mu.Unlock()
+	if len(todo) == 0 {
+		return
+	}
+	start := time.Now()
+	learned, failed := 0, 0
+	publish := func() {
+		s.saveShapes()
+		s.mu.Lock()
+		s.pairs++
+		s.mu.Unlock()
+		s.notify()
+	}
+	for _, it := range todo {
+		if ctx.Err() != nil {
+			return
+		}
+		portrait, err := s.peek(ctx, it)
+		if err != nil {
+			// The source is probably away; the next index tries again.
+			if failed++; failed >= 20 {
+				break
+			}
+			continue
+		}
+		failed = 0
+		s.mu.Lock()
+		s.setShapeLocked(it, portrait)
+		s.mu.Unlock()
+		// Let the dashboard start pairing early in a large library.
+		if learned++; learned%200 == 0 {
+			publish()
+		}
+	}
+	if learned%200 != 0 {
+		publish()
+	}
+	s.opt.Log.Info("looked at photo shapes", "photos", learned, "of", len(todo), "took", time.Since(start).Round(time.Millisecond))
+}
+
+func (s *Service) peek(ctx context.Context, item Item) (bool, error) {
+	if p, ok := s.opt.Source.(Peeker); ok {
+		if data, upright, err := p.Peek(ctx, item); err == nil {
+			if portrait, err := IsPortrait(data, upright); err == nil {
+				return portrait, nil
+			}
+		} else if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
+	}
+	data, upright, err := s.opt.Source.Fetch(ctx, item, false)
+	if err != nil {
+		return false, err
+	}
+	return IsPortrait(data, upright)
+}
+
+// ErrNotFound is returned for a photo that is not in the selected folders.
+var ErrNotFound = errors.New("photo not found")
+
+// Image returns the path of the rendered frame for a photo, rendering and
+// caching it first if needed. Only photos in the current index can be
+// requested, so this cannot be used to read arbitrary files from the source.
+func (s *Service) Image(ctx context.Context, key string) (string, error) {
+	// "a+b" asks for two photos side by side.
+	keys := strings.Split(key, pairSep)
+	if len(keys) > 2 || (len(keys) == 2 && keys[0] == keys[1]) {
+		return "", ErrNotFound
+	}
+	items := make([]Item, 0, 2)
+	name := ""
+	s.mu.Lock()
+	for _, k := range keys {
+		item, ok := s.byKey[k]
+		if !ok || item.Video {
+			s.mu.Unlock()
+			return "", ErrNotFound
+		}
+		items = append(items, item)
+		name += item.Key + "|" + item.Version + "|"
+	}
+	s.mu.Unlock()
+	name = strings.TrimSuffix(name, "|")
+	if v := s.Variant(); v != "" {
+		name += "|" + v
+	}
+	sum := sha1.Sum([]byte(name))
+	path := filepath.Join(s.opt.CacheDir, hex.EncodeToString(sum[:12])+".jpg")
+
+	if fi, err := os.Stat(path); err == nil && fi.Size() > 0 {
+		// Mark as recently used, at most once a day, so eviction removes the
+		// frames that have not been shown for the longest time.
+		if time.Since(fi.ModTime()) > 24*time.Hour {
+			now := time.Now()
+			_ = os.Chtimes(path, now, now)
+		}
+		return path, nil
+	}
+
+	// Several requests for the same photo share one render.
+	s.flightMu.Lock()
+	if call, ok := s.flight[path]; ok {
+		s.flightMu.Unlock()
+		select {
+		case <-call.done:
+			return call.path, call.err
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+	call := &flightCall{done: make(chan struct{})}
+	s.flight[path] = call
+	s.flightMu.Unlock()
+
+	// Finish the render even if this particular viewer goes away.
+	work, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+	call.err = s.render(work, items, path)
+	cancel()
+	if call.err == nil {
+		call.path = path
+	}
+	s.flightMu.Lock()
+	delete(s.flight, path)
+	s.flightMu.Unlock()
+	close(call.done)
+	return call.path, call.err
+}
+
+func decodable(name string) bool {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".jpg", ".jpeg", ".png":
+		return true
+	}
+	return false
+}
+
+// render prepares the frame for one photo, or for two side by side, and
+// stores it at path.
+func (s *Service) render(ctx context.Context, items []Item, path string) error {
+	// Decoding a large photo needs a lot of memory; do one frame at a time.
+	select {
+	case s.renderSem <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	defer func() { <-s.renderSem }()
+
+	var frame []byte
+	var err error
+	if len(items) == 2 {
+		pair := NewPairRenderer(s.layout())
+		for _, item := range items {
+			err = s.withImage(ctx, item, pair.Add)
+			if err != nil {
+				return fmt.Errorf("%s: %w", item.Name, err)
+			}
+		}
+		frame, err = pair.JPEG()
+	} else {
+		err = s.withImage(ctx, items[0], func(data []byte, applyExif bool) error {
+			var err error
+			frame, err = Render(data, applyExif, s.layout())
+			return err
+		})
+	}
+	if err != nil {
+		return fmt.Errorf("%s: %w", items[0].Name, err)
+	}
+
+	tmp := path + ".part"
+	if err := os.WriteFile(tmp, frame, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	s.flightMu.Lock()
+	s.writes++
+	evict := s.writes%50 == 0
+	s.flightMu.Unlock()
+	if evict {
+		s.evict()
+	}
+	return nil
+}
+
+// withImage fetches a photo and hands its data to use. Full files give the
+// sharpest result, but only in formats that can be decoded here; when use
+// cannot work with the full file (HEIC, RAW), it is given the source's
+// preview instead.
+func (s *Service) withImage(ctx context.Context, item Item, use func(data []byte, applyExif bool) error) error {
+	src := s.opt.Source
+	useOriginal := !src.HasPreviews() || (s.opt.PreferOriginal && decodable(item.Name))
+	try := func(original bool) error {
+		data, upright, err := src.Fetch(ctx, item, original)
+		if err != nil {
+			return err
+		}
+		s.learnShape(item, data, upright)
+		return use(data, !upright)
+	}
+	err := try(useOriginal)
+	if err != nil && useOriginal && src.HasPreviews() && ctx.Err() == nil {
+		s.opt.Log.Debug("original not usable, using preview", "photo", item.Name, "err", err)
+		err = try(false)
+	}
+	return err
+}
+
+// evict keeps the frame cache under its size limit, removing the frames that
+// were used least recently.
+func (s *Service) evict() {
+	entries, err := os.ReadDir(s.opt.CacheDir)
+	if err != nil {
+		return
+	}
+	type file struct {
+		path string
+		size int64
+		mod  time.Time
+	}
+	var files []file
+	var total int64
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !(strings.HasSuffix(name, ".jpg") || strings.HasSuffix(name, ".vid") || strings.HasSuffix(name, ".part")) {
+			continue
+		}
+		fi, err := e.Info()
+		if err != nil {
+			continue
+		}
+		p := filepath.Join(s.opt.CacheDir, name)
+		// Leftovers of an interrupted render.
+		if strings.HasSuffix(name, ".part") && time.Since(fi.ModTime()) > time.Hour {
+			_ = os.Remove(p)
+			continue
+		}
+		files = append(files, file{p, fi.Size(), fi.ModTime()})
+		total += fi.Size()
+	}
+	if total <= s.opt.CacheBytes {
+		return
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].mod.Before(files[j].mod) })
+	target := s.opt.CacheBytes * 9 / 10
+	for _, f := range files {
+		if total <= target {
+			break
+		}
+		if os.Remove(f.path) == nil {
+			total -= f.size
+		}
+	}
+}
+
+// smallest is the size below which a picture is taken to be a thumbnail, an
+// icon or something sent in a chat rather than a photo: 60 KB. A photo from
+// any camera or phone of the last twenty years is several times that.
+const smallest = 60 << 10
+
+// screenshotNames are what phones and computers call their screenshots, in
+// the languages PiDash speaks and a few more.
+var screenshotNames = []string{"screenshot", "screen shot", "screen_shot", "bildschirmfoto", "capture d", "capture_d", "schermata", "screen-", "screencapture", "captura de pantalla"}
+
+// odd reports whether a picture is in a photo folder without being a photo
+// for the wall: a screenshot by its name, or a very small file.
+func odd(it Item) bool {
+	if it.Size > 0 && it.Size < smallest {
+		return true
+	}
+	name := strings.ToLower(it.Name)
+	for _, s := range screenshotNames {
+		if strings.Contains(name, s) {
+			return true
+		}
+	}
+	return false
+}
