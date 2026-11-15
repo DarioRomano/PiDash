@@ -257,6 +257,8 @@ type App struct {
 	Zoom      float64 `json:"zoom,omitempty"`
 	AdBlock   bool    `json:"adblock,omitempty"`
 	UserAgent string  `json:"userAgent,omitempty"`
+	// Arrows lets the remote's arrows move around a website made for a mouse.
+	Arrows bool `json:"arrows,omitempty"`
 	// Detail describes a KindFile entry for display; it is not stored.
 	Detail string `json:"detail,omitempty"`
 }
@@ -288,8 +290,8 @@ var Presets = []Preset{
 	{ID: "synology-photos", Name: "Synology Photos", Description: "Browse the photo app of your NAS",
 		NeedsURL: true, URLHint: "http://192.168.1.20:5000/?launchApp=SYNO.Foto.AppInstance",
 		App: config.App{Browser: config.BrowserChromium}},
-	{ID: "spotify", Name: "Spotify", Description: "The Spotify web player. Works best with a mouse; the remote's OK and play button work on what is selected",
-		App: config.App{URL: "https://open.spotify.com/", Browser: config.BrowserChromium, Background: true}},
+	{ID: "spotify", Name: "Spotify", Description: "The Spotify web player. It is made for a mouse: the remote's arrows go from one thing on the page to the next, and OK presses it",
+		App: config.App{URL: "https://open.spotify.com/", Browser: config.BrowserChromium, Background: true, Arrows: true}},
 	{ID: "plex", Name: "Plex", Description: "The Plex web player",
 		App: config.App{URL: "https://app.plex.tv/desktop", Browser: config.BrowserChromium}},
 	{ID: "moonlight", Name: "Moonlight", Description: "Game streaming from your PC. Needs Moonlight installed", Console: true,
@@ -819,9 +821,12 @@ func resolve(a App, base config.Config, installed []desktop.Entry) (config.App, 
 			return config.App{}, errors.New("a name is needed")
 		}
 		app := config.App{ID: slug(name), Name: name, URL: strings.TrimSpace(a.URL), Browser: a.Browser,
-			AdBlock: a.AdBlock, UserAgent: strings.TrimSpace(a.UserAgent), Zoom: a.Zoom}
+			AdBlock: a.AdBlock, UserAgent: strings.TrimSpace(a.UserAgent), Zoom: a.Zoom, Arrows: a.Arrows}
 		if app.AdBlock {
 			app.Browser = config.BrowserFirefox // the ad blocker only exists for Firefox
+		}
+		if app.Browser == config.BrowserFirefox {
+			app.Arrows = false // moving with the arrows only exists in Chromium
 		}
 		return app, nil
 	}
@@ -841,7 +846,7 @@ func describe(app config.App) App {
 		}
 	}
 	if app.URL != "" {
-		return App{Kind: KindWeb, ID: app.ID, Name: app.Name, URL: app.URL, Browser: app.Browser, AdBlock: app.AdBlock, UserAgent: app.UserAgent, Zoom: app.Zoom}
+		return App{Kind: KindWeb, ID: app.ID, Name: app.Name, URL: app.URL, Browser: app.Browser, AdBlock: app.AdBlock, UserAgent: app.UserAgent, Zoom: app.Zoom, Arrows: app.Arrows}
 	}
 	return App{Kind: KindFile, ID: app.ID, Name: app.Name, Detail: app.Command}
 }

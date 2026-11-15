@@ -1259,10 +1259,12 @@ a program.
 
 **Spotify** in the list of ready-made apps opens the Spotify web player in
 Chromium, and keeps playing when you return to the dashboard (see
-[Now playing](#now-playing)). It is made for a mouse: with only the TV remote, OK and the play
-button work on whatever is selected, but moving around the page needs a mouse
-or the phone's touchpad. Setting its size to 150% or more helps on a 4K
-screen.
+[Now playing](#now-playing)). The player is made for a mouse, so PiDash has
+the browser [move with the arrows](#websites-made-for-a-mouse): the remote's
+arrows go from one cover, button or list entry to the nearest in their
+direction, OK presses it, and the remote's play button starts and pauses.
+Typing into the search field needs the phone's keyboard. Setting its size to
+150% or more helps on a 4K screen.
 
 #### YouTube, Netflix and other websites
 
@@ -1311,6 +1313,22 @@ url = "http://192.168.1.20:5000/?launchApp=SYNO.Foto.AppInstance"
 If your NAS uses HTTPS with a self-signed certificate, the browser will show a
 warning page first. Use the plain `http://` address on your home network, or a
 real certificate.
+
+#### Websites made for a mouse
+
+YouTube's and Netflix's TV pages are made for a remote. Most other websites
+are made for a mouse, and the arrows of a remote only scroll them. For such
+a site, tick **Made for a mouse: let the remote's arrows move around the
+page** when adding it under **Apps** (in `config.toml`: `arrows = true`).
+Chromium then moves a highlight from one link or button to the nearest one
+in the direction of the arrow, scrolling as needed, and **OK** presses it.
+Spotify's tile has this by itself.
+
+It suits pages of links, covers and buttons. Sliders, maps and things that
+are dragged still need a pointer: the phone's touchpad
+([Phone as mouse and keyboard](#phone-as-mouse-and-keyboard)) or a mouse. A
+page that uses the arrows itself keeps them. It is not available for a site
+opened in Firefox.
 
 #### Things to know about website apps
 
@@ -1578,6 +1596,10 @@ fills the gap:
   buttons are passed on as numbers. Arrows already work by themselves.
 - **Holding Back for two seconds** closes the app and returns to the dashboard.
   Holding **Esc** on a keyboard does the same.
+- **Pressing Back three times quickly** does so too. Some TVs, Samsung's among
+  them, never tell the Pi that a button is being held: however long the
+  finger stays, one press arrives. The first two presses still go to the app
+  as Back.
 
 Buttons go to whichever window has the keyboard. An app's window gets it when
 it opens, but can lose it, for example when the TV is switched off and on
@@ -1593,10 +1615,11 @@ your user to be in the `input` group, which is the case for the first user on
 Raspberry Pi OS, and the one system rule the installer adds. The installer and
 `doctor.sh` tell you if either is missing.
 
-Some TVs do not report that a button is being held, or report it as a quick
-series of presses. PiDash copes with the second kind. If holding Back still
-does nothing, pick a button you do not otherwise need, such as a colour key,
-and make it act at once:
+Some TVs report a held button as a quick series of presses, which PiDash
+takes for holding. For those that report nothing, the three presses are
+there; how many it takes is `app_exit_presses` under `[input]` (0 switches it
+off). A button you do not otherwise need, such as a colour key, can also be
+made to leave an app at once:
 
 ```toml
 [input]

@@ -350,3 +350,89 @@ func TestWhoseButtonsAControllerHas(t *testing.T) {
 		}
 	}
 }
+
+func TestBackPressedThreeTimesQuicklyLeavesTheApp(t *testing.T) {
+	// A TV that says nothing about a button being held: every press is a
+	// press and a release, however long the finger stays.
+	h := newRemoteHarness(time.Hour)
+	h.ExitPresses = 3
+	h.appRunning = true
+	exits := func() int {
+		time.Sleep(30 * time.Millisecond) // leaving happens beside the reading of buttons
+		_, _, n := h.snapshot()
+		return n
+	}
+
+	// Twice is going back twice inside the app, as ever.
+	h.press(keyExit)
+	h.press(keyExit)
+	if n := exits(); n != 0 {
+		t.Fatalf("two presses of Back left the app")
+	}
+	if _, taps, _ := h.snapshot(); len(taps) != 2 || taps[0] != keyEsc {
+		t.Errorf("the app got %v, want Escape twice", taps)
+	}
+	// The third leaves, and is not passed on to the app that is closing.
+	h.press(keyExit)
+	if n := exits(); n != 1 {
+		t.Fatalf("three quick presses of Back: left %d times, want once", n)
+	}
+	if _, taps, _ := h.snapshot(); len(taps) != 2 {
+		t.Errorf("the last press was passed on as well: %v", taps)
+	}
+
+	// Another button in between, or a pause, starts the count again.
+	h.mu.Lock()
+	h.appRunning = true
+	h.mu.Unlock()
+	h.press(keyExit)
+	h.press(keyExit)
+	h.press(keyOK)
+	h.press(keyExit)
+	h.press(keyExit)
+	time.Sleep(pressGap + 50*time.Millisecond)
+	h.press(keyExit)
+	h.press(keyExit)
+	if n := exits(); n != 1 {
+		t.Errorf("presses that were not three in a row left the app: %d", n)
+	}
+
+	// A keyboard's Esc is pressed quickly for other reasons, and can be held.
+	h.press(keyEsc)
+	h.press(keyEsc)
+	h.press(keyEsc)
+	h.press(keyEsc)
+	if n := exits(); n != 1 {
+		t.Errorf("Esc pressed several times left the app")
+	}
+
+	// On the dashboard, Back three times is Back three times.
+	h.mu.Lock()
+	h.appRunning = false
+	h.actions = nil
+	h.mu.Unlock()
+	h.press(keyExit)
+	h.press(keyExit)
+	h.press(keyExit)
+	if actions, _, n := h.snapshot(); n != 1 || len(actions) != 3 {
+		t.Errorf("on the dashboard: %v, exits %d", actions, n)
+	}
+}
+
+func TestThreePressesThatLookLikeAHoldLeaveOnlyOnce(t *testing.T) {
+	// Presses this close together also count as one held button. Having
+	// left by the count, the hold must not act again: on the dashboard it
+	// would mean "to the desktop".
+	h := newRemoteHarness(250 * time.Millisecond)
+	h.ExitPresses = 3
+	h.appRunning = true
+	for i := 0; i < 3; i++ {
+		h.press(keyExit)
+		time.Sleep(20 * time.Millisecond)
+	}
+	time.Sleep(400 * time.Millisecond)
+	actions, _, exits := h.snapshot()
+	if exits != 1 || len(actions) != 0 {
+		t.Errorf("left %d times, and the dashboard was told %v", exits, actions)
+	}
+}

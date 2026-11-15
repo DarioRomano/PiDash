@@ -331,6 +331,9 @@ path = "/home/pi/Pictures"
 #   adblock     true installs uBlock Origin into that profile (Firefox only)
 #   user_agent  optional: pretend to be another device, for sites that only
 #               show their TV interface to TVs
+#   arrows      true lets the remote's arrows go from one link or button on
+#               the page to the next, and OK press it: for sites made for a
+#               mouse, such as Spotify's player (Chromium only)
 #
 # A program:
 #   command     what to run, exactly as you would type it in a terminal
@@ -397,6 +400,8 @@ url = "https://www.netflix.com/browse"
 #   - inside an app, OK is passed on as Enter and Back as Escape
 #   - holding Back (or Esc on a keyboard) for two seconds leaves the app;
 #     on the dashboard it returns to the desktop
+#   - pressing Back three times quickly leaves the app too: some TVs
+#     (Samsung's among them) never say that a button is being held
 # Nothing needs to be set for that. The options below only add to it.
 #
 # Names are Linux key names. To see what a button on your remote is called:
@@ -404,9 +409,11 @@ url = "https://www.netflix.com/browse"
 [input]
 # Extra keys that leave an app when held, besides Back/Exit and Esc.
 app_exit_keys = []
-# How long to hold. If your TV does not report held buttons, add a key you do
-# not otherwise need above (a colour key, say) and set this to "0s".
+# How long to hold. "0s" makes the keys above act on the first press, which
+# suits a key you do not otherwise need (a colour key, say).
 app_exit_hold = "2s"
+# How many quick presses of the remote's Back in a row leave an app. 0 = off.
+app_exit_presses = 3
 
 # Inside website apps (YouTube, Netflix, …) a game controller presses
 # keyboard keys: stick and direction pad the arrows, the bottom button Enter,

@@ -156,6 +156,14 @@ func TestChromiumWebApp(t *testing.T) {
 			t.Errorf("argv is missing %s: %q", flag, launch.Argv)
 		}
 	}
+	if slices.Contains(launch.Argv, "--enable-spatial-navigation") {
+		t.Errorf("the arrows were taken from a site that uses them itself: %q", launch.Argv)
+	}
+	// A site made for a mouse: the arrows move from link to link.
+	app.Arrows = true
+	if launch, err = PrepareWebApp(app, data, []string{"DISPLAY=:0"}, quiet); err != nil || !slices.Contains(launch.Argv, "--enable-spatial-navigation") {
+		t.Errorf("arrows = true: %v, %q", err, launch.Argv)
+	}
 	prefs, _ := os.ReadFile(filepath.Join(profile, "Default", "Preferences"))
 	if strings.Contains(string(prefs), "Crashed") || strings.Contains(string(prefs), `"exited_cleanly":false`) {
 		t.Errorf("crash flag not cleared: %s", prefs)

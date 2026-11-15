@@ -398,7 +398,7 @@ func main() {
 	var remote *input.Remote
 	if !bare {
 		remote = &input.Remote{
-			Actions: remoteActions, ExitKeys: exitKeys, Hold: cfg.Input.AppExitHold.Duration, Log: log,
+			Actions: remoteActions, ExitKeys: exitKeys, Hold: cfg.Input.AppExitHold.Duration, ExitPresses: cfg.Input.AppExitPresses, Log: log,
 			AppRunning: func() bool { return appManager.Status().Running != "" },
 			OnChannel:  func(up bool) bool { return srv != nil && srv.ChannelKey(up) },
 			OnAction: func(action string) {

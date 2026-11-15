@@ -2371,7 +2371,7 @@ test("after an update the TV says once what is new; a first start says nothing",
     await page.waitForFunction(() => document.getElementById("whatsnew").classList.contains("open"));
     const said = await page.evaluate(() => ({ title: document.querySelector("#whatsnew h2").textContent, lines: [...document.querySelectorAll("#whatsnew li")].map((l) => l.textContent) }));
     assert.equal(said.title, `New in ${version}`);
-    assert.ok(said.lines.length >= 5 && said.lines.some((l) => /Trips/.test(l)) && said.lines.some((l) => /quiz/.test(l)), String(said.lines));
+    assert.ok(said.lines.length >= 3 && said.lines.some((l) => /Back pressed three times/.test(l)) && said.lines.some((l) => /Spotify/.test(l)), String(said.lines));
     // Any button closes it, and does nothing else.
     await remote.press("select");
     assert.equal(await open(), false);

@@ -896,3 +896,42 @@ func TestOtherDevicesOnTheTVFromTheSettingsPage(t *testing.T) {
 		t.Fatalf("removed, but still there: %+v", cfg.TV.Inputs)
 	}
 }
+
+func TestTheRemotesArrowsOnWebsitesMadeForAMouse(t *testing.T) {
+	s, _ := open(t)
+	err := s.Save(Update{Apps: &[]App{
+		{Kind: KindPreset, Preset: "spotify"},
+		{Kind: KindPreset, Preset: "netflix"},
+		{Kind: KindWeb, Name: "A shop", URL: "https://example.org/", Arrows: true},
+		{Kind: KindWeb, Name: "A paper", URL: "https://example.com/", Arrows: true, AdBlock: true},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := s.Effective()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Spotify's page is one: its tile has it without anything being chosen,
+	// also a tile that was added before this existed.
+	if a := cfg.Apps[0]; !a.Arrows || a.Browser != config.BrowserChromium {
+		t.Errorf("spotify = %+v", a)
+	}
+	// A site made for a TV's remote uses the arrows itself.
+	if a := cfg.Apps[1]; a.Arrows {
+		t.Errorf("netflix = %+v", a)
+	}
+	if a := cfg.Apps[2]; !a.Arrows {
+		t.Errorf("the website lost the choice: %+v", a)
+	}
+	// With the ad blocker the site opens in Firefox, which cannot do it.
+	if a := cfg.Apps[3]; a.Arrows || a.Browser != config.BrowserFirefox {
+		t.Errorf("a site in Firefox = %+v", a)
+	}
+	// And the settings page is told again what was chosen.
+	for _, a := range s.View().Apps {
+		if a.Name == "A shop" && !a.Arrows {
+			t.Errorf("the page is not told: %+v", a)
+		}
+	}
+}

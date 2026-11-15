@@ -30,6 +30,10 @@ type Remote struct {
 	// ExitKeys leave an app when held for Hold.
 	ExitKeys []uint16
 	Hold     time.Duration
+	// ExitPresses is how many quick presses of Back in a row leave an app
+	// as well: for TVs that never say a button of their remote is being
+	// held. Less than two switches it off.
+	ExitPresses int
 	// AppRunning reports whether an app has the screen.
 	AppRunning func() bool
 	// OnAction delivers an action to the dashboard.
@@ -74,6 +78,8 @@ type Remote struct {
 
 	hold        *holdDetector
 	tapWarnOnce sync.Once
+	// The presses of Back that followed one another quickly, per device.
+	runs map[string]pressRun
 
 	// A held direction, per device: stop ends its repeating.
 	repeatMu sync.Mutex
@@ -189,7 +195,15 @@ func (r *Remote) key(device string, code uint16, value int32) {
 		name = filepath.Base(device)
 	}
 	r.last = Heard{Device: name, Key: KeyName(code), Action: r.Actions[code], At: time.Now()}
+	left := r.countPress(device, code, pad)
 	r.seenMu.Unlock()
+	if left {
+		// Back, Back, Back: out of the app. The presses may also look like
+		// one long hold, which must not act a second time.
+		r.hold.defuse(device, code)
+		go r.OnAppExit()
+		return
+	}
 
 	// Logo button held, and up or down: the TV's volume. The logo button was
 	// not being held to leave the app after all.
@@ -209,6 +223,50 @@ func (r *Remote) key(device string, code uint16, value int32) {
 	if isArrowAction(r.Actions[code]) || (pad && isArrow(padKeys[code])) {
 		r.startRepeat(device, func() { r.press(code, pad, true) })
 	}
+}
+
+// pressRun is a row of presses of the same button, each soon after the last.
+type pressRun struct {
+	code uint16
+	n    int
+	last time.Time
+}
+
+// pressGap is how soon a press must follow the one before to count with it.
+const pressGap = 700 * time.Millisecond
+
+// countPress notes a press and reports whether it was the last of the quick
+// presses of Back that leave an app. Only the remote's Back counts: Esc on a
+// keyboard and a controller's logo button are pressed in quick succession
+// for other reasons, and can be held. Called with seenMu held.
+func (r *Remote) countPress(device string, code uint16, pad bool) bool {
+	counts := r.ExitPresses >= 2 && !pad && code != keyEsc && code != btnMode && r.AppRunning()
+	if counts {
+		counts = false
+		for _, k := range r.ExitKeys {
+			counts = counts || k == code
+		}
+	}
+	if !counts {
+		delete(r.runs, device) // another button in between: the row is over
+		return false
+	}
+	now := time.Now()
+	run := r.runs[device]
+	if run.code != code || now.Sub(run.last) > pressGap {
+		run = pressRun{code: code}
+	}
+	run.n++
+	run.last = now
+	if run.n >= r.ExitPresses {
+		delete(r.runs, device)
+		return true
+	}
+	if r.runs == nil {
+		r.runs = map[string]pressRun{}
+	}
+	r.runs[device] = run
+	return false
 }
 
 // press acts on a button: once when it is pressed, and for a held direction

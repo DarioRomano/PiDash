@@ -3,11 +3,8 @@ package server
 // whatsNew is shown on the TV once after an update: what this version
 // brought, in a few lines. It is rewritten for every release.
 var whatsNew = []string{
-	"Trips: the journeys your photos tell of, worked out from where and when they were taken.",
-	"A photo quiz: which year was this, and where?",
-	"Art mode: paintings from a museum in place of the photos. Up on the dashboard switches.",
-	"A rain radar beside the forecast: Right on the forecast opens it.",
-	"Other devices on the TV, such as a games console, as tiles (Settings, Apps and radio).",
-	"With a game controller, the screen names its buttons; and a controller that switches the TV on opens the games.",
-	"A website app can load browser extensions that you put into its folder; the guide says how.",
+	"Back pressed three times quickly leaves an app: for TVs that do not say when a button of their remote is held.",
+	"Spotify with the remote: the arrows go from one thing on the page to the next, and OK presses it.",
+	"The same for any website made for a mouse: a tick when adding it under Settings, Apps and radio.",
+	"PiDash also runs on a Raspberry Pi 4, on other boards and PCs, and as a container; the guide says how.",
 }

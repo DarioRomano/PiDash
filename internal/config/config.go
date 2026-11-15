@@ -219,6 +219,10 @@ type Input struct {
 	AppExitKeys []string `toml:"app_exit_keys"`
 	// AppExitHold is how long the key must be held; "0s" acts on the first press.
 	AppExitHold Duration `toml:"app_exit_hold"`
+	// AppExitPresses is how many quick presses of the remote's Back in a
+	// row leave an app as well, for TVs that do not report a held button.
+	// 0 switches it off.
+	AppExitPresses int `toml:"app_exit_presses"`
 	// RemoteKeys maps extra Linux key names from the TV remote (KEY_RED, …) to
 	// dashboard actions, on top of the built-in ones for OK, Back and so on.
 	RemoteKeys map[string]string `toml:"remote_keys"`
@@ -590,6 +594,10 @@ type App struct {
 	// Zoom enlarges a web app, for sites drawn too small on a 4K screen:
 	// 1.5 shows everything half as large again. 0 or 1 leaves it alone.
 	Zoom float64 `toml:"zoom"`
+	// Arrows makes the arrow keys move from one thing on a website to the
+	// next (links, buttons), so that a site made for a mouse can be used
+	// with the TV's remote. Chromium only.
+	Arrows bool `toml:"arrows"`
 }
 
 var appIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
@@ -615,7 +623,7 @@ func Default() Config {
 	return Config{
 		Server:  Server{Listen: ":8080"},
 		Display: Display{Sounds: true, SafeArea: 0.03, DebugKeys: true, PixelShift: 4, AppRowTimeout: 30, Clock24h: true, Performance: "balanced"},
-		Input: Input{PadInWebsites: true, AppExitKeys: []string{}, AppExitHold: Duration{2 * time.Second}, Keys: map[string]string{
+		Input: Input{PadInWebsites: true, AppExitKeys: []string{}, AppExitHold: Duration{2 * time.Second}, AppExitPresses: 3, Keys: map[string]string{
 			"ArrowUp":        "up",
 			"ArrowDown":      "down",
 			"ArrowLeft":      "left",
@@ -762,14 +770,17 @@ func (c *Config) Finish() error {
 			if a.Browser != BrowserFirefox {
 				a.AdBlock = false
 			}
+			if a.Arrows && a.Browser != BrowserChromium {
+				return fmt.Errorf("apps[%d] (%s): arrows = true needs browser = %q", i, a.ID, BrowserChromium)
+			}
 			if a.Zoom != 0 && (a.Zoom < 0.5 || a.Zoom > 4) {
 				return fmt.Errorf("apps[%d] (%s): zoom must be between 0.5 and 4, got %v", i, a.ID, a.Zoom)
 			}
 			if strings.ContainsAny(a.UserAgent, "\r\n") {
 				return fmt.Errorf("apps[%d] (%s): user_agent must be a single line", i, a.ID)
 			}
-		} else if a.Browser != "" || a.AdBlock || a.UserAgent != "" || a.Zoom != 0 {
-			return fmt.Errorf("apps[%d] (%s): browser, adblock, user_agent and zoom only apply to web apps (url)", i, a.ID)
+		} else if a.Browser != "" || a.AdBlock || a.UserAgent != "" || a.Zoom != 0 || a.Arrows {
+			return fmt.Errorf("apps[%d] (%s): browser, adblock, user_agent, zoom and arrows only apply to web apps (url)", i, a.ID)
 		}
 	}
 	if err := c.Photos.validate(); err != nil {
@@ -797,6 +808,9 @@ func (c *Config) Finish() error {
 	}
 	if c.Input.AppExitHold.Duration < 0 || c.Input.AppExitHold.Duration > 10*time.Second {
 		return fmt.Errorf("input.app_exit_hold must be between 0s and 10s")
+	}
+	if n := c.Input.AppExitPresses; n != 0 && (n < 2 || n > 6) {
+		return fmt.Errorf("input.app_exit_presses must be 0 (off) or between 2 and 6, got %d", n)
 	}
 	// Tidies addresses and fills in defaults, so it must work on c itself.
 	if err := c.validateExtras(); err != nil {

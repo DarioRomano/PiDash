@@ -20,6 +20,7 @@ interface AppEntry {
   url?: string;
   browser?: string;
   adblock?: boolean;
+  arrows?: boolean;
   userAgent?: string;
   detail?: string;
 }
@@ -770,7 +771,7 @@ function appDetail(a: AppEntry): string {
     if (p?.needsUrl) return a.url ?? "";
     return p?.description ?? "";
   }
-  if (a.kind === "web") return (a.url ?? "") + (a.adblock ? "  ·  ads blocked" : "");
+  if (a.kind === "web") return (a.url ?? "") + (a.adblock ? "  ·  ads blocked" : a.arrows ? "  ·  " + t("arrows move around the page") : "");
   if (a.kind === "desktop") {
     if (a.missing) return "Not installed on the Pi any more. Its tile is hidden until it is back.";
     return info.installed.find((e) => e.id === a.desktop)?.comment || "Installed on the Pi";
@@ -877,6 +878,7 @@ function showAddFields() {
   $("add-installed-row").hidden = !installed;
   $("add-name-row").hidden = !other;
   $("add-adblock-row").hidden = !other;
+  $("add-arrows-row").hidden = !other;
   $("add-url-row").hidden = !(other || p?.needsUrl);
   $<HTMLInputElement>("add-url").placeholder = other ? "https://…" : (p?.urlHint ?? "");
   let desc = other ? "Opens the address fullscreen, with its own login." : (p?.description ?? "");
@@ -917,7 +919,9 @@ $("add-btn").addEventListener("click", () => {
     const name = val("add-name").trim();
     if (!name) return setResult(result, "Give it a name.", "error");
     if (!/^https?:\/\/\S+\.\S+|^https?:\/\/[^\s/]+/.test(url)) return setResult(result, "Enter the full address, starting with http:// or https://", "error");
-    apps.push({ kind: "web", name, url, adblock: $<HTMLInputElement>("add-adblock").checked });
+    const adblock = $<HTMLInputElement>("add-adblock").checked;
+    // Moving with the arrows is Chromium's; the ad blocker opens Firefox.
+    apps.push({ kind: "web", name, url, adblock, ...(!adblock && $<HTMLInputElement>("add-arrows").checked ? { arrows: true } : {}) });
   } else if (choice.startsWith(EMULATOR)) {
     const em = emulatorChosen();
     if (!em) return;
@@ -936,6 +940,7 @@ $("add-btn").addEventListener("click", () => {
   $<HTMLInputElement>("add-name").value = "";
   $<HTMLInputElement>("add-url").value = "";
   $<HTMLInputElement>("add-adblock").checked = false;
+  $<HTMLInputElement>("add-arrows").checked = false;
   renderApps();
   refresh();
 });

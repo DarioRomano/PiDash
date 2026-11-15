@@ -135,6 +135,12 @@ func PrepareWebApp(app config.App, dataDir string, env []string, log *slog.Logge
 			// Everything is drawn larger, as on a screen with bigger pixels.
 			argv = append(argv, "--force-device-scale-factor="+strconv.FormatFloat(app.Zoom, 'f', 2, 64))
 		}
+		if app.Arrows {
+			// A site made for a mouse: the arrows go from one link or button
+			// to the nearest in their direction, and OK presses it. A site
+			// that uses the arrows itself keeps them.
+			argv = append(argv, "--enable-spatial-navigation")
+		}
 		return WebLaunch{Argv: append(argv, app.URL), Env: env}, nil
 	}
 	return WebLaunch{}, fmt.Errorf("unknown browser %q", app.Browser)
