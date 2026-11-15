@@ -260,7 +260,8 @@ radar = true
 # On the TV: left/right = previous/next photo, play/pause = hold the current
 # one, up = show the photo's folder and date.
 [photos]
-# "synology" = Synology Photos on your NAS, "folder" = a folder on this Pi,
+# "synology" = Synology Photos on your NAS, "immich" = an Immich server,
+# "share" = a folder shared on the network, "folder" = a folder on this Pi,
 # "" = no photos.
 source = ""
 # How long each photo stays on screen.
@@ -313,6 +314,25 @@ insecure_tls = false
 # "original": prepare each photo from the full file for the sharpest picture.
 # "preview":  use the NAS's ready-made 1280-pixel preview. Faster, slightly soft.
 quality = "original"
+
+# An Immich server. The key is made in Immich under Account Settings, API
+# Keys; reading photos, albums and people is all it needs to be allowed.
+[photos.immich]
+url = "http://YOUR-SERVER:2283"
+api_key = ""
+insecure_tls = false
+# "original": the full file where it is a JPEG, PNG or WebP. "preview":
+# always the copy Immich keeps for viewing. Faster, slightly soft.
+quality = "original"
+
+# A folder shared on the network (SMB): by a NAS, a router, a computer.
+# PiDash reads it directly; nothing is mounted.
+[photos.share]
+host = "nas.local"     # the computer's name or address
+name = "photo"         # the share's name
+folder = ""            # a folder inside it; empty for all of it
+username = ""          # empty for a share that guests may read
+password = ""
 
 # A folder on this Pi, or a network share mounted on it. All its photos are
 # shown unless you narrow it down in the folder picker.

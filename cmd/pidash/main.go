@@ -780,6 +780,11 @@ func newPhotoService(cfg config.Photos, mock bool, log *slog.Logger) (*photos.Se
 		local := photos.NewLocalDir(cfg.Folder.Path)
 		local.Videos = cfg.Videos
 		src = local
+	case config.PhotoSourceImmich:
+		src = photos.NewImmich(photos.ImmichOptions{URL: cfg.Immich.URL, APIKey: cfg.Immich.APIKey, InsecureTLS: cfg.Immich.InsecureTLS})
+	case config.PhotoSourceShare:
+		src = photos.NewShare(photos.ShareOptions{Host: cfg.Share.Host, Name: cfg.Share.Name, Folder: cfg.Share.Folder,
+			Username: cfg.Share.Username, Password: cfg.Share.Password})
 	default:
 		if !mock {
 			return nil, nil
@@ -797,20 +802,21 @@ func newPhotoService(cfg config.Photos, mock bool, log *slog.Logger) (*photos.Se
 		return nil, err
 	}
 	return photos.New(photos.Options{
-		Source:         src,
-		Interval:       cfg.Interval.Duration,
-		Refresh:        cfg.Refresh.Duration,
-		PreferOriginal: cfg.Synology.Quality == config.PhotoQualityOriginal,
-		Motion:         cfg.Motion,
-		PairPortraits:  cfg.PairPortraits,
-		OnThisDay:      cfg.OnThisDay,
-		Videos:         cfg.Videos,
-		SkipOdd:        cfg.SkipOdd,
-		Places:         cfg.Map,
-		StatePath:      filepath.Join(dataDir, name+"-selection.json"),
-		CacheDir:       filepath.Join(cacheRoot, "pidash", name),
-		CacheBytes:     int64(cfg.CacheMB) << 20,
-		Log:            log,
+		Source:   src,
+		Interval: cfg.Interval.Duration,
+		Refresh:  cfg.Refresh.Duration,
+		PreferOriginal: (cfg.Source == config.PhotoSourceImmich && cfg.Immich.Quality == config.PhotoQualityOriginal) ||
+			(cfg.Source != config.PhotoSourceImmich && cfg.Synology.Quality == config.PhotoQualityOriginal),
+		Motion:        cfg.Motion,
+		PairPortraits: cfg.PairPortraits,
+		OnThisDay:     cfg.OnThisDay,
+		Videos:        cfg.Videos,
+		SkipOdd:       cfg.SkipOdd,
+		Places:        cfg.Map,
+		StatePath:     filepath.Join(dataDir, name+"-selection.json"),
+		CacheDir:      filepath.Join(cacheRoot, "pidash", name),
+		CacheBytes:    int64(cfg.CacheMB) << 20,
+		Log:           log,
 	}), nil
 }
 

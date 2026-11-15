@@ -357,6 +357,8 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("GET /api/settings", s.handleSettings)
 	s.mux.HandleFunc("PUT /api/settings", s.handleSettingsSave)
 	s.mux.HandleFunc("POST /api/settings/test-synology", s.handleTestSynology)
+	s.mux.HandleFunc("POST /api/settings/test-immich", s.handleTestImmich)
+	s.mux.HandleFunc("POST /api/settings/test-share", s.handleTestShare)
 	s.mux.HandleFunc("POST /api/settings/test-weather", s.handleTestWeather)
 	s.mux.HandleFunc("POST /api/settings/test-calendar", s.handleTestCalendar)
 	s.mux.HandleFunc("POST /api/settings/home-entities", s.handleHomeEntities)
@@ -860,6 +862,60 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"restarting": true})
 	// Let the answer reach the page before the server goes away.
 	time.AfterFunc(400*time.Millisecond, s.requestRestart)
+}
+
+// handleTestImmich tries the Immich server and key that are on the page.
+func (s *Server) handleTestImmich(w http.ResponseWriter, r *http.Request) {
+	if !s.pin.allow(w, r) {
+		return
+	}
+	var req settings.Immich
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if req.APIKey == "" && s.settings != nil {
+		req.APIKey = s.settings.ImmichKey() // "unchanged"
+	}
+	if strings.TrimSpace(req.URL) == "" || req.APIKey == "" {
+		http.Error(w, "Enter the address and the API key first.", http.StatusUnprocessableEntity)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	who, err := photos.NewImmich(photos.ImmichOptions{URL: req.URL, APIKey: req.APIKey, InsecureTLS: req.InsecureTLS}).Check(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "user": who})
+}
+
+// handleTestShare tries the shared folder that is on the page.
+func (s *Server) handleTestShare(w http.ResponseWriter, r *http.Request) {
+	if !s.pin.allow(w, r) {
+		return
+	}
+	var req settings.Share
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if req.Password == "" && s.settings != nil {
+		req.Password = s.settings.SharePassword(req.Username) // "unchanged"
+	}
+	if strings.TrimSpace(req.Host) == "" || strings.TrimSpace(req.Name) == "" {
+		http.Error(w, "Enter the computer and the name of the share first.", http.StatusUnprocessableEntity)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	n, err := photos.NewShare(photos.ShareOptions{Host: req.Host, Name: req.Name, Folder: req.Folder, Username: req.Username, Password: req.Password}).Check(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "entries": n})
 }
 
 // handleTestSynology tries to sign in to the NAS with the values on the page.

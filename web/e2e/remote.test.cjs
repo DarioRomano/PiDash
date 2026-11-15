@@ -2978,3 +2978,94 @@ exec sleep 600
     fs.rmSync(bin, { recursive: true, force: true });
   }
 });
+
+test("photos from Immich: set up on the settings page, tested, and then they are the slideshow", async () => {
+  const http = require("node:http");
+  const own = await startPiDash(APPS);
+  // A picture to hand out: one of PiDash's own sample photos.
+  const sample = (await (await fetch(own.base + "/api/photos/playlist?limit=1")).json()).items[0];
+  const picture = Buffer.from(await (await fetch(`${own.base}/photos/${sample.key}`)).arrayBuffer());
+  // A stand-in for an Immich server with three photos, one of them in an album.
+  const asked = [];
+  const immich = http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (d) => (body += d));
+    req.on("end", () => {
+      asked.push(`${req.method} ${req.url}`);
+      const json = (v) => {
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(v));
+      };
+      if (req.headers["x-api-key"] !== "key-of-the-tv") {
+        res.statusCode = 401;
+        return json({ message: "Invalid API key" });
+      }
+      const asset = (n) => ({ id: `asset-${n}`, type: "IMAGE", originalFileName: `IMG_${n}.jpg`, localDateTime: `2024-0${n}-03T10:00:00.000Z`, checksum: `c${n}`, isTrashed: false, visibility: "timeline", exifInfo: { city: "Reykjavik", country: "Iceland", latitude: 64.15, longitude: -21.94 } });
+      if (req.url === "/api/users/me") return json({ name: "Dario" });
+      if (req.url === "/api/albums") return json([{ id: "al-1", albumName: "Iceland", assetCount: 1 }]);
+      if (req.url.startsWith("/api/people")) return json({ people: [] });
+      if (req.url === "/api/search/metadata") {
+        const ask = JSON.parse(body);
+        return json({ assets: { items: ask.albumIds ? [asset(1)] : [asset(1), asset(2), asset(3)], nextPage: null } });
+      }
+      if (/^\/api\/assets\/asset-\d\/(original|thumbnail)/.test(req.url)) {
+        res.setHeader("Content-Type", "image/jpeg");
+        return res.end(picture);
+      }
+      res.statusCode = 404;
+      res.end("{}");
+    });
+  });
+  await new Promise((r) => immich.listen(0, "127.0.0.1", r));
+  const address = `http://127.0.0.1:${immich.address().port}`;
+  try {
+    const page = await openPage(own.base, "/settings#photos");
+    await page.waitForSelector("#main:not([hidden])");
+    assert.deepEqual(await page.evaluate(() => [...document.getElementById("p-source").options].map((o) => o.value)), ["", "synology", "immich", "share"]);
+    await page.selectOption("#p-source", "immich");
+    assert.deepEqual(await page.evaluate(() => ["p-synology", "p-immich", "p-share"].map((id) => document.getElementById(id).hidden)), [true, false, true]);
+
+    // A wrong key is said in words; the right one says whose it is.
+    await page.fill("#i-url", address);
+    await page.fill("#i-key", "wrong");
+    await page.click("#i-test");
+    await page.waitForFunction(() => /API key/.test(document.getElementById("i-result").textContent));
+    await page.fill("#i-key", "key-of-the-tv");
+    await page.click("#i-test");
+    await page.waitForFunction(() => /Connected, as Dario\./.test(document.getElementById("i-result").textContent));
+
+    await page.click("#save");
+    let status;
+    for (let i = 0; i < 150; i++) {
+      try {
+        status = await (await fetch(own.base + "/api/photos")).json();
+        if (status.source === "Immich" && status.count === 3) break;
+      } catch {
+        /* restarting */
+      }
+      assert.ok(i < 149, `the photos never came from Immich: ${JSON.stringify(status)}`);
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    // All photos, until something else is chosen; and they are shown.
+    assert.deepEqual(status.selection.folders.map((f) => f.id), ["all"]);
+    const list = (await (await fetch(own.base + "/api/photos/playlist?limit=10")).json()).items;
+    assert.deepEqual(list.map((p) => p.key).sort(), ["i-asset-1", "i-asset-2", "i-asset-3"]);
+    const shown = await fetch(`${own.base}/photos/${list[0].key}`);
+    assert.equal(shown.status, 200);
+    assert.match(shown.headers.get("content-type"), /^image\//);
+    // The key stays on the Pi: the page is only told that there is one.
+    const saved = (await (await fetch(own.base + "/api/settings")).json()).photos;
+    assert.deepEqual([saved.source, saved.immich.url, saved.immich.keySet, "apiKey" in saved.immich], ["immich", address, true, false]);
+
+    // What to show is chosen as for any source: here, an album.
+    const folders = (await (await fetch(own.base + "/api/photos/folders")).json()).folders;
+    assert.deepEqual(folders.map((f) => f.name), ["All photos", "Favourites", "Albums", "People"]);
+    const albums = (await (await fetch(own.base + "/api/photos/folders?parent=albums")).json()).folders;
+    assert.deepEqual(albums.map((f) => [f.id, f.name, f.detail]), [["album:al-1", "Iceland", "1 items"]]);
+    assert.deepEqual(page.problems, []);
+    await page.context().close();
+  } finally {
+    await own.stop();
+    await new Promise((r) => immich.close(r));
+  }
+});

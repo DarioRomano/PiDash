@@ -490,6 +490,8 @@ const (
 	PhotoSourceNone     = ""
 	PhotoSourceSynology = "synology"
 	PhotoSourceFolder   = "folder"
+	PhotoSourceImmich   = "immich"
+	PhotoSourceShare    = "share"
 )
 
 // Photos configures the background slideshow.
@@ -523,7 +525,11 @@ type Photos struct {
 	// CacheMB limits the disk space used for rendered photos.
 	CacheMB  int            `toml:"cache_mb"`
 	Synology SynologyPhotos `toml:"synology"`
-	Folder   PhotoFolder    `toml:"folder"`
+	// Immich is the connection to an Immich server, and Share the one to a
+	// shared folder on the network.
+	Immich ImmichPhotos `toml:"immich"`
+	Share  SharePhotos  `toml:"share"`
+	Folder PhotoFolder  `toml:"folder"`
 }
 
 // SynologyPhotos is the connection to Synology Photos on a NAS.
@@ -537,6 +543,32 @@ type SynologyPhotos struct {
 	// Quality is "original" (render from the full file, sharpest) or
 	// "preview" (use the NAS's ready-made 1280-pixel preview, fastest).
 	Quality string `toml:"quality"`
+}
+
+// ImmichPhotos is the connection to an Immich server.
+type ImmichPhotos struct {
+	// URL is the address Immich is opened with, e.g. "http://192.168.1.20:2283".
+	URL string `toml:"url"`
+	// APIKey is made in Immich under Account Settings, API Keys.
+	APIKey string `toml:"api_key"`
+	// InsecureTLS accepts a self-signed HTTPS certificate.
+	InsecureTLS bool `toml:"insecure_tls"`
+	// Quality is "original" (the full file where PiDash can read it,
+	// sharpest) or "preview" (Immich's smaller copy, fastest).
+	Quality string `toml:"quality"`
+}
+
+// SharePhotos is a shared folder on the network (SMB): on a NAS, a router
+// with a disk, another computer.
+type SharePhotos struct {
+	// Host is the computer's name or address, e.g. "nas.local".
+	Host string `toml:"host"`
+	// Name is the share's name; Folder a folder inside it, or empty.
+	Name   string `toml:"name"`
+	Folder string `toml:"folder"`
+	// Username and Password sign in; both empty reads as a guest.
+	Username string `toml:"username"`
+	Password string `toml:"password"`
 }
 
 // PhotoFolder is a folder of photos on the Pi or a mounted share.
@@ -678,6 +710,7 @@ func Default() Config {
 			SkipOdd:  true,
 			MapTiles: maps.DefaultURL,
 			Synology: SynologyPhotos{Quality: PhotoQualityOriginal},
+			Immich:   ImmichPhotos{Quality: PhotoQualityOriginal},
 		},
 	}
 }
@@ -868,8 +901,30 @@ func (p *Photos) validate() error {
 		if !strings.HasPrefix(p.Folder.Path, "/") {
 			return fmt.Errorf("photos.folder.path must be a full path like /home/pi/Pictures, got %q", p.Folder.Path)
 		}
+	case PhotoSourceImmich:
+		m := &p.Immich
+		m.URL = strings.TrimRight(strings.TrimSpace(m.URL), "/")
+		u, err := url.Parse(m.URL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("photos.immich.url must be the address of your Immich server, like http://192.168.1.20:2283, got %q", m.URL)
+		}
+		if strings.TrimSpace(m.APIKey) == "" {
+			return fmt.Errorf("photos.immich needs an api_key: Immich makes one under Account Settings, API Keys")
+		}
+		if m.Quality != PhotoQualityOriginal && m.Quality != PhotoQualityPreview {
+			return fmt.Errorf("photos.immich.quality must be %q or %q, got %q", PhotoQualityOriginal, PhotoQualityPreview, m.Quality)
+		}
+	case PhotoSourceShare:
+		sh := &p.Share
+		sh.Host, sh.Name = strings.TrimSpace(sh.Host), strings.TrimSpace(sh.Name)
+		if sh.Host == "" || sh.Name == "" || strings.ContainsAny(sh.Host+sh.Name, " \t\r\n") {
+			return fmt.Errorf("photos.share needs host (the computer's name or address) and name (the share's name)")
+		}
+		if sh.Username == "" && sh.Password != "" {
+			return fmt.Errorf("photos.share has a password but no username")
+		}
 	default:
-		return fmt.Errorf("photos.source must be %q, %q or empty, got %q", PhotoSourceSynology, PhotoSourceFolder, p.Source)
+		return fmt.Errorf("photos.source must be %q, %q, %q, %q or empty, got %q", PhotoSourceSynology, PhotoSourceFolder, PhotoSourceImmich, PhotoSourceShare, p.Source)
 	}
 	return nil
 }

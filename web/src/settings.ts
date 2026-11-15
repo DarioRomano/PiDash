@@ -69,6 +69,8 @@ interface Info {
     skipOdd?: boolean;
     art?: boolean;
     synology: { url: string; username: string; passwordSet: boolean; insecureTls: boolean; quality: string };
+    immich?: { url: string; keySet: boolean; insecureTls: boolean; quality: string };
+    share?: { host: string; name: string; folder: string; username: string; passwordSet: boolean };
     folderPath: string;
   };
   screen: { nightStart: string; nightEnd: string; language: string; clockPosition: string; clockSize: string; clockStyle?: string; eveningDim?: string; view: string; caption?: string; weatherDetail?: string; lockView?: boolean; background: string; performance?: string; tiles?: string; backgroundFps?: number; sounds?: boolean };
@@ -197,6 +199,8 @@ function readForm() {
         insecureTls: $<HTMLInputElement>("s-tls").checked,
         quality: val("s-quality"),
       },
+      immich: { url: val("i-url").trim(), apiKey: val("i-key").trim(), insecureTls: $<HTMLInputElement>("i-tls").checked, quality: val("i-quality") },
+      share: { host: val("sh-host").trim(), name: val("sh-name").trim(), folder: val("sh-folder").trim(), username: val("sh-user").trim(), password: val("sh-pass") },
     },
     // Night mode needs both times; "Off" in the first switches it off.
     screen: {
@@ -246,6 +250,8 @@ function readForm() {
 function refresh() {
   const source = val("p-source");
   $("p-synology").hidden = source !== "synology";
+  $("p-immich").hidden = source !== "immich";
+  $("p-share").hidden = source !== "share";
   $("p-folder").hidden = source !== "folder";
   $("p-interval-row").hidden = source === "";
   $("p-motion-row").hidden = source === "";
@@ -275,7 +281,12 @@ function fill(i: Info) {
   $("w-coords").hidden = !i.weather.coordinates;
 
   const source = $<HTMLSelectElement>("p-source");
-  source.replaceChildren(new Option("No photos", ""), new Option("Synology Photos on my NAS", "synology"));
+  source.replaceChildren(
+    new Option("No photos", ""),
+    new Option("Synology Photos on my NAS", "synology"),
+    new Option("Immich on my server", "immich"),
+    new Option("A shared folder on the network", "share"),
+  );
   if (i.photos.folderPath) {
     source.add(new Option(t("Folder {path}", { path: i.photos.folderPath }), "folder"));
     $("p-folder").textContent = t("The folder is set in config.toml on the Pi: {path}", { path: i.photos.folderPath });
@@ -288,6 +299,19 @@ function fill(i: Info) {
   pass.placeholder = i.photos.synology.passwordSet ? "Saved. Leave empty to keep it" : "";
   $<HTMLInputElement>("s-tls").checked = i.photos.synology.insecureTls;
   $<HTMLSelectElement>("s-quality").value = i.photos.synology.quality || "original";
+  $<HTMLInputElement>("i-url").value = i.photos.immich?.url ?? "";
+  const key = $<HTMLInputElement>("i-key");
+  key.value = "";
+  key.placeholder = i.photos.immich?.keySet ? "Saved. Leave empty to keep it" : "";
+  $<HTMLInputElement>("i-tls").checked = !!i.photos.immich?.insecureTls;
+  $<HTMLSelectElement>("i-quality").value = i.photos.immich?.quality || "original";
+  $<HTMLInputElement>("sh-host").value = i.photos.share?.host ?? "";
+  $<HTMLInputElement>("sh-name").value = i.photos.share?.name ?? "";
+  $<HTMLInputElement>("sh-folder").value = i.photos.share?.folder ?? "";
+  $<HTMLInputElement>("sh-user").value = i.photos.share?.username ?? "";
+  const sharePass = $<HTMLInputElement>("sh-pass");
+  sharePass.value = "";
+  sharePass.placeholder = i.photos.share?.passwordSet ? "Saved. Leave empty to keep it" : "";
   $<HTMLInputElement>("p-interval").value = String(i.photos.intervalSeconds || 30);
   $<HTMLSelectElement>("p-motion").value = i.photos.motion || "off";
   $<HTMLInputElement>("p-pairs").checked = !!i.photos.pairPortraits;
@@ -1141,6 +1165,31 @@ $("s-test").addEventListener("click", async () => {
   }
 });
 
+$("i-test").addEventListener("click", async () => {
+  const out = $("i-result");
+  setResult(out, "Connecting to the server…");
+  try {
+    const res = await send("POST", "/api/settings/test-immich", readForm().photos.immich);
+    if (!res.ok) return setResult(out, (await res.text()).trim(), "error");
+    setResult(out, t("Connected, as {name}.", { name: (await res.json()).user }), "ok");
+  } catch {
+    setResult(out, "The Pi did not answer.", "error");
+  }
+});
+
+$("sh-test").addEventListener("click", async () => {
+  const out = $("sh-result");
+  setResult(out, "Looking into the share…");
+  try {
+    const res = await send("POST", "/api/settings/test-share", readForm().photos.share);
+    if (!res.ok) return setResult(out, (await res.text()).trim(), "error");
+    const n: number = (await res.json()).entries;
+    setResult(out, t(n === 1 ? "Connected. There is 1 folder or file in it." : "Connected. There are {n} folders and files in it.", { n }), "ok");
+  } catch {
+    setResult(out, "The Pi did not answer.", "error");
+  }
+});
+
 // --- Saving -----------------------------------------------------------------------
 
 async function startedAt(): Promise<number> {
@@ -1178,7 +1227,7 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
-for (const id of ["w-location", "w-units", "w-radar", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "p-map", "n-start", "n-end", "h-url", "h-token", "sys-auto", "tv-idle", "bt-off", "p-odd", "p-art", "sys-resolution", "sys-cool", "snd-follow", "spk-spotify", "spk-airplay", "spk-name", "sys-games", "sys-games-page", "sys-games-pad", "v-source", "v-folders", "l-pin", "wf-name", "wf-pass", "wf-open", "wf-hidden", "d-language", "d-position", "d-size", "d-style", "d-dim", "d-caption", "d-weather", "d-lock", "d-background", "d-performance", "d-tiles", "d-fps", "d-sounds"]) {
+for (const id of ["w-location", "w-units", "w-radar", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "i-url", "i-key", "i-tls", "i-quality", "sh-host", "sh-name", "sh-folder", "sh-user", "sh-pass", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "p-map", "n-start", "n-end", "h-url", "h-token", "sys-auto", "tv-idle", "bt-off", "p-odd", "p-art", "sys-resolution", "sys-cool", "snd-follow", "spk-spotify", "spk-airplay", "spk-name", "sys-games", "sys-games-page", "sys-games-pad", "v-source", "v-folders", "l-pin", "wf-name", "wf-pass", "wf-open", "wf-hidden", "d-language", "d-position", "d-size", "d-style", "d-dim", "d-caption", "d-weather", "d-lock", "d-background", "d-performance", "d-tiles", "d-fps", "d-sounds"]) {
   $(id).addEventListener("input", refresh);
   $(id).addEventListener("change", refresh);
 }

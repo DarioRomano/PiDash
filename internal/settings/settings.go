@@ -217,6 +217,28 @@ type Photos struct {
 	// SkipOdd leaves out screenshots and very small pictures.
 	SkipOdd  *bool    `json:"skipOdd,omitempty"`
 	Synology Synology `json:"synology"`
+	// Immich and Share are the other two places photos can come from; nil
+	// where a page from before they existed saved the settings.
+	Immich *Immich `json:"immich,omitempty"`
+	Share  *Share  `json:"share,omitempty"`
+}
+
+// Immich is the connection to an Immich server.
+type Immich struct {
+	URL string `json:"url"`
+	// APIKey is only ever sent to the Pi; empty means "the one stored".
+	APIKey      string `json:"apiKey,omitempty"`
+	InsecureTLS bool   `json:"insecureTls"`
+	Quality     string `json:"quality"`
+}
+
+// Share is a shared folder on the network.
+type Share struct {
+	Host     string `json:"host"`
+	Name     string `json:"name"`
+	Folder   string `json:"folder"`
+	Username string `json:"username"`
+	Password string `json:"password,omitempty"`
 }
 
 // Synology is the connection to Synology Photos.
@@ -625,6 +647,15 @@ func applyPage(base config.Config, f File, installed []desktop.Entry) (config.Co
 				cfg.Photos.Synology.Quality = p.Synology.Quality
 			}
 		}
+		if m := p.Immich; m != nil && p.Source == config.PhotoSourceImmich {
+			cfg.Photos.Immich.URL, cfg.Photos.Immich.APIKey, cfg.Photos.Immich.InsecureTLS = m.URL, m.APIKey, m.InsecureTLS
+			if m.Quality != "" {
+				cfg.Photos.Immich.Quality = m.Quality
+			}
+		}
+		if sh := p.Share; sh != nil && p.Source == config.PhotoSourceShare {
+			cfg.Photos.Share = config.SharePhotos{Host: sh.Host, Name: sh.Name, Folder: sh.Folder, Username: sh.Username, Password: sh.Password}
+		}
 	}
 
 	if c := f.Calendar; c != nil {
@@ -976,8 +1007,27 @@ type PhotosView struct {
 	// Art is whether paintings are offered in place of the photos.
 	Art      bool         `json:"art"`
 	Synology SynologyView `json:"synology"`
+	Immich   ImmichView   `json:"immich"`
+	Share    ShareView    `json:"share"`
 	// FolderPath is the folder configured in config.toml, if any.
 	FolderPath string `json:"folderPath"`
+}
+
+// ImmichView is the Immich connection without its key.
+type ImmichView struct {
+	URL         string `json:"url"`
+	KeySet      bool   `json:"keySet"`
+	InsecureTLS bool   `json:"insecureTls"`
+	Quality     string `json:"quality"`
+}
+
+// ShareView is the shared folder without its password.
+type ShareView struct {
+	Host        string `json:"host"`
+	Name        string `json:"name"`
+	Folder      string `json:"folder"`
+	Username    string `json:"username"`
+	PasswordSet bool   `json:"passwordSet"`
 }
 
 // SynologyView is the NAS connection without its password.
@@ -1016,6 +1066,9 @@ func (s *Store) View() View {
 			Synology: SynologyView{URL: cfg.Photos.Synology.URL, Username: cfg.Photos.Synology.Username,
 				PasswordSet: cfg.Photos.Synology.Password != "", InsecureTLS: cfg.Photos.Synology.InsecureTLS,
 				Quality: cfg.Photos.Synology.Quality},
+			Immich: ImmichView{URL: cfg.Photos.Immich.URL, KeySet: cfg.Photos.Immich.APIKey != "", InsecureTLS: cfg.Photos.Immich.InsecureTLS, Quality: cfg.Photos.Immich.Quality},
+			Share: ShareView{Host: cfg.Photos.Share.Host, Name: cfg.Photos.Share.Name, Folder: cfg.Photos.Share.Folder,
+				Username: cfg.Photos.Share.Username, PasswordSet: cfg.Photos.Share.Password != ""},
 		},
 		Screen: Screen{NightStart: cfg.Display.NightStart, NightEnd: cfg.Display.NightEnd, Language: cfg.Display.Language,
 			ClockPosition: cfg.Display.ClockPosition, ClockSize: cfg.Display.ClockSize, ClockStyle: cfg.Display.ClockStyle, EveningDim: cfg.Display.EveningDim, View: cfg.Display.View, Background: cfg.Display.Background,
@@ -1216,6 +1269,25 @@ func (s *Store) SynologyPassword() string {
 	return cfg.Photos.Synology.Password
 }
 
+// ImmichKey and SharePassword return the stored secrets of the other photo
+// sources, likewise for "test connection".
+func (s *Store) ImmichKey() string {
+	cfg, err := s.Effective()
+	if err != nil {
+		return ""
+	}
+	return cfg.Photos.Immich.APIKey
+}
+
+// SharePassword returns the stored password if it belongs to username.
+func (s *Store) SharePassword(username string) string {
+	cfg, err := s.Effective()
+	if err != nil || cfg.Photos.Share.Username != username {
+		return ""
+	}
+	return cfg.Photos.Share.Password
+}
+
 // Save validates an update against config.toml and writes settings.json.
 // Nothing is written when the result would not be a valid configuration.
 func (s *Store) Save(u Update) error {
@@ -1229,12 +1301,27 @@ func (s *Store) Save(u Update) error {
 	if u.Photos != nil {
 		p := *u.Photos
 		// An empty password means "keep the one already stored".
+		stored := s.base.Photos
+		if cur, err := apply(s.base, s.file, s.installed()); err == nil {
+			stored = cur.Photos
+		}
 		if p.Source == config.PhotoSourceSynology && p.Synology.Password == "" {
-			if cur, err := apply(s.base, s.file, s.installed()); err == nil {
-				p.Synology.Password = cur.Photos.Synology.Password
-			} else {
-				p.Synology.Password = s.base.Photos.Synology.Password
+			p.Synology.Password = stored.Synology.Password
+		}
+		if p.Immich != nil {
+			m := *p.Immich
+			if m.APIKey == "" {
+				m.APIKey = stored.Immich.APIKey
 			}
+			p.Immich = &m
+		}
+		if p.Share != nil {
+			sh := *p.Share
+			// The password belongs to its user: a new name without one is a guest.
+			if sh.Password == "" && sh.Username == stored.Share.Username {
+				sh.Password = stored.Share.Password
+			}
+			p.Share = &sh
 		}
 		next.Photos = &p
 		// How long a photo stays is the page's to say again.

@@ -94,6 +94,59 @@
             TV is safest.
           </p>
         </div>
+        <div id="p-immich" hidden>
+          <label class="field">
+            <span>Address of the Immich server</span>
+            <input id="i-url" type="url" placeholder="http://192.168.1.20:2283" autocomplete="off" autocapitalize="off" />
+          </label>
+          <label class="field">
+            <span>API key</span>
+            <input id="i-key" type="password" autocomplete="new-password" />
+          </label>
+          <label class="check"><input id="i-tls" type="checkbox" /><span>Accept a self-signed certificate (https only)</span></label>
+          <label class="field">
+            <span>Picture quality</span>
+            <select id="i-quality">
+              <option value="original">Sharpest: prepare from the full files</option>
+              <option value="preview">Faster: use the server's previews</option>
+            </select>
+          </label>
+          <button id="i-test" type="button" class="secondary wide">Test connection</button>
+          <p id="i-result" class="result"></p>
+          <p class="hint">
+            Immich makes the key under Account Settings, API Keys. PiDash only reads: a key that may read photos,
+            albums and people is enough. After saving, choose what to show: everything, the favourites, albums or
+            people.
+          </p>
+        </div>
+        <div id="p-share" hidden>
+          <label class="field">
+            <span>Computer that shares the folder</span>
+            <input id="sh-host" type="text" placeholder="nas.local" autocomplete="off" autocapitalize="off" />
+          </label>
+          <label class="field">
+            <span>Name of the share</span>
+            <input id="sh-name" type="text" placeholder="photo" autocomplete="off" autocapitalize="off" />
+          </label>
+          <label class="field">
+            <span>Folder inside it (empty for all of it)</span>
+            <input id="sh-folder" type="text" placeholder="Holidays/2024" autocomplete="off" autocapitalize="off" />
+          </label>
+          <label class="field">
+            <span>User name (empty for a guest)</span>
+            <input id="sh-user" type="text" autocomplete="off" autocapitalize="off" />
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input id="sh-pass" type="password" autocomplete="new-password" />
+          </label>
+          <button id="sh-test" type="button" class="secondary wide">Test connection</button>
+          <p id="sh-result" class="result"></p>
+          <p class="hint">
+            A folder shared on the network by a NAS, a router with a disk, or a Windows or Mac computer (SMB). PiDash
+            reads it directly and never writes to it; an account that may only read is safest.
+          </p>
+        </div>
         <p id="p-folder" class="hint" hidden></p>
 
         <label class="field" id="p-interval-row">

@@ -184,7 +184,7 @@ for 64-bit and 32-bit ARM, so it runs on a NAS, a home server or a Pi alike.
 
 | | |
 |---|---|
-| `/photos` | Pictures mounted here are shown, with nothing to set up. PiDash only reads them. Photos from a Synology NAS are set up on the settings page instead, as on a Pi |
+| `/photos` | Pictures mounted here are shown, with nothing to set up. PiDash only reads them. Photos from Synology Photos, Immich or a shared folder on the network are set up on the settings page instead, as on a Pi |
 | `/data` | Everything PiDash keeps: what is saved on the settings page (`settings.json`), its caches, and a `config.toml` if you put one there. Without one the built-in settings apply |
 | `TZ` | Your time zone, for the times of the night mode and "on this day" |
 | Port 8080 | The dashboard at `/`, the settings at `/settings` |
@@ -1289,6 +1289,48 @@ Good to know:
 - To use a folder on the Pi or a mounted network share instead of Synology
   Photos, set `source = "folder"` and `[photos.folder] path = "/home/pi/Pictures"`.
   All its photos are shown; the folder picker can narrow it down.
+
+#### Photos from Immich
+
+With [Immich](https://immich.app) on a server at home, choose **Immich on my
+server** under **Background photos** on the settings page, and enter:
+
+- the address Immich is opened with in a browser, like
+  `http://192.168.1.20:2283`;
+- an API key. Immich makes one under **Account Settings, API Keys**. PiDash
+  only reads: a key that may read photos, albums and people is enough.
+
+**Test connection** says whose key it is. After saving, all photos are shown
+until you choose otherwise in the folder picker, which offers **All photos**,
+**Favourites**, your **Albums**, and the **People** who were given a name.
+Where the photos were taken comes from Immich, so [Places](#places) and
+[Trips](#trips) work as with Synology Photos.
+
+Photos in the bin, archived or hidden ones are left out, and so are videos.
+With **Sharpest**, PiDash takes the full file where it is a JPEG, PNG or
+WebP; for a phone's HEIC and for camera raw files it takes the copy Immich
+keeps for viewing, which is what **Faster** uses for every photo.
+
+In `config.toml`: `source = "immich"`, and `url` and `api_key` under
+`[photos.immich]`.
+
+#### Photos from a shared folder
+
+A folder that a NAS, a router with a disk, or a Windows or Mac computer
+shares on the network can be used as it is: choose **A shared folder on the
+network** and enter the computer's name or address, the share's name, and a
+user and password that may read it (none for a share that guests may read).
+A folder inside the share narrows it down. PiDash reads the share itself,
+over SMB versions 2 and 3: nothing is mounted on the Pi and nothing needs
+installing, and it never writes. **Test connection** says what went wrong in
+words: nobody at that address, a name or password that is not accepted, no
+such share or folder.
+
+The pictures' dates and places are read from the files, as for a folder on
+the Pi. Videos on a share are not shown.
+
+In `config.toml`: `source = "share"`, and `host`, `name`, `folder`,
+`username` and `password` under `[photos.share]`.
 
 ### Apps
 
