@@ -180,6 +180,13 @@ export class Slideshow {
       this.clear();
       return;
     }
+    // A picture that is fading in is let finish first: a step asked for
+    // meanwhile would be dropped, and the new list not seen until the next
+    // picture is due.
+    while (this.showing) {
+      await new Promise((done) => window.setTimeout(done, 100));
+      if (token !== this.loadToken) return;
+    }
     await this.step(1);
   }
 
@@ -234,6 +241,7 @@ export class Slideshow {
 
     this.showing = true;
     const item = this.playlist[target];
+    const source = this.playlistURL;
     // The photo or clip goes into the layer that is not on screen.
     const incoming: HTMLElement = item.video
       ? this.videos.find((v) => v !== this.current)!
@@ -252,10 +260,18 @@ export class Slideshow {
         if (!this.suspended) void fetch("/api/photos/unplayable", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: item.key }) }).catch(() => {});
       }
       this.showing = false;
+      if (source !== this.playlistURL) return; // the other pictures follow at once
       this.index = target;
       this.failures++;
       const delay = this.failures >= 5 ? 60_000 : 500;
       this.timer = window.setTimeout(() => void this.step(delta >= 0 ? 1 : -1), delay);
+      return;
+    }
+    if (source !== this.playlistURL) {
+      // The pictures come from somewhere else since this one was asked for:
+      // it is not shown, and the first of the others follows at once.
+      if (incoming instanceof HTMLVideoElement) this.unload(incoming);
+      this.showing = false;
       return;
     }
     this.failures = 0;

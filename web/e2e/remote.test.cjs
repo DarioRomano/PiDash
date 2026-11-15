@@ -2745,9 +2745,8 @@ test("art mode: paintings in place of the photos, with their label, and back aga
     // It is kept: a page loaded anew is in art mode still.
     await page.reload();
     await page.waitForFunction(() => [...document.querySelectorAll("#backdrop img.visible")].some((i) => new URL(i.src).pathname.startsWith("/art/")), null, { timeout: 20000 });
-    await page.waitForTimeout(1500);
 
-    // Back to the photos.
+    // Back to the photos, at once: also while a painting is still fading in.
     await remote.press("up");
     await focusBar(page, remote, "Back to your photos");
     await remote.press("select");
