@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -23,14 +24,14 @@ type weather struct {
 	dry    bool
 }
 
-func (w weather) service(t *testing.T) (*Radar, *int) {
+func (w weather) service(t *testing.T) (*Radar, *atomic.Int32) {
 	t.Helper()
 	// The patch is near Zurich at the time of the newest picture: in the
 	// middle of the piece Zurich is in, so that it stays within it for a while.
 	const newest = 1700002800
 	zx, zy := worldPoint(47.37, 8.54)
 	zx, zy = (math.Floor(zx*128)+0.5)/128, (math.Floor(zy*128)+0.5)/128
-	fetched := 0
+	var fetched atomic.Int32
 	var srv *httptest.Server
 	srv = httptest.NewTLSServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/public/weather-maps.json" {
@@ -48,7 +49,7 @@ func (w weather) service(t *testing.T) (*Radar, *int) {
 			http.NotFound(rw, r)
 			return
 		}
-		fetched++
+		fetched.Add(1)
 		img := image.NewNRGBA(image.Rect(0, 0, 256, 256))
 		if !w.dry {
 			// Where the patch is at that moment, and how wide: 60 km or so.
@@ -113,11 +114,11 @@ func TestWhereTheRainGoesNext(t *testing.T) {
 	}
 	// Measuring took the pieces around the place, of two pictures; asked
 	// again, nothing is fetched or measured anew.
-	if *fetched != 18 {
-		t.Errorf("%d pieces fetched for measuring, want 18", *fetched)
+	if fetched.Load() != 18 {
+		t.Errorf("%d pieces fetched for measuring, want 18", fetched.Load())
 	}
-	if again, ok := r.Ahead(ctx, 47.37, 8.54); !ok || again.Motion != ahead.Motion || *fetched != 18 {
-		t.Errorf("asked again: %+v, %d pieces", again, *fetched)
+	if again, ok := r.Ahead(ctx, 47.37, 8.54); !ok || again.Motion != ahead.Motion || fetched.Load() != 18 {
+		t.Errorf("asked again: %+v, %d pieces", again, fetched.Load())
 	}
 
 	// The piece Zurich is in, now and in half an hour: the rain has moved on
