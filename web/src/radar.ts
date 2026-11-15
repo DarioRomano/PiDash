@@ -14,8 +14,11 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, te
 const ZOOMS = [5, 6, 7];
 // The last hour, a picture every ten minutes.
 const FRAMES = 7;
-// How long a picture stays while they run, and how long the newest one does.
+// How long a picture stays while they run; how long the newest one does,
+// where the film goes over from what was to what is expected; and how long
+// the last one does, before it starts again.
 const STEP_MS = 650;
+const NOW_MS = 1300;
 const REST_MS = 1800;
 
 /** Where a place is, and how its time is written. */
@@ -26,14 +29,26 @@ export interface RadarPlace {
   timezone?: string;
 }
 
+/** The pictures to come: the newest one, moved on as the rain moves. */
+interface Ahead {
+  from: number;
+  times: number[];
+  motion: { x: number; y: number };
+}
+
 /**
  * The rain radar: where it rained in the last hour, over a map, as pictures
- * that run one after the other up to now.
+ * that run one after the other up to now, and on into the next hour, where
+ * the rain is moved on the way it moved last.
  */
 export class Radar {
   private opened = false;
   private place: RadarPlace | null = null;
   private times: number[] = [];
+  /** How many of the times are measured; the ones after them are expected. */
+  private measured = 0;
+  private ahead: Ahead | null = null;
+  private line: HTMLElement | null = null;
   private sheets: HTMLElement[] = [];
   private at = 0;
   private zoom = 1;
@@ -91,12 +106,18 @@ export class Radar {
 
   private async load() {
     try {
-      const res = await fetch("/api/radar", { cache: "no-store" });
+      const where = this.place ? `?lat=${this.place.latitude.toFixed(3)}&lon=${this.place.longitude.toFixed(3)}` : "";
+      const res = await fetch("/api/radar" + where, { cache: "no-store" });
       if (!res.ok) throw new Error(String(res.status));
-      const data = (await res.json()) as { frames: { time: number }[] };
+      const data = (await res.json()) as { frames: { time: number }[]; ahead?: Ahead };
       this.times = data.frames.map((f) => f.time).slice(-FRAMES);
+      this.measured = this.times.length;
+      // Only from the picture that is shown as the newest.
+      this.ahead = data.ahead && data.ahead.from === this.times[this.measured - 1] ? data.ahead : null;
+      if (this.ahead) this.times.push(...this.ahead.times);
     } catch {
       this.times = [];
+      this.ahead = null;
     }
     if (!this.opened) return;
     if (this.times.length === 0) {
@@ -112,10 +133,13 @@ export class Radar {
     this.box = box;
     this.clock = el("div", "rd-clock");
     this.clock.dataset.noTranslate = "";
+    // The film as a line: a mark for every picture, the newest one larger.
+    this.line = el("div", "rd-line");
+    this.line.replaceChildren(...this.times.map((_, i) => el("i", i === this.measured - 1 ? "now" : i < this.measured ? "" : "ahead")));
     const body = el("div", "rd-body");
-    body.append(box, this.clock);
+    body.append(box, this.clock, this.line);
     this.root.replaceChildren(title, body, el("footer", "help-foot", "◀ ▶ earlier or later  ·  OK run or hold  ·  ▲ ▼ closer or further away  ·  Back close"));
-    this.at = this.times.length - 1;
+    this.at = this.measured - 1;
     this.draw();
   }
 
@@ -126,9 +150,12 @@ export class Radar {
     clearTimeout(this.timer);
     const zoom = ZOOMS[this.zoom];
     const map = layMap(box, place.latitude, place.longitude, zoom);
-    this.sheets = this.times.map((time) => {
-      const sheet = layTiles(box, place.latitude, place.longitude, zoom, TILE, (z, x, y) => `/api/radar/${time}/${z}/${x}/${y}`).layer;
+    const ahead = this.ahead;
+    this.sheets = this.times.map((time, i) => {
+      const made = i >= this.measured && ahead ? `?from=${ahead.from}&mx=${ahead.motion.x}&my=${ahead.motion.y}` : "";
+      const sheet = layTiles(box, place.latitude, place.longitude, zoom, TILE, (z, x, y) => `/api/radar/${time}/${z}/${x}/${y}${made}`).layer;
       sheet.classList.add("rd-sheet");
+      if (made) sheet.classList.add("rd-ahead");
       return sheet;
     });
     const pin = el("div", "pi-pin");
@@ -148,6 +175,7 @@ export class Radar {
     clearTimeout(this.timer);
     this.sheets.forEach((s, i) => s.classList.toggle("shown", i === this.at));
     if (this.box) this.box.dataset.frame = String(this.at);
+    this.line?.querySelectorAll("i").forEach((mark, i) => mark.classList.toggle("on", i === this.at));
     if (this.clock) {
       const when = new Date(this.times[this.at] * 1000);
       let zone = {};
@@ -158,16 +186,24 @@ export class Radar {
         /* a zone this browser does not know: the Pi's own time */
       }
       const time = new Intl.DateTimeFormat(this.locale, { hour: "2-digit", minute: "2-digit", hour12: !this.hour24, ...zone }).format(when);
-      const last = this.at === this.times.length - 1;
-      const ago = Math.max(0, Math.round((Date.now() - when.getTime()) / 60_000));
-      this.clock.textContent = `${time}  ·  ${last && ago < 20 ? t("the latest picture") : t("{n} minutes ago", { n: ago })}${this.running ? "" : "  ·  ❚❚"}`;
+      const newest = this.at === this.measured - 1;
+      const minutes = Math.round((when.getTime() - Date.now()) / 60_000);
+      let what: string;
+      if (this.at >= this.measured) {
+        // Counted from the newest picture, which is "now" on this film.
+        const lead = Math.round((this.times[this.at] - this.times[this.measured - 1]) / 60);
+        what = `${t("in {n} minutes", { n: lead })}  ·  ${t("expected")}`;
+      } else what = newest && minutes > -20 ? t("the latest picture") : t("{n} minutes ago", { n: Math.max(0, -minutes) });
+      this.clock.textContent = `${time}  ·  ${what}${this.running ? "" : "  ·  ❚❚"}`;
+      this.clock.classList.toggle("ahead", this.at >= this.measured);
     }
     if (!this.running) return;
     const last = this.at === this.times.length - 1;
+    const newest = this.at === this.measured - 1;
     this.timer = window.setTimeout(() => {
       this.at = (this.at + 1) % this.times.length;
       this.show();
-    }, last ? REST_MS : STEP_MS);
+    }, last ? REST_MS : newest ? NOW_MS : STEP_MS);
   }
 
   handle(action: Action): boolean {

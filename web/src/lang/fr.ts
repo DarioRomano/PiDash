@@ -788,6 +788,8 @@ const list: Record<string, string> = {
   "◀ ▶ earlier or later · OK run or hold · ▲ ▼ closer or further away · Back close": "◀ ▶ plus tôt ou plus tard · OK lancer ou arrêter · ▲ ▼ plus près ou plus loin · Retour pour fermer",
   "the latest picture": "l’image la plus récente",
   "{n} minutes ago": "il y a {n} minutes",
+  "in {n} minutes": "dans {n} minutes",
+  "expected": "prévu",
   "▶ rain radar · Back or click to close": "▶ radar de pluie · Retour ou clic pour fermer",
   "Art instead of photos": "De l’art au lieu des photos",
   "paintings from a museum": "des tableaux d’un musée",

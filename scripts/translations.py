@@ -711,6 +711,8 @@ ROWS = [
 ("◀ ▶ earlier or later · OK run or hold · ▲ ▼ closer or further away · Back close", "◀ ▶ früher oder später · OK laufen lassen oder anhalten · ▲ ▼ näher oder weiter weg · Zurück schließt", "◀ ▶ plus tôt ou plus tard · OK lancer ou arrêter · ▲ ▼ plus près ou plus loin · Retour pour fermer", "◀ ▶ prima o dopo · OK avvia o ferma · ▲ ▼ più vicino o più lontano · Indietro chiude"),
 ("the latest picture", "das neueste Bild", "l’image la plus récente", "l’immagine più recente"),
 ("{n} minutes ago", "vor {n} Minuten", "il y a {n} minutes", "{n} minuti fa"),
+("in {n} minutes", "in {n} Minuten", "dans {n} minutes", "tra {n} minuti"),
+("expected", "erwartet", "prévu", "previsto"),
 ("▶ rain radar · Back or click to close", "▶ Regenradar · Zurück oder Klick schließt", "▶ radar de pluie · Retour ou clic pour fermer", "▶ radar della pioggia · Indietro o clic per chiudere"),
 ("Art instead of photos", "Kunst statt Fotos", "De l’art au lieu des photos", "Arte al posto delle foto"),
 ("paintings from a museum", "Gemälde aus einem Museum", "des tableaux d’un musée", "dipinti di un museo"),

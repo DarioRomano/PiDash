@@ -445,8 +445,19 @@ interval = "15m"               # how often the forecast is refreshed
 
 On the forecast, ▶ opens the rain radar: a map of your region with the rain
 of the last hour on it, as seven pictures ten minutes apart that run one
-after the other up to now. The time of the picture on screen is at the top
-left; the pin is the place the weather is for.
+after the other up to now, and on through the hour to come. It opens on now.
+The time of the picture on screen is at the top left; the pin is the place
+the weather is for. The line of marks at the bottom left is the film: what
+was, now (the tall mark), and what is expected (the rings).
+
+**The hour to come is an estimate that PiDash makes itself.** Radar services
+no longer give pictures of the future away. PiDash looks at how the rain
+around you moved over the last twenty minutes and moves the newest picture
+on by as much, ten minutes at a time: what a person does who watches a radar
+film. That is good for a front crossing the country, and for telling whether
+the shower over there arrives before the walk is over. It knows nothing of
+rain that forms or fades where it is, as summer showers do. These pictures
+are drawn paler, and their time is marked "expected".
 
 | Button | Does |
 |--------|------|

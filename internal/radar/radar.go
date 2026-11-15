@@ -49,6 +49,11 @@ type Radar struct {
 	tiles    map[string][]byte
 	order    []string // the keys of tiles, oldest first
 	fetched  []time.Time
+	// How the rain moves, by picture and place; and the pieces of pictures
+	// to come that were made from the picture of madeFrom.
+	motions  map[string]Motion
+	made     map[string][]byte
+	madeFrom int64
 }
 
 // New returns a radar that asks RainViewer.

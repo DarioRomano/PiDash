@@ -2643,7 +2643,7 @@ test("other devices on the TV are tiles that switch the TV's input; a controller
   }
 });
 
-test("the rain radar opens from the forecast: the last hour over a map, running up to now", async () => {
+test("the rain radar opens from the forecast: the last hour over a map, and the hour to come as the rain moves", async () => {
   const map = await startTileServer();
   const rain = await startRadarServer();
   const own = await startPiDash(`${APPS}\n[photos]\nmap_tiles = "${map.url}"\n[weather]\nradar_url = "${rain.url}"\n`);
@@ -2660,8 +2660,26 @@ test("the rain radar opens from the forecast: the last hour over a map, running 
         return { zoom: Number(b.dataset.zoom), frame: Number(b.dataset.frame), sheets: document.querySelectorAll("#radar .rd-sheet").length, shown: document.querySelectorAll("#radar .rd-sheet.shown").length, clock: document.querySelector("#radar .rd-clock").textContent, title: document.querySelector("#radar h2").textContent };
       });
     let r = await now();
-    assert.deepEqual([r.zoom, r.sheets, r.shown], [6, 7, 1], "the last hour: seven pictures, one at a time");
+    assert.deepEqual([r.zoom, r.sheets, r.shown], [6, 13, 1], "the last hour and the next: seven pictures and six, one at a time");
+    assert.deepEqual([r.frame, /the latest picture/.test(r.clock)], [6, true], "it opens on now");
     assert.match(r.title, /Rain radar\s+Sampleville/);
+    // The film as a line of marks: what was, now, and what is expected.
+    assert.deepEqual(
+      await page.evaluate(() => [...document.querySelectorAll("#radar .rd-line i")].map((m) => (m.classList.contains("now") ? "N" : m.classList.contains("ahead") ? "a" : "p") + (m.classList.contains("on") ? "*" : "")).join(" ")),
+      "p p p p p p N* a a a a a a",
+    );
+    // A step on is a picture that is not measured: the newest, moved on by PiDash as the rain moved last.
+    await remote.press("right");
+    await page.waitForSelector("#radar .rd-sheet.rd-ahead.shown img.loaded");
+    r = await now();
+    assert.match(r.clock, /in 10 minutes\s+·\s+expected/);
+    const made = await page.evaluate(() => document.querySelector("#radar .rd-sheet.rd-ahead.shown img.loaded").getAttribute("src"));
+    assert.match(made, /^\/api\/radar\/\d+\/6\/\d+\/\d+\?from=\d+&mx=[-\d.e]+&my=[-\d.e]+$/);
+    const motion = (await (await fetch(own.base + "/api/radar?lat=47.4&lon=8.5")).json()).ahead.motion;
+    assert.ok(motion.x > 0 && Math.abs(motion.y) < motion.x / 5, `the sample rain moves east: ${JSON.stringify(motion)}`);
+    assert.equal((await fetch(own.base + made)).headers.get("content-type"), "image/png");
+    await remote.press("left");
+    await remote.press("select");
     assert.match(await page.evaluate(() => document.querySelector("#radar .pi-credit").textContent), /OpenStreetMap.*RainViewer/);
 
     // They run by themselves; an arrow stops them and steps by hand.
