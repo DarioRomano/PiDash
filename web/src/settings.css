@@ -64,6 +64,28 @@ button.wide { width: 100%; }
 }
 #app-list button:disabled { opacity: 0.3; cursor: default; }
 .add { border-top: 1px solid var(--line); padding-top: 14px; display: flex; flex-direction: column; gap: 12px; }
+.add h3 { font-size: 16px; font-weight: 600; }
+/* What can be added: cards with a picture and a name, under a heading per kind. */
+#add-grid { display: flex; flex-direction: column; gap: 10px; }
+#add-grid h4 { margin-top: 6px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); }
+.picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.pick {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0;
+  padding: 12px 6px 10px; border: 1px solid transparent; border-radius: 14px; background: #0f121b; color: var(--fg);
+  font: inherit; cursor: pointer; transition: background 0.15s, border-color 0.15s;
+}
+.pick:hover, .pick:focus-visible { background: #171c2a; border-color: #2c3550; outline: none; }
+.pick.chosen { border-color: var(--accent); background: #141a2a; }
+.pick-art { width: 52px; height: 52px; display: grid; place-items: center; color: var(--dim); }
+.pick-art img, .pick-art svg { width: 100%; height: 100%; display: block; }
+.pick-art svg { width: 34px; height: 34px; }
+.pick-art.bare { border-radius: 12px; background: #1f2536; font-size: 24px; font-weight: 600; }
+.pick-name { max-width: 100%; font-size: 13px; line-height: 1.25; text-align: center; overflow-wrap: anywhere; }
+.pick small { max-width: 100%; margin-top: -3px; font-size: 11px; color: var(--dim); text-align: center; }
+.pick.added { cursor: default; opacity: 0.45; }
+.pick-tick { position: absolute; top: 6px; right: 8px; font-size: 13px; color: var(--ok, #7bd88f); }
+.add-detail { display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: 14px; background: #0f121b; }
+.add-detail[hidden] { display: none; }
 #save { max-width: 304px; }
 
 /* --- Categories: a bar along the top on a phone, at the left where there is room --- */

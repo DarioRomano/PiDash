@@ -348,10 +348,11 @@
         <label class="check"><input id="sys-games-pad" type="checkbox" /><span>Open that page when a controller switches the TV on</span></label>
 
         <div class="add">
-          <label class="field">
-            <span>Add</span>
-            <select id="add-kind"></select>
-          </label>
+          <h3>Add an app</h3>
+          <div id="add-grid"></div>
+          <p id="add-result" class="result"></p>
+          <div id="add-detail" class="add-detail" hidden>
+          <h3 id="add-what"></h3>
           <label class="field" id="add-installed-row" hidden>
             <span>Program</span>
             <select id="add-installed"></select>
@@ -368,7 +369,8 @@
           <label class="check" id="add-adblock-row" hidden><input id="add-adblock" type="checkbox" /><span>Block ads (opens in Firefox with uBlock Origin)</span></label>
           <label class="check" id="add-arrows-row" hidden><input id="add-arrows" type="checkbox" /><span>Made for a mouse: let the remote's arrows move around the page</span></label>
           <button id="add-btn" type="button" class="secondary wide">Add to the list</button>
-          <p id="add-result" class="result"></p>
+          <p id="add-problem" class="result"></p>
+          </div>
         </div>
         <p class="hint">
           A program that needs its own command or options can be added in

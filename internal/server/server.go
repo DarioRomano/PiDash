@@ -299,6 +299,7 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("POST /api/apps/stop", s.handleAppStop)
 	s.mux.HandleFunc("POST /api/apps/order", s.handleAppOrder)
 	s.mux.HandleFunc("GET /api/apps/{id}/icon", s.handleAppIcon)
+	s.mux.HandleFunc("GET /api/presets/{id}/icon", s.handlePresetIcon)
 	if ps != nil {
 		ps.OnChange(func(st photos.Status) { s.hub.broadcast("photos", st) })
 	}
@@ -766,6 +767,31 @@ func (s *Server) handleAppIcon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.ServeFile(w, r, icon.Path)
+}
+
+// handlePresetIcon serves the picture of a ready-made app that is offered
+// on the settings page, whether or not it is among the apps yet.
+func (s *Server) handlePresetIcon(w http.ResponseWriter, r *http.Request) {
+	for _, p := range settings.Presets {
+		if p.ID != r.PathValue("id") {
+			continue
+		}
+		app := p.App
+		app.ID = p.ID
+		icon, ok := apps.DefaultIconFinder().Resolve(app)
+		if !ok {
+			break
+		}
+		w.Header().Set("Cache-Control", "max-age=3600")
+		if icon.Data != nil {
+			w.Header().Set("Content-Type", icon.ContentType)
+			_, _ = w.Write(icon.Data)
+			return
+		}
+		http.ServeFile(w, r, icon.Path)
+		return
+	}
+	http.NotFound(w, r)
 }
 
 // settingsInfo is what the settings page loads.

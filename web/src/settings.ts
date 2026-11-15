@@ -48,6 +48,8 @@ interface Preset {
   id: string;
   name: string;
   description: string;
+  /** Which heading it is offered under: video, music, games or own. */
+  group?: string;
   needsUrl: boolean;
   urlHint?: string;
   console: boolean;
@@ -843,20 +845,105 @@ const INSTALLED = "__installed";
 /** Followed by the emulator's id. */
 const EMULATOR = "__emulator:";
 
+/** What is being added, where that takes more than choosing it: one of the above, or a ready-made app's id. */
+let addChoice = "";
+
+const GLOBE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.800 3 2.800 15 0 18M12 3c-2.800 3-2.800 15 0 18"/></svg>';
+const WINDOW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.500" width="18" height="15" rx="2.500"/><path d="M3 9h18"/></svg>';
+const PAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.500" stroke-linecap="round" stroke-linejoin="round"><path d="M7 8h10a4.500 4.500 0 0 1 4.400 5.500l-.600 2.800a2.300 2.300 0 0 1-4 1L15 15.500H9l-1.800 1.800a2.300 2.300 0 0 1-4-1l-.600-2.800A4.500 4.500 0 0 1 7 8z"/><path d="M8 11v3M6.500 12.500h3"/><circle cx="16" cy="12.500" r="0.800" fill="currentColor"/></svg>';
+
+/** One thing that can be added: a card with its picture and its name. */
+function pick(id: string, name: string, art: { icon?: string; glyph?: string }, opts: { sub?: string; added?: boolean; about?: string } = {}): HTMLButtonElement {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "pick";
+  b.dataset.add = id;
+  b.dataset.noTranslate = ""; // names of apps stay as they are; what is beside them is translated here
+  const picture = document.createElement("span");
+  picture.className = "pick-art";
+  const letter = () => {
+    picture.classList.add("bare");
+    picture.textContent = name.charAt(0);
+  };
+  if (art.glyph) picture.innerHTML = art.glyph;
+  else if (art.icon) {
+    const img = document.createElement("img");
+    img.alt = "";
+    img.loading = "lazy";
+    // A program that is not installed has no picture yet: its first letter.
+    img.addEventListener("error", letter);
+    img.src = art.icon;
+    picture.append(img);
+  } else letter();
+  const label = document.createElement("span");
+  label.className = "pick-name";
+  label.textContent = name;
+  b.append(picture, label);
+  if (opts.sub) {
+    const sub = document.createElement("small");
+    sub.textContent = opts.sub;
+    b.append(sub);
+  }
+  if (opts.about) b.title = opts.about;
+  if (opts.added) {
+    b.disabled = true;
+    b.classList.add("added");
+    b.setAttribute("aria-label", `${name}: ${t("in the list")}`);
+    const tick = document.createElement("span");
+    tick.className = "pick-tick";
+    tick.textContent = "✓";
+    b.append(tick);
+  }
+  b.addEventListener("click", () => chooseToAdd(id));
+  return b;
+}
+
+/** Whether a ready-made app can be added with one press: nothing to enter, nothing to be told first. */
+const addsAtOnce = (p: Preset) => !p.needsUrl && !(p.console && !info.consoleReady);
+
 function renderAddChoices() {
-  const kind = $<HTMLSelectElement>("add-kind");
-  const previous = kind.value;
+  const grid = $("add-grid");
+  // The card that had the highlight keeps it, or hands it to its neighbour.
+  const had = grid.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.add : undefined;
   const used = new Set(apps.filter((a) => a.kind === "preset").map((a) => a.preset));
   // Emulators are listed whether installed or not: choosing one that is not
   // says how to install it.
   const inRow = new Set(apps.filter((a) => a.kind === "desktop").map((a) => a.desktop));
-  kind.replaceChildren(
-    ...info.presets.filter((p) => !used.has(p.id)).map((p) => new Option(p.name, p.id)),
-    ...(info.emulators ?? []).filter((em) => !em.desktop || !inRow.has(em.desktop)).map((em) => new Option(`${em.name} · ${t(em.systems)}`, EMULATOR + em.id)),
-    new Option("A program installed on the Pi…", INSTALLED),
-    new Option("Another website…", OTHER),
+  const section = (title: string, cards: HTMLElement[]) => {
+    if (cards.length === 0) return [];
+    const h = document.createElement("h4");
+    h.textContent = t(title);
+    const row = document.createElement("div");
+    row.className = "picks";
+    row.append(...cards);
+    return [h, row];
+  };
+  const ready = (group: string) =>
+    info.presets
+      .filter((p) => (p.group || "own") === group)
+      .map((p) => pick(p.id, p.name, { icon: `/api/presets/${encodeURIComponent(p.id)}/icon` }, { added: used.has(p.id), about: t(p.description) }));
+  const emulators = (info.emulators ?? []).map((em) =>
+    pick(EMULATOR + em.id, em.name, { glyph: PAD }, { sub: t(em.systems), added: !!em.desktop && inRow.has(em.desktop), about: t(em.description) }),
   );
-  if ([...kind.options].some((o) => o.value === previous)) kind.value = previous;
+  grid.replaceChildren(
+    ...section("Films, series and TV", ready("video")),
+    ...section("Music", ready("music")),
+    ...section("Games", [...ready("games"), ...emulators]),
+    ...section("From your own server", ready("own")),
+    ...section("Something else", [
+      pick(OTHER, t("Another website"), { glyph: GLOBE }, { about: t("Opens the address fullscreen, with its own login.") }),
+      pick(INSTALLED, t("A program installed on the Pi"), { glyph: WINDOW }),
+    ]),
+  );
+  if (had) {
+    const cards = [...grid.querySelectorAll<HTMLButtonElement>(".pick")];
+    const at = cards.findIndex((c) => c.dataset.add === had);
+    const next = [...cards.slice(Math.max(0, at)), ...cards.slice(0, Math.max(0, at)).reverse()].find((c) => !c.disabled);
+    if (next) {
+      if (onTV) highlight(next);
+      else next.focus({ preventScroll: true });
+    }
+  }
 
   // Installed programs that are not in the list yet. Two with the same name
   // (say, a system and a Flatpak copy) are told apart by their entry's id.
@@ -870,8 +957,36 @@ function renderAddChoices() {
   showAddFields();
 }
 
+/** A card was pressed: add it at once where that is all there is to it, otherwise ask for the rest. */
+function chooseToAdd(id: string) {
+  const p = info.presets.find((x) => x.id === id);
+  if (p && addsAtOnce(p)) {
+    addChoice = "";
+    apps.push({ kind: "preset", preset: p.id, name: p.name });
+    renderApps();
+    refresh();
+    setResult($("add-result"), `${t("Added: {name}.", { name: p.name })} ${t(p.description)}.`, "ok");
+    return;
+  }
+  addChoice = id;
+  showAddFields();
+  setResult($("add-result"), "");
+  // On to what is asked for: the first thing to fill in, or the button.
+  const first = [...$("add-detail").querySelectorAll<HTMLElement>("input, select, button")].find((el) => el.getClientRects().length > 0);
+  if (first) {
+    if (onTV) highlight(first);
+    else {
+      first.scrollIntoView({ block: "center", behavior: "smooth" });
+      first.focus({ preventScroll: true });
+    }
+  }
+}
+
 function showAddFields() {
-  const choice = val("add-kind");
+  const choice = addChoice;
+  for (const card of $("add-grid").querySelectorAll<HTMLElement>(".pick")) card.classList.toggle("chosen", card.dataset.add === choice);
+  $("add-detail").hidden = choice === "";
+  if (choice === "") return;
   const p = info.presets.find((x) => x.id === choice);
   const other = choice === OTHER;
   const installed = choice === INSTALLED;
@@ -899,24 +1014,26 @@ function showAddFields() {
   if (p?.console && !info.consoleReady) {
     desc += " It runs outside the desktop, which needs a one-time setup on the Pi: bash deploy/install.sh --console-apps";
   }
+  const what = $("add-what");
+  what.dataset.noTranslate = "";
+  what.textContent = p?.name ?? em?.name ?? t(other ? "Another website" : "A program installed on the Pi");
   $("add-desc").textContent = desc;
-  setResult($("add-result"), "");
+  setResult($("add-problem"), "");
 }
 
 function emulatorChosen() {
-  const choice = val("add-kind");
-  return choice.startsWith(EMULATOR) ? (info.emulators ?? []).find((x) => x.id === choice.slice(EMULATOR.length)) : undefined;
+  return addChoice.startsWith(EMULATOR) ? (info.emulators ?? []).find((x) => x.id === addChoice.slice(EMULATOR.length)) : undefined;
 }
 
-$("add-kind").addEventListener("change", showAddFields);
 $("add-installed").addEventListener("change", showAddFields);
 
 $("add-btn").addEventListener("click", () => {
-  const choice = val("add-kind");
+  const choice = addChoice;
   const url = val("add-url").trim();
-  const result = $("add-result");
+  const result = $("add-problem");
+  let name = "";
   if (choice === OTHER) {
-    const name = val("add-name").trim();
+    name = val("add-name").trim();
     if (!name) return setResult(result, "Give it a name.", "error");
     if (!/^https?:\/\/\S+\.\S+|^https?:\/\/[^\s/]+/.test(url)) return setResult(result, "Enter the full address, starting with http:// or https://", "error");
     const adblock = $<HTMLInputElement>("add-adblock").checked;
@@ -926,23 +1043,35 @@ $("add-btn").addEventListener("click", () => {
     const em = emulatorChosen();
     if (!em) return;
     if (!em.desktop) return setResult(result, t("{name} is not installed on the Pi yet.", { name: em.name }), "error");
+    name = em.name;
     apps.push({ kind: "desktop", desktop: em.desktop, name: em.name });
   } else if (choice === INSTALLED) {
     const e = info.installed.find((x) => x.id === val("add-installed"));
     if (!e) return setResult(result, "Choose a program first.", "error");
+    name = e.name;
     apps.push({ kind: "desktop", desktop: e.id, name: e.name });
   } else {
     const p = info.presets.find((x) => x.id === choice);
     if (!p) return;
     if (p.needsUrl && !/^https?:\/\/[^\s/]+/.test(url)) return setResult(result, "Enter the address you open it with in a browser, starting with http:// or https://", "error");
+    name = p.name;
     apps.push({ kind: "preset", preset: p.id, name: p.name, ...(p.needsUrl ? { url } : {}) });
   }
   $<HTMLInputElement>("add-name").value = "";
   $<HTMLInputElement>("add-url").value = "";
   $<HTMLInputElement>("add-adblock").checked = false;
   $<HTMLInputElement>("add-arrows").checked = false;
+  // Back to the cards, on the one that was added.
+  const was = addChoice;
+  addChoice = "";
   renderApps();
   refresh();
+  setResult($("add-result"), t("Added: {name}.", { name }), "ok");
+  const card = [...$("add-grid").querySelectorAll<HTMLButtonElement>(".pick")].find((c) => c.dataset.add === was && !c.disabled) ?? $("add-grid").querySelector<HTMLButtonElement>(".pick:not(:disabled)");
+  if (card) {
+    if (onTV) highlight(card);
+    else card.focus({ preventScroll: true });
+  }
 });
 
 // --- Checks before saving ---------------------------------------------------------

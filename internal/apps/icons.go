@@ -13,8 +13,9 @@ import (
 )
 
 // Icons PiDash ships itself, for web apps that have no installed package to
-// take an icon from. They are simple drawings in each service's colours, not
-// the services' official artwork; set `icon` in the config to use your own.
+// take an icon from. They are simple drawings in each service's colours,
+// most of them a few letters on a square, not the services' official
+// artwork; set `icon` in the config to use your own.
 //
 //go:embed icons/*.svg
 var builtinIcons embed.FS
@@ -115,6 +116,15 @@ func builtinNameFor(app config.App) string {
 	}
 	hostIs := func(domain string) bool { return host == domain || strings.HasSuffix(host, "."+domain) }
 	switch {
+	// The more particular address before the service it belongs to.
+	case hostIs("music.youtube.com"):
+		return "youtube-music"
+	case hostIs("music.apple.com"):
+		return "apple-music"
+	case hostIs("tv.apple.com"):
+		return "appletv"
+	case hostIs("bbc.co.uk") && strings.HasPrefix(path, "/iplayer"):
+		return "iplayer"
 	case id == "youtube" || hostIs("youtube.com"):
 		return "youtube"
 	case id == "netflix" || hostIs("netflix.com"):
@@ -125,7 +135,26 @@ func builtinNameFor(app config.App) string {
 		(app.URL != "" && (path == "/photo" || strings.HasPrefix(path, "/photo/"))):
 		return "synology-photos"
 	}
+	for domain, name := range builtinByDomain {
+		if hostIs(domain) {
+			return name
+		}
+	}
+	// A ready-made app whose address is the household's own (Jellyfin,
+	// Immich) is known by its id alone.
+	if _, ok := builtinIcon(id); ok && id != "web" {
+		return id
+	}
 	return ""
+}
+
+// builtinByDomain says which of the drawings belongs to which service.
+var builtinByDomain = map[string]string{
+	"disneyplus.com": "disneyplus", "primevideo.com": "primevideo", "hbomax.com": "hbomax", "max.com": "hbomax",
+	"paramountplus.com": "paramountplus", "twitch.tv": "twitch", "crunchyroll.com": "crunchyroll", "dazn.com": "dazn",
+	"plex.tv": "plex", "arte.tv": "arte", "ardmediathek.de": "ard", "zdf.de": "zdf", "srf.ch": "srf",
+	"playsuisse.ch": "playsuisse", "zattoo.com": "zattoo", "tidal.com": "tidal", "deezer.com": "deezer",
+	"soundcloud.com": "soundcloud", "geforcenow.com": "geforce-now", "xbox.com": "xbox-cloud",
 }
 
 // desktopIconName finds the .desktop entry that starts the same program as the

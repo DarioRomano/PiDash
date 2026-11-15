@@ -1261,10 +1261,32 @@ To change the order, select an app in the row and press ▲: the tile lifts.
 where it was. With a [lock](#lock) set, apps are moved on the settings page
 instead.
 
-The easiest way to add apps is the [settings page](#settings). They can also
-be defined in `~/.config/pidash/config.toml`, one `[[apps]]` block each. After
-editing, run `systemctl --user restart pidash`. An app is either a website or
-a program.
+The easiest way to add apps is the [settings page](#settings): under **Apps
+and radio**, the apps PiDash knows are laid out as cards with their pictures.
+Pressing a card adds it; one that needs something first (the address of your
+own server, say) asks for it. What is in the list already is marked.
+
+| | Ready-made |
+|---|---|
+| Films, series and TV | YouTube, Netflix, Disney+, Prime Video, Apple TV+, HBO Max, Paramount+, DAZN, Crunchyroll, Twitch, Zattoo, ARTE, ARD Mediathek, ZDF, Play SRF, Play Suisse, BBC iPlayer |
+| Music | Spotify, YouTube Music, Apple Music, TIDAL, Deezer, SoundCloud |
+| Games | Moonlight, Steam Link, GeForce NOW, Xbox Cloud Gaming, and the [emulators](#emulators) |
+| From your own server | Plex, Jellyfin, Kodi, Synology Photos, Immich |
+| Something else | any other website, or any program installed on the Pi |
+
+Apart from YouTube, whose TV pages are made for a remote, these are the
+services' ordinary websites, opened fullscreen in Chromium with
+[the remote's arrows moving around the page](#websites-made-for-a-mouse).
+How well each of them takes to that differs, and a service may change its
+pages at any time; the phone's touchpad is there for what the arrows do not
+reach. The paid ones need the copy protection module that Raspberry Pi OS
+and Google Chrome bring, and some of them send a Linux browser less than
+their best picture. The pictures on the cards are simple drawings in each
+service's colours, not the services' own artwork.
+
+Apps can also be defined in `~/.config/pidash/config.toml`, one `[[apps]]`
+block each. After editing, run `systemctl --user restart pidash`. An app is
+either a website or a program.
 
 #### Spotify
 

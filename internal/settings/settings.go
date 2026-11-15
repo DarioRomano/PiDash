@@ -268,6 +268,8 @@ type Preset struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	// Group is which heading it is offered under: one of the Group constants.
+	Group string `json:"group"`
 	// NeedsURL asks for an address, with URLHint as the example.
 	NeedsURL bool   `json:"needsUrl"`
 	URLHint  string `json:"urlHint,omitempty"`
@@ -281,25 +283,87 @@ type Preset struct {
 // youTubeTV makes YouTube serve its TV interface, which works with a remote.
 const youTubeTV = "Mozilla/5.0 (PS4; Leanback Shell) Gecko/20100101 Firefox/65.0 LeanbackShell/01.00.01.75 Sony PS4/ (PS4, , no, CH)"
 
-// Presets are the apps offered on the settings page.
+// What a ready-made app is, for the headings of the settings page.
+const (
+	GroupVideo = "video" // films, series and TV
+	GroupMusic = "music"
+	GroupGames = "games"
+	GroupOwn   = "own" // what plays from the household's own server
+)
+
+// What is said about the ready-made apps that are all of a kind.
+const (
+	aboutSite  = "The website, in Chromium. The remote's arrows go from one thing on the page to the next, and OK presses it"
+	aboutDRM   = "The website, in Chromium, which has the copy protection module such services ask for. The remote's arrows go from one thing on the page to the next"
+	aboutMusic = "The web player. The remote's arrows go from one thing on the page to the next, and it keeps playing when you return to the dashboard"
+	aboutCloud = "Games played on a computer far away. Needs a game controller, and a fast connection"
+	aboutOwn   = "The web page of your own server. Enter the address you open it with in a browser"
+)
+
+// site is a website made for a mouse, as most are: the arrows move around it.
+func site(url string) config.App {
+	return config.App{URL: url, Browser: config.BrowserChromium, Arrows: true}
+}
+
+// music is a player that keeps playing behind the dashboard.
+func music(url string) config.App {
+	return config.App{URL: url, Browser: config.BrowserChromium, Arrows: true, Background: true}
+}
+
+// Presets are the apps offered on the settings page, in the order they are
+// offered in. An id, once given out, stays: saved settings name apps by it.
 var Presets = []Preset{
-	{ID: "youtube", Name: "YouTube", Description: "The TV interface, made for a remote",
+	// Films, series and television.
+	{ID: "youtube", Name: "YouTube", Group: GroupVideo, Description: "The TV interface, made for a remote",
 		App: config.App{URL: "https://www.youtube.com/tv", Browser: config.BrowserChromium, UserAgent: youTubeTV}},
-	{ID: "netflix", Name: "Netflix", Description: "In Chromium, which has the DRM module Netflix needs",
+	{ID: "netflix", Name: "Netflix", Group: GroupVideo, Description: "In Chromium, which has the DRM module Netflix needs",
 		App: config.App{URL: "https://www.netflix.com/browse", Browser: config.BrowserChromium}},
-	{ID: "synology-photos", Name: "Synology Photos", Description: "Browse the photo app of your NAS",
+	{ID: "disneyplus", Name: "Disney+", Group: GroupVideo, Description: aboutDRM, App: site("https://www.disneyplus.com/")},
+	{ID: "primevideo", Name: "Prime Video", Group: GroupVideo, Description: aboutDRM, App: site("https://www.primevideo.com/")},
+	{ID: "appletv", Name: "Apple TV+", Group: GroupVideo, Description: aboutDRM, App: site("https://tv.apple.com/")},
+	{ID: "hbomax", Name: "HBO Max", Group: GroupVideo, Description: aboutDRM, App: site("https://www.hbomax.com/")},
+	{ID: "paramountplus", Name: "Paramount+", Group: GroupVideo, Description: aboutDRM, App: site("https://www.paramountplus.com/")},
+	{ID: "dazn", Name: "DAZN", Group: GroupVideo, Description: aboutDRM, App: site("https://www.dazn.com/")},
+	{ID: "crunchyroll", Name: "Crunchyroll", Group: GroupVideo, Description: aboutDRM, App: site("https://www.crunchyroll.com/")},
+	{ID: "twitch", Name: "Twitch", Group: GroupVideo, Description: aboutSite, App: site("https://www.twitch.tv/")},
+	{ID: "zattoo", Name: "Zattoo", Group: GroupVideo, Description: aboutDRM, App: site("https://zattoo.com/")},
+	{ID: "arte", Name: "ARTE", Group: GroupVideo, Description: aboutSite, App: site("https://www.arte.tv/")},
+	{ID: "ard", Name: "ARD Mediathek", Group: GroupVideo, Description: aboutSite, App: site("https://www.ardmediathek.de/")},
+	{ID: "zdf", Name: "ZDF", Group: GroupVideo, Description: aboutSite, App: site("https://www.zdf.de/")},
+	{ID: "srf", Name: "Play SRF", Group: GroupVideo, Description: aboutSite, App: site("https://www.srf.ch/play/tv")},
+	{ID: "playsuisse", Name: "Play Suisse", Group: GroupVideo, Description: aboutSite, App: site("https://www.playsuisse.ch/")},
+	{ID: "iplayer", Name: "BBC iPlayer", Group: GroupVideo, Description: aboutSite, App: site("https://www.bbc.co.uk/iplayer")},
+
+	// Music.
+	{ID: "spotify", Name: "Spotify", Group: GroupMusic, Description: "The Spotify web player. It is made for a mouse: the remote's arrows go from one thing on the page to the next, and OK presses it",
+		App: music("https://open.spotify.com/")},
+	{ID: "youtube-music", Name: "YouTube Music", Group: GroupMusic, Description: aboutMusic, App: music("https://music.youtube.com/")},
+	{ID: "apple-music", Name: "Apple Music", Group: GroupMusic, Description: aboutMusic, App: music("https://music.apple.com/")},
+	{ID: "tidal", Name: "TIDAL", Group: GroupMusic, Description: aboutMusic, App: music("https://listen.tidal.com/")},
+	{ID: "deezer", Name: "Deezer", Group: GroupMusic, Description: aboutMusic, App: music("https://www.deezer.com/")},
+	{ID: "soundcloud", Name: "SoundCloud", Group: GroupMusic, Description: aboutMusic, App: music("https://soundcloud.com/")},
+
+	// Games.
+	{ID: "moonlight", Name: "Moonlight", Group: GroupGames, Description: "Game streaming from your PC. Needs Moonlight installed", Console: true,
+		App: config.App{Command: "moonlight-qt", Mode: config.AppModeConsole}},
+	{ID: "steamlink", Name: "Steam Link", Group: GroupGames, Description: "Game streaming from Steam. Needs Steam Link installed",
+		App: config.App{Command: "steamlink", Mode: config.AppModeDesktop}},
+	{ID: "geforce-now", Name: "GeForce NOW", Group: GroupGames, Description: aboutCloud,
+		App: config.App{URL: "https://play.geforcenow.com/", Browser: config.BrowserChromium}},
+	{ID: "xbox-cloud", Name: "Xbox Cloud Gaming", Group: GroupGames, Description: aboutCloud,
+		App: config.App{URL: "https://www.xbox.com/play", Browser: config.BrowserChromium}},
+
+	// The household's own.
+	{ID: "plex", Name: "Plex", Group: GroupOwn, Description: "The Plex web player", App: site("https://app.plex.tv/desktop")},
+	{ID: "jellyfin", Name: "Jellyfin", Group: GroupOwn, Description: aboutOwn,
+		NeedsURL: true, URLHint: "http://192.168.1.20:8096", App: config.App{Browser: config.BrowserChromium, Arrows: true}},
+	{ID: "kodi", Name: "Kodi", Group: GroupOwn, Description: "Media centre. Needs Kodi installed", Console: true,
+		App: config.App{Command: "kodi-standalone", Mode: config.AppModeConsole}},
+	{ID: "synology-photos", Name: "Synology Photos", Group: GroupOwn, Description: "Browse the photo app of your NAS",
 		NeedsURL: true, URLHint: "http://192.168.1.20:5000/?launchApp=SYNO.Foto.AppInstance",
 		App: config.App{Browser: config.BrowserChromium}},
-	{ID: "spotify", Name: "Spotify", Description: "The Spotify web player. It is made for a mouse: the remote's arrows go from one thing on the page to the next, and OK presses it",
-		App: config.App{URL: "https://open.spotify.com/", Browser: config.BrowserChromium, Background: true, Arrows: true}},
-	{ID: "plex", Name: "Plex", Description: "The Plex web player",
-		App: config.App{URL: "https://app.plex.tv/desktop", Browser: config.BrowserChromium}},
-	{ID: "moonlight", Name: "Moonlight", Description: "Game streaming from your PC. Needs Moonlight installed", Console: true,
-		App: config.App{Command: "moonlight-qt", Mode: config.AppModeConsole}},
-	{ID: "kodi", Name: "Kodi", Description: "Media centre. Needs Kodi installed", Console: true,
-		App: config.App{Command: "kodi-standalone", Mode: config.AppModeConsole}},
-	{ID: "steamlink", Name: "Steam Link", Description: "Game streaming from Steam. Needs Steam Link installed",
-		App: config.App{Command: "steamlink", Mode: config.AppModeDesktop}},
+	{ID: "immich", Name: "Immich", Group: GroupOwn, Description: aboutOwn,
+		NeedsURL: true, URLHint: "http://192.168.1.20:2283", App: config.App{Browser: config.BrowserChromium, Arrows: true}},
 }
 
 // Emulator is a game emulator that runs well on a Raspberry Pi 5 and is

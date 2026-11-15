@@ -435,16 +435,16 @@ test("app row: OK on Status shows how PiDash is doing; arrows leave it open, Bac
 
 test("settings: emulators are offered, with how to install one that is missing", async () => {
   const page = await openPage(pi.base, "/settings#apps");
-  await page.waitForSelector("#add-kind option", { state: "attached" });
-  const choices = await page.evaluate(() => [...document.querySelectorAll("#add-kind option")].map((o) => o.textContent));
-  for (const emulator of ["RetroArch", "PPSSPP", "Dolphin", "ScummVM"]) assert.ok(choices.some((c) => c.startsWith(emulator)), `${emulator} is not offered: ${choices}`);
+  await page.waitForSelector("#add-grid .pick");
+  const choices = await page.evaluate(() => [...document.querySelectorAll("#add-grid .pick .pick-name")].map((o) => o.textContent));
+  for (const emulator of ["RetroArch", "PPSSPP", "Dolphin", "ScummVM"]) assert.ok(choices.includes(emulator), `${emulator} is not offered: ${choices}`);
   // Nothing is installed on the machine running the tests.
-  await page.selectOption("#add-kind", "__emulator:retroarch");
+  await page.click('#add-grid .pick[data-add="__emulator:retroarch"]');
   assert.match(await page.locator("#add-desc").innerText(), /sudo apt install retroarch/);
   const before = await page.locator("#app-list li").count();
   assert.equal(before, 2, "the two apps of the test setup are listed");
   await page.click("#add-btn");
-  assert.match(await page.locator("#add-result").innerText(), /not installed/);
+  assert.match(await page.locator("#add-problem").innerText(), /not installed/);
   assert.equal(await page.locator("#app-list li").count(), before, "an emulator that is not installed is not added");
   assert.deepEqual(page.problems, []);
   await page.context().close();
@@ -2828,6 +2828,90 @@ test("in a container only the dashboard is served: no apps, nothing of the machi
     assert.equal((await fetch(own.base + "/api/update/install", { method: "POST" })).status >= 400, true);
     assert.deepEqual(settings.problems, []);
     await settings.context().close();
+  } finally {
+    await own.stop();
+  }
+});
+
+test("settings: apps are added from cards with their pictures; one press where nothing more is needed", async () => {
+  const own = await startPiDash(APPS);
+  try {
+    const page = await openPage(own.base, "/settings#apps");
+    await page.waitForSelector("#add-grid .pick");
+    const shown = await page.evaluate(() => ({
+      headings: [...document.querySelectorAll("#add-grid h4")].map((h) => h.textContent),
+      names: [...document.querySelectorAll("#add-grid .pick .pick-name")].map((n) => n.textContent),
+      added: [...document.querySelectorAll("#add-grid .pick.added")].map((c) => c.dataset.add),
+      detail: document.getElementById("add-detail").hidden,
+    }));
+    assert.deepEqual(shown.headings, ["Films, series and TV", "Music", "Games", "From your own server", "Something else"]);
+    for (const name of ["Disney+", "Prime Video", "Apple TV+", "Twitch", "Play SRF", "YouTube Music", "TIDAL", "GeForce NOW", "Jellyfin", "Immich", "Another website"]) assert.ok(shown.names.includes(name), `${name} is not offered: ${shown.names}`);
+    // What is among the apps already is marked, and cannot be added twice.
+    assert.deepEqual(shown.added, ["youtube", "netflix"]);
+    assert.equal(shown.detail, true, "nothing is asked for before something is chosen");
+    // Every ready-made app has a picture of its own, YouTube Music not YouTube's.
+    await page.waitForFunction(() => [...document.querySelectorAll("#add-grid .pick img")].every((i) => i.complete));
+    const pictures = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll("#add-grid .pick")].map((c) => [c.dataset.add, c.querySelector("img") ? c.querySelector("img").naturalWidth > 0 : !!c.querySelector(".pick-art svg, .pick-art.bare")])));
+    assert.ok(Object.values(pictures).every(Boolean), JSON.stringify(pictures));
+    const icon = async (id) => (await (await fetch(`${own.base}/api/presets/${id}/icon`)).text()).replace(/\s+/g, " ");
+    assert.notEqual(await icon("youtube-music"), await icon("youtube"));
+    assert.match(await icon("disneyplus"), /D\+/);
+    assert.equal((await fetch(own.base + "/api/presets/nothing/icon")).status, 404);
+
+    // One press adds an app that needs nothing more, and says what it is.
+    await page.click('#add-grid .pick[data-add="disneyplus"]');
+    assert.match(await page.locator("#add-result").innerText(), /Added: Disney\+\..*arrows/);
+    assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll("#app-list .name")].map((n) => n.textContent)), ["Netflix", "YouTube", "Disney+"]);
+    assert.equal(await page.evaluate(() => document.querySelector('#add-grid .pick[data-add="disneyplus"]').disabled), true);
+
+    // One that needs an address asks for it, and is only added with one.
+    await page.click('#add-grid .pick[data-add="jellyfin"]');
+    assert.equal(await page.evaluate(() => document.getElementById("add-detail").hidden), false);
+    assert.equal(await page.locator("#add-what").innerText(), "Jellyfin");
+    assert.equal(await page.evaluate(() => document.activeElement.id), "add-url", "the cursor is where the address goes");
+    await page.click("#add-btn");
+    assert.match(await page.locator("#add-problem").innerText(), /Enter the address/);
+    await page.fill("#add-url", "http://192.168.1.20:8096");
+    await page.click("#add-btn");
+    assert.equal(await page.evaluate(() => document.getElementById("add-detail").hidden), true);
+    assert.match(await page.locator("#add-result").innerText(), /Added: Jellyfin/);
+
+    // Saved, they are tiles, with the remote's arrows where the site is made for a mouse.
+    await page.click("#save");
+    for (let i = 0; i < 100; i++) {
+      try {
+        if ((await (await fetch(own.base + "/api/apps")).json()).apps.length === 4) break;
+      } catch {
+        /* restarting */
+      }
+      assert.ok(i < 99, "the apps were never saved");
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const tiles = (await (await fetch(own.base + "/api/apps")).json()).apps;
+    assert.deepEqual(tiles.map((a) => [a.id, a.hasIcon]), [["netflix", true], ["youtube", true], ["disneyplus", true], ["jellyfin", true]]);
+    assert.deepEqual(page.problems, []);
+    await page.context().close();
+
+    // With the TV's remote: the highlight walks the cards, and stays among them after adding one.
+    const tv = await openPage(own.base, "/settings?from=tv#apps");
+    const remote = remoteFor(tv, own.base);
+    await tv.waitForSelector("#add-grid .pick");
+    await tv.waitForFunction(() => document.querySelector("#groups .tv-focus"));
+    await remote.press("right");
+    for (let i = 0; i < 40 && !(await tv.evaluate(() => document.querySelector(".tv-focus")?.classList.contains("pick"))); i++) await remote.press("down");
+    const on = () => tv.evaluate(() => document.querySelector(".tv-focus")?.dataset.add ?? "");
+    const first = await on();
+    assert.ok(first, "the highlight reaches the cards");
+    await remote.press("right");
+    const beside = await on();
+    assert.notEqual(beside, first, "Right goes to the card beside");
+    assert.ok(!["youtube", "netflix", "disneyplus", "jellyfin"].includes(beside), `a card that is in the list was highlighted: ${beside}`);
+    await remote.press("select");
+    await tv.waitForFunction((id) => document.querySelector(`#add-grid .pick[data-add="${id}"]`).disabled, beside);
+    const after = await on();
+    assert.ok(after && after !== beside, `the highlight stays among the cards: ${after}`);
+    assert.deepEqual(tv.problems, []);
+    await tv.context().close();
   } finally {
     await own.stop();
   }
