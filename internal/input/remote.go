@@ -269,8 +269,18 @@ func (r *Remote) startRepeat(device string, fire func()) {
 		every = 140 * time.Millisecond
 	}
 	done := make(chan struct{})
-	var once sync.Once
-	stop := func() { once.Do(func() { close(done) }) }
+	// Held while a repeat is delivered, and to stop: once stop has returned,
+	// nothing more is delivered, not even a repeat that was just due.
+	var firing sync.Mutex
+	stopped := false
+	stop := func() {
+		firing.Lock()
+		defer firing.Unlock()
+		if !stopped {
+			stopped = true
+			close(done)
+		}
+	}
 	r.repeatMu.Lock()
 	if r.repeats == nil {
 		r.repeats = map[string]func(){}
@@ -288,7 +298,13 @@ func (r *Remote) startRepeat(device string, fire func()) {
 				return
 			case <-wait.C:
 			}
+			firing.Lock()
+			if stopped {
+				firing.Unlock()
+				return
+			}
 			fire()
+			firing.Unlock()
 			wait.Reset(every)
 		}
 	}()
