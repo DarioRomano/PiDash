@@ -63,6 +63,8 @@ export interface ClientConfig {
   /** Paintings are offered in place of the photos; and whether they are what shows. */
   art?: boolean;
   art_on?: boolean;
+  /** Nothing is set up yet: the questions of the first start are to be asked. */
+  setup?: boolean;
   /** Only the dashboard is served (a container): no desktop to leave for, no machine to switch off. */
   standalone?: boolean;
   /** The rain radar is offered beside the forecast. */

@@ -2371,7 +2371,7 @@ test("after an update the TV says once what is new; a first start says nothing",
     await page.waitForFunction(() => document.getElementById("whatsnew").classList.contains("open"));
     const said = await page.evaluate(() => ({ title: document.querySelector("#whatsnew h2").textContent, lines: [...document.querySelectorAll("#whatsnew li")].map((l) => l.textContent) }));
     assert.equal(said.title, `New in ${version}`);
-    assert.ok(said.lines.length >= 3 && said.lines.some((l) => /Back pressed three times/.test(l)) && said.lines.some((l) => /Spotify/.test(l)), String(said.lines));
+    assert.ok(said.lines.length >= 3 && said.lines.some((l) => /rain radar goes on/.test(l)) && said.lines.some((l) => /Immich/.test(l)), String(said.lines));
     // Any button closes it, and does nothing else.
     await remote.press("select");
     assert.equal(await open(), false);
@@ -3067,5 +3067,105 @@ test("photos from Immich: set up on the settings page, tested, and then they are
   } finally {
     await own.stop();
     await new Promise((r) => immich.close(r));
+  }
+});
+
+test("a first start asks three things on the TV: the language, the town, the photos; and never again", async () => {
+  // Nothing set up, nothing ever saved.
+  const own = await startPiDash("", { PIDASH_FIRST_START: "1" });
+  try {
+    assert.equal((await (await fetch(own.base + "/api/config")).json()).setup, true);
+    // The dashboard hands over to the questions.
+    const page = await openPage(own.base);
+    await page.waitForURL(/\/setup\?from=tv/);
+    const remote = remoteFor(page, own.base);
+    const step = () => page.evaluate(() => [...document.querySelectorAll(".step")].find((s) => !s.hidden).dataset.step);
+    const focus = () => page.evaluate(() => document.querySelector(".tv-focus")?.textContent.trim() ?? "");
+    await page.waitForFunction(() => document.querySelector(".tv-focus"));
+    assert.deepEqual([await step(), await focus()], ["language", "English"]);
+
+    // The language: chosen with the remote, and the page speaks it at once.
+    await remote.press("down");
+    assert.equal(await focus(), "Deutsch");
+    await remote.press("select");
+    assert.equal(await step(), "weather");
+    await page.waitForFunction(() => document.querySelector('.step[data-step="weather"] h2').textContent === "Wo steht dieser Fernseher?");
+
+    // Back goes a question back; choosing again goes on.
+    await remote.press("back");
+    assert.equal(await step(), "language");
+    await remote.press("select"); // English, where the highlight starts
+    assert.equal(await step(), "weather");
+    await page.waitForFunction(() => document.querySelector('.step[data-step="weather"] h2').textContent === "Where is this TV?");
+
+    // The town: typed (here straight into the field), looked up, and only then is there a Next.
+    assert.equal(await page.evaluate(() => document.getElementById("weather-next").disabled), true);
+    await page.evaluate(() => {
+      const town = document.getElementById("town");
+      town.value = "nowhere";
+      town.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await page.click("#town-find");
+    await page.waitForFunction(() => /no place of that name/.test(document.getElementById("town-result").textContent));
+    assert.equal(await page.evaluate(() => document.getElementById("weather-next").disabled), true);
+    await page.evaluate(() => {
+      const town = document.getElementById("town");
+      town.value = "Bern";
+      town.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await page.click("#town-find");
+    await page.waitForFunction(() => /Found: Bern, Sampleland/.test(document.getElementById("town-result").textContent));
+    assert.equal(await focus(), "Next", "the highlight is on the way on");
+    await remote.press("select");
+    assert.equal(await step(), "photos");
+
+    // The photos: a kind is chosen here, its details on the settings page.
+    await remote.press("down");
+    assert.equal(await focus(), "Immich on my server");
+    await remote.press("select");
+    assert.equal(await step(), "done");
+    assert.match(await page.locator("#finish-note").innerText(), /how to reach your photos/);
+    await remote.press("select"); // Start
+    await page.waitForURL(/\/settings\?from=tv&source=immich#photos/, { timeout: 30000 });
+    await page.waitForSelector("#main:not([hidden])");
+    assert.equal(await page.evaluate(() => document.getElementById("p-source").value), "immich");
+    assert.equal(await page.evaluate(() => document.getElementById("p-immich").hidden), false);
+
+    // What was answered is saved, and the questions are not asked again.
+    const cfg = await (await fetch(own.base + "/api/config")).json();
+    assert.deepEqual([cfg.setup, cfg.display.language], [false, "en"]);
+    const saved = await (await fetch(own.base + "/api/settings")).json();
+    assert.equal(saved.weather.location, "Bern");
+    assert.deepEqual(page.problems, []);
+    await page.context().close();
+    const again = await openPage(own.base);
+    await again.waitForFunction(() => document.getElementById("backdrop").classList.contains("has-photo"), null, { timeout: 20000 });
+    assert.equal(new URL(again.url()).pathname, "/");
+    await again.context().close();
+  } finally {
+    await own.stop();
+  }
+});
+
+test("a first start's questions can be waved away, and are then not asked again", async () => {
+  const own = await startPiDash("", { PIDASH_FIRST_START: "1" });
+  try {
+    const page = await openPage(own.base);
+    await page.waitForURL(/\/setup\?from=tv/);
+    const remote = remoteFor(page, own.base);
+    await page.waitForFunction(() => document.querySelector(".tv-focus"));
+    await remote.press("back");
+    await page.waitForSelector("[data-tv-layer]");
+    assert.match(await page.locator("[data-tv-layer]").innerText(), /Leave the questions for later\?/);
+    await remote.press("select"); // Leave them
+    await page.waitForURL((u) => u.pathname === "/");
+    const cfg = await (await fetch(own.base + "/api/config")).json();
+    assert.equal(cfg.setup, false);
+    // Nothing was set: no weather, the language as it was.
+    assert.equal((await (await fetch(own.base + "/api/settings")).json()).weather.location, "");
+    assert.deepEqual(page.problems, []);
+    await page.context().close();
+  } finally {
+    await own.stop();
   }
 });

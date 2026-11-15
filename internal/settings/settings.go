@@ -526,6 +526,8 @@ type Store struct {
 
 	mu   sync.Mutex
 	file File
+	// fresh is true while there was no settings file at the start.
+	fresh bool
 }
 
 // Open reads settings.json. A missing file is an empty one. An unreadable
@@ -537,6 +539,7 @@ func Open(path string, base config.Config) (*Store, error) {
 	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
+		s.fresh = true
 		return s, nil
 	}
 	if err != nil {
@@ -1125,6 +1128,9 @@ type Quick struct {
 	PhotoSeconds int `json:"photoSeconds,omitempty"`
 	// Art says paintings are showing in place of the photos.
 	Art bool `json:"art,omitempty"`
+	// SetupDone says the questions of the first start were answered, or
+	// waved away: they are not asked again.
+	SetupDone bool `json:"setupDone,omitempty"`
 }
 
 // OwnTiles are the tiles of PiDash's own that can be hidden.
@@ -1135,6 +1141,32 @@ func (s *Store) ArtMode() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.file.Quick != nil && s.file.Quick.Art
+}
+
+// Fresh reports whether nothing had ever been saved here when PiDash
+// started: there was no settings file.
+func (s *Store) Fresh() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.fresh
+}
+
+// SetupDone reports whether the questions of the first start are done with.
+func (s *Store) SetupDone() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.file.Quick != nil && s.file.Quick.SetupDone
+}
+
+// SetSetupDone remembers that the questions of the first start were
+// answered or waved away.
+func (s *Store) SetSetupDone() error {
+	return s.change(func(f *File) error {
+		q := f.quick()
+		q.SetupDone = true
+		f.Quick = q
+		return nil
+	})
 }
 
 // SetArtMode remembers whether paintings are showing in place of the photos.

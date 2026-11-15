@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0d12" />
+    <title>PiDash · Welcome</title>
+    <link rel="stylesheet" href="/src/settings.css" />
+  </head>
+  <body class="setup">
+    <main id="setup">
+      <ol id="setup-steps" aria-hidden="true"><li></li><li></li><li></li><li></li></ol>
+
+      <!-- The names of the languages stay as they are, whatever the language. -->
+      <section class="card step" data-step="language">
+        <h1>Welcome to PiDash</h1>
+        <p class="hint">Three questions, and the TV is yours. ▲ ▼ move, OK chooses, Back goes back.</p>
+        <h2>Which language?</h2>
+        <div class="choices" id="languages" data-no-translate></div>
+      </section>
+
+      <section class="card step" data-step="weather" hidden>
+        <h2>Where is this TV?</h2>
+        <p class="hint">For the weather, the rain radar and the times of sunrise and sunset. A town is enough.</p>
+        <label class="field">
+          <span>Town</span>
+          <input id="town" type="text" autocomplete="off" placeholder="Zurich" />
+        </label>
+        <button id="town-find" type="button" class="secondary wide">Look it up</button>
+        <p id="town-result" class="result"></p>
+        <div class="pair">
+          <button id="weather-skip" type="button" class="secondary wide">Not now</button>
+          <button id="weather-next" type="button" class="secondary wide" disabled>Next</button>
+        </div>
+      </section>
+
+      <section class="card step" data-step="photos" hidden>
+        <h2>Where are your photos?</h2>
+        <p class="hint">
+          They become the picture on the TV. The page after this one asks for what it takes to reach them: an address
+          and an account.
+        </p>
+        <div class="choices">
+          <button type="button" class="secondary wide" data-source="synology">Synology Photos on my NAS</button>
+          <button type="button" class="secondary wide" data-source="immich">Immich on my server</button>
+          <button type="button" class="secondary wide" data-source="share">A shared folder on the network</button>
+          <button type="button" class="secondary wide" data-source="">Not now</button>
+        </div>
+      </section>
+
+      <section class="card step" data-step="done" hidden>
+        <h2>That is all</h2>
+        <ul class="setup-tips">
+          <li>OK on the dashboard opens the app row. Settings is one of its tiles: apps, radio and everything else are added there.</li>
+          <li>▲ on the dashboard is about the photo that is showing; ▼ changes how much is shown beside it.</li>
+          <li>Inside an app, holding Back, or pressing it three times quickly, returns to the dashboard.</li>
+        </ul>
+        <p id="finish-note" class="hint"></p>
+        <button id="finish" type="button" class="secondary wide">Start</button>
+        <p id="finish-result" class="result"></p>
+      </section>
+    </main>
+    <script type="module" src="/src/setup.ts"></script>
+  </body>
+</html>

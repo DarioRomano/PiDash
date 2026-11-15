@@ -152,6 +152,11 @@ func main() {
 	if *alone {
 		cfg.OnlyTheDashboard()
 	}
+	// Nothing set up and nothing ever saved: the dashboard asks the few
+	// things worth asking first. Development has its sample data instead,
+	// unless it is asked to behave like a first start.
+	firstStart := store.Fresh() && !cfg.Weather.Enabled() && cfg.Photos.Source == config.PhotoSourceNone &&
+		(!*mock || os.Getenv("PIDASH_FIRST_START") != "")
 	if *execApp != "" {
 		// Does not return on success.
 		if err := runApp(cfg, *execApp, log); err != nil {
@@ -533,7 +538,7 @@ func main() {
 		Art:    artService(cfg, *mock, version, log),
 		Videos: films, PretendTV: pretendTV, Radar: rainRadar(cfg, *mock, version),
 		Kiosk: kioskControl, Apps: appManager, Photos: photoService,
-		Input: phoneInput, TV: tvService, Version: version, Standalone: *alone, Speakers: speakers, NewRunner: newRunner, Updater: updater, PhotoStatePath: photoStatePath(), TestHooks: *mock,
+		Input: phoneInput, TV: tvService, Version: version, Standalone: *alone, Speakers: speakers, FirstStart: firstStart, NewRunner: newRunner, Updater: updater, PhotoStatePath: photoStatePath(), TestHooks: *mock,
 		Notices: notices, URLFile: server.URLFile(), Settings: store, BaseListen: baseListen,
 		Remote: remote, Problems: problems, Bluetooth: blue, Sound: audio, Watchdog: watchdog, Playing: player, Games: library, Power: powerControl, Maps: mapTiles(cfg, version),
 	})

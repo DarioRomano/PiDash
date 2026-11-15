@@ -114,3 +114,15 @@ button.wide { width: 100%; }
 body { padding-bottom: calc(132px + env(safe-area-inset-bottom)); }
 #p-synology { display: flex; flex-direction: column; gap: 12px; }
 #kb-problem { margin-bottom: 10px; }
+
+/* --- The questions of the first start: one at a time, in the middle of the screen --- */
+body.setup { display: grid; place-items: center; min-height: 100vh; }
+#setup { width: min(560px, 100%); padding: 16px; }
+#setup .step[hidden] { display: none; }
+#setup h1 { font-size: 26px; font-weight: 600; }
+#setup .card h2 { font-size: 20px; margin-top: 6px; }
+#setup .choices { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+#setup-steps { list-style: none; display: flex; gap: 8px; justify-content: center; margin: 0 0 14px; padding: 0; }
+#setup-steps li { width: 34px; height: 5px; border-radius: 3px; background: #232a3d; }
+#setup-steps li.on { background: var(--accent); }
+.setup-tips { margin: 4px 0 6px; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 15px; line-height: 1.45; }

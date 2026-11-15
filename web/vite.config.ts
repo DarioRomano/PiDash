@@ -16,6 +16,7 @@ export default defineConfig({
         remote: resolve(__dirname, "remote.html"),
         photos: resolve(__dirname, "photos.html"),
         settings: resolve(__dirname, "settings.html"),
+        setup: resolve(__dirname, "setup.html"),
       },
     },
   },

@@ -855,6 +855,22 @@ let runningVersion = "";
 let shownNotice = "";
 
 function applyConfig(cfg: ClientConfig) {
+  // Nothing is set up yet: the few questions of a first start come before
+  // the dashboard. Once per session of the browser, so that a way out of
+  // them never leads straight back in.
+  if (cfg.setup) {
+    let asked = false;
+    try {
+      asked = sessionStorage.getItem("pidash-setup") === "1";
+      sessionStorage.setItem("pidash-setup", "1");
+    } catch {
+      /* asked each time, then */
+    }
+    if (!asked) {
+      location.href = "/setup?from=tv";
+      return;
+    }
+  }
   // After an update the backend restarts with a new version: load the new
   // dashboard too, so the TV never runs an old page against a new backend.
   // The same goes for saved settings, which the backend applies by restarting.

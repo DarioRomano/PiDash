@@ -1324,10 +1324,22 @@ async function leaveOutTheMachine() {
   }
 }
 
+/** The kind of photos named in the address was chosen once; after that the page is the person's. */
+let sourceTaken = false;
+
 async function load() {
   const res = await fetch("/api/settings", { cache: "no-store" });
   if (!res.ok) throw new Error(await res.text());
   fill(await res.json());
+  // Sent here to set up a kind of photos (from the questions of the first
+  // start): that kind is chosen already, and its fields are open.
+  const wanted = new URLSearchParams(location.search).get("source");
+  const sources = $<HTMLSelectElement>("p-source");
+  if (wanted && !sourceTaken && [...sources.options].some((o) => o.value === wanted)) {
+    sourceTaken = true;
+    sources.value = wanted;
+    refresh();
+  }
   await leaveOutTheMachine();
   $("groups").hidden = false;
   $("main").hidden = false;

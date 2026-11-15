@@ -1037,6 +1037,9 @@ type Client struct {
 	// ArtOn whether they are what is showing.
 	Art   bool `json:"art"`
 	ArtOn bool `json:"art_on"`
+	// Setup asks the dashboard to show the questions of the first start:
+	// nothing has been set up yet, and they were not waved away.
+	Setup bool `json:"setup"`
 	// Standalone is whether only the dashboard is served (a container):
 	// there is no desktop to leave for and no machine to switch off.
 	Standalone bool `json:"standalone"`

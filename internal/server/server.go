@@ -99,6 +99,7 @@ type Server struct {
 	version    string
 	standalone bool
 	speakers   *receivers.Service
+	firstStart bool
 	urlFile    string
 	static     fs.FS
 
@@ -162,6 +163,9 @@ type Deps struct {
 	Version string
 	// Standalone is set where only the dashboard is served (a container).
 	Standalone bool
+	// FirstStart is set when PiDash started with nothing set up: no place
+	// for the weather, no photos, no saved settings.
+	FirstStart bool
 	// Speakers is the Pi as a speaker for phones; may be nil.
 	Speakers *receivers.Service
 	// Notices are start-up problems to show on the TV.
@@ -182,7 +186,7 @@ type Deps struct {
 func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	k, am, ps, newRunner := d.Kiosk, d.Apps, d.Photos, d.NewRunner
 	s := &Server{cfg: cfg, log: log, hub: newHub(), kiosk: k, apps: am, photos: ps, input: d.Input, tv: d.TV,
-		pin: pinGuard{pin: cfg.Remote.PIN}, version: d.Version, standalone: d.Standalone, speakers: d.Speakers, urlFile: d.URLFile, notices: d.Notices,
+		pin: pinGuard{pin: cfg.Remote.PIN}, version: d.Version, standalone: d.Standalone, speakers: d.Speakers, firstStart: d.FirstStart, urlFile: d.URLFile, notices: d.Notices,
 		settings: d.Settings, baseListen: d.BaseListen, started: time.Now().UnixMilli(), restart: make(chan struct{}),
 		static: static, mux: http.NewServeMux()}
 	s.runner = newRunner(func(e providers.Entry) { s.hub.broadcast("state", e) })
@@ -267,6 +271,13 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 			w.WriteHeader(http.StatusNoContent)
 		})
 		// Music starting and stopping, for the end-to-end tests.
+		// Development: places are "found" without asking the weather service.
+		s.weatherLookup = func(_ context.Context, location string) (string, error) {
+			if strings.EqualFold(location, "nowhere") {
+				return "", errors.New("no place of that name was found")
+			}
+			return location + ", Sampleland", nil
+		}
 		s.mux.HandleFunc("POST /api/test/playing", func(w http.ResponseWriter, r *http.Request) {
 			var track *playing.Track
 			mock, ok := s.player.(*playing.Mock)
@@ -309,6 +320,8 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("GET /api/apps/{id}/icon", s.handleAppIcon)
 	s.mux.HandleFunc("GET /api/presets/{id}/icon", s.handlePresetIcon)
 	s.mux.HandleFunc("GET /api/speakers", s.handleSpeakers)
+	s.mux.HandleFunc("POST /api/setup/done", s.handleSetupDone)
+	s.mux.HandleFunc("GET /setup", s.servePage("setup.html"))
 	if ps != nil {
 		ps.OnChange(func(st photos.Status) { s.hub.broadcast("photos", st) })
 	}
@@ -501,6 +514,7 @@ func (s *Server) clientConfig() config.Client {
 	c.Radar = c.Radar && s.radar != nil
 	c.Version = s.version
 	c.Standalone = s.standalone
+	c.Setup = s.firstStart && s.settings != nil && !s.settings.SetupDone()
 	c.Started = s.started
 	s.noticeMu.Lock()
 	c.Notices = append([]string{}, s.notices...)
@@ -778,6 +792,23 @@ func (s *Server) handleAppIcon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.ServeFile(w, r, icon.Path)
+}
+
+// handleSetupDone notes that the questions of the first start were answered
+// or waved away, so that they are not asked again.
+func (s *Server) handleSetupDone(w http.ResponseWriter, r *http.Request) {
+	if s.settings == nil {
+		http.Error(w, "settings cannot be saved here", http.StatusNotFound)
+		return
+	}
+	if !s.pin.allow(w, r) {
+		return
+	}
+	if err := s.settings.SetSetupDone(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleSpeakers says how the Pi is doing as a speaker for phones: which of

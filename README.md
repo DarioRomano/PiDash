@@ -207,6 +207,20 @@ home network, not for a port opened to the internet. A settings PIN
 
 The same mode without Docker is `pidash -standalone`.
 
+## The first start
+
+The first time the dashboard opens on a freshly installed PiDash, it asks
+three things, with the TV's remote: which language, where the TV is (for
+the weather; a town is enough, and it is looked up at once), and where your
+photos are. For photos it only asks which kind (Synology Photos, Immich, a
+shared folder on the network) and then opens the settings page at that
+kind, where the address and the account go. Each question can be answered
+with "Not now", and **Back** on the first one leaves them all for later.
+They are asked once: everything they set is on the [settings page](#settings).
+
+A PiDash that already has a place for the weather or photos, or where
+anything was ever saved on the settings page, does not ask.
+
 ## Using it
 
 | To… | Do this |
