@@ -1067,6 +1067,9 @@ kbd {
   grid-template-columns: repeat(var(--columns, 6), minmax(0, 1fr));
   gap: 26px;
   align-content: start;
+  /* Rows are as high as their cards, however many there are: the page moves
+     to the card that is chosen, rather than squeezing them all in. */
+  grid-auto-rows: max-content;
   padding: 10px;
   margin: 0 -10px;
   scroll-padding: 10px;
@@ -1081,6 +1084,13 @@ kbd {
 .card-title { font-size: 23px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-sub { margin-top: 2px; font-size: 18px; color: var(--fg-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card.on .card-sub { color: var(--accent); }
+/* Frames of films: wider than they are high, four to a row. A name may take two lines. */
+.grid.wide .card-art { aspect-ratio: 16 / 9; }
+.grid.wide .card-art svg { width: 26%; height: 46%; }
+.grid.wide .card-title { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.25; }
+/* A heading over some of the cards, which start a row of their own under it. */
+.grid-heading { grid-column: 1 / -1; margin: 6px 0 -8px; font-size: 24px; font-weight: 600; color: var(--fg-dim); }
+.grid-heading:first-child { margin-top: 0; }
 /* Names rather than pictures: two columns of rows. */
 .grid.rows { gap: 14px 26px; }
 .grid.rows .card { display: flex; align-items: center; }

@@ -13,13 +13,15 @@ export interface Card {
   glyph?: string;
   /** Marked: running, or begun. */
   on?: boolean;
+  /** A heading over this card and the ones after it, which then start a row of their own. */
+  heading?: string;
 }
 
 export interface GridOptions {
   title: string;
   cards: Card[];
-  /** "covers" are upright pictures in six columns; "rows" are names in two. */
-  shape: "covers" | "rows";
+  /** "covers" are upright pictures in six columns; "wide" ones are film frames in four; "rows" are names in two. */
+  shape: "covers" | "wide" | "rows";
   /** The id of the card to start on. */
   selected?: string;
   /** What to say where there is nothing to choose. */
@@ -49,7 +51,7 @@ export class Grid {
   private opt: GridOptions | null = null;
   private at = 0;
   private columns = 6;
-  private box: HTMLElement | null = null;
+  private cardEls: HTMLElement[] = [];
   private idle = 0;
 
   constructor(
@@ -83,7 +85,7 @@ export class Grid {
   /** Opens the page, or shows something else on the page that is open. */
   open(opt: GridOptions) {
     this.opt = opt;
-    this.columns = opt.shape === "covers" ? 6 : 2;
+    this.columns = opt.shape === "covers" ? 6 : opt.shape === "wide" ? 4 : 2;
     this.at = Math.max(0, opt.cards.findIndex((c) => c.id === opt.selected));
     this.draw();
     this.stir();
@@ -138,11 +140,14 @@ export class Grid {
         move(this.at + 1);
         break;
       case "up":
-        move(this.at - this.columns);
+      case "down": {
+        // By where the cards lie: a heading starts a row anew, so rows are
+        // not all as long as each other.
+        const to = this.above(action === "up" ? -1 : 1);
+        if (to < 0) play("edge");
+        else move(to);
         break;
-      case "down":
-        move(this.at + this.columns);
-        break;
+      }
       case "select": {
         const card = this.selected;
         if (!card) {
@@ -172,18 +177,25 @@ export class Grid {
     title.dataset.noTranslate = "";
     const box = el("div", `grid ${opt.shape}`);
     box.style.setProperty("--columns", String(this.columns));
+    this.cardEls = [];
     opt.cards.forEach((card, i) => {
+      if (card.heading) box.appendChild(el("h3", "grid-heading", card.heading));
       const c = el("div", "card" + (card.on ? " on" : ""));
+      this.cardEls.push(c);
       const art = el("div", "card-art");
       if (card.image) {
         const img = document.createElement("img");
         img.alt = "";
         img.loading = "lazy";
         img.decoding = "async";
-        // A cover that cannot be loaded leaves the name to speak for itself.
+        // A cover that cannot be loaded leaves its place to the card's
+        // drawing, or to the name's first letter.
         img.addEventListener("error", () => {
-          art.classList.add("bare");
-          art.textContent = card.title.trim().charAt(0).toUpperCase();
+          if (card.glyph) art.innerHTML = card.glyph;
+          else {
+            art.classList.add("bare");
+            art.textContent = card.title.trim().charAt(0).toUpperCase();
+          }
         });
         img.src = card.image;
         art.appendChild(img);
@@ -208,7 +220,6 @@ export class Grid {
       });
       box.appendChild(c);
     });
-    this.box = box;
     const parts: HTMLElement[] = [title];
     if (opt.cards.length === 0) parts.push(el("p", "grid-note", opt.empty ?? "There is nothing here."));
     parts.push(box, el("footer", "help-foot", opt.foot ?? "◀ ▶ ▲ ▼ choose  ·  OK open  ·  Back close"));
@@ -218,9 +229,31 @@ export class Grid {
 
   /** Moves the highlight, and the page with it where the card is out of sight. */
   private mark() {
-    const cards = this.box?.children;
-    if (!cards) return;
-    for (let i = 0; i < cards.length; i++) cards[i].classList.toggle("focused", i === this.at);
-    (cards[this.at] as HTMLElement | undefined)?.scrollIntoView({ block: "nearest" });
+    this.cardEls.forEach((c, i) => c.classList.toggle("focused", i === this.at));
+    const here = this.cardEls[this.at];
+    if (!here) return;
+    // The first card under a heading brings its heading into view with it.
+    const before = here.previousElementSibling;
+    if (before?.classList.contains("grid-heading")) before.scrollIntoView({ block: "nearest" });
+    here.scrollIntoView({ block: "nearest" });
+  }
+
+  /**
+   * The card in the row above (-1) or below (1) that lies nearest under or
+   * over the highlighted one; -1 where there is no such row. Down from a
+   * row that is longer than the last goes to the last card.
+   */
+  private above(dir: -1 | 1): number {
+    const here = this.cardEls[this.at]?.getBoundingClientRect();
+    if (!here) return -1;
+    let best = -1, bestRow = Infinity, bestSide = Infinity;
+    this.cardEls.forEach((c, i) => {
+      const r = c.getBoundingClientRect();
+      const row = dir * (r.top - here.top);
+      if (row < here.height / 2) return; // the same row, or the other way
+      const side = Math.abs(r.left - here.left);
+      if (row < bestRow - 1 || (Math.abs(row - bestRow) <= 1 && side < bestSide)) [best, bestRow, bestSide] = [i, row, side];
+    });
+    return best;
   }
 }

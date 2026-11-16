@@ -392,6 +392,7 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("GET /api/radar", s.handleRadarFrames)
 	s.mux.HandleFunc("GET /api/radar/{time}/{z}/{x}/{y}", s.handleRadarTile)
 	s.mux.HandleFunc("GET /api/videos", s.handleVideos)
+	s.mux.HandleFunc("GET /api/videos/cover", s.handleVideoCover)
 	s.mux.HandleFunc("POST /api/videos/play", s.handleVideoPlay)
 	s.mux.HandleFunc("GET /api/videos/stream/{token}/{name}", s.handleVideoStream)
 	s.ownNames = namesOfThisPi(cfg.Server.Names)

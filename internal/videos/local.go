@@ -75,6 +75,8 @@ func (l *Local) List(_ context.Context, folder string) (title, parent string, to
 			entries = append(entries, Entry{Name: name, Path: at, Size: info.Size()})
 		case isSubtitle(name):
 			entries = append(entries, Entry{Name: name, Path: at, subtitle: true})
+		case isPicture(name):
+			entries = append(entries, Entry{Name: name, Path: at, picture: true})
 		}
 	}
 	arrange(entries)

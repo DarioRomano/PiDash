@@ -542,6 +542,10 @@ func main() {
 	}
 
 	films := videoLibrary(cfg, *mock, func() string { return srv.Loopback() })
+	if films != nil {
+		// While a video plays, the Pi has better things to do than make covers.
+		films.Busy = func() bool { return appManager.Status().Running == videos.AppID }
+	}
 	srv = server.New(cfg, log, static, server.Deps{
 		Art:    artService(cfg, *mock, version, log),
 		Videos: films, PretendTV: pretendTV, Radar: rainRadar(cfg, *mock, version),
@@ -693,6 +697,11 @@ func videoLibrary(cfg config.Config, mock bool, self func() string) *videos.Libr
 	}
 	lib := &videos.Library{Player: v.Player, Dir: filepath.Join(dataDir, "videos")}
 	_ = os.MkdirAll(lib.Dir, 0o700)
+	// The videos' covers can be made again at any time: they are kept with
+	// the other things that can.
+	if cache, err := os.UserCacheDir(); err == nil {
+		lib.Covers = filepath.Join(cache, "pidash", "video-covers")
+	}
 	if mock {
 		// Development: a player is pretended, so nothing needs installing.
 		lib.LookPath = func(name string) (string, error) { return "/usr/bin/" + name, nil }

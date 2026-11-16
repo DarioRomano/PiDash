@@ -4,14 +4,11 @@ package videos
 
 import (
 	"context"
-	"crypto/md5" //nolint:gosec // the name mpv gives the file that remembers where a video stopped
-	"encoding/hex"
 	"errors"
-	"os"
 	"path"
-	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"unicode"
 )
 
@@ -25,10 +22,18 @@ type Entry struct {
 	Path   string `json:"path"`
 	Folder bool   `json:"folder"`
 	Size   int64  `json:"size,omitempty"`
-	// Started says that playing was broken off, and carries on from there.
-	Started bool `json:"started,omitempty"`
-	// subtitle marks a file of subtitles: not listed, but handed to the player.
+	// Started says that playing was broken off, and carries on from there;
+	// Position where, in seconds.
+	Started  bool    `json:"started,omitempty"`
+	Position float64 `json:"position,omitempty"`
+	// Cover marks a video that can have a cover: the page asks for it by
+	// the video's path, and this, which changes with the file, keeps an old
+	// picture from being shown for a new file.
+	Cover string `json:"cover,omitempty"`
+	// subtitle marks a file of subtitles: not listed, but handed to the
+	// player. picture marks a picture, which may be a video's cover.
 	subtitle bool
+	picture  bool
 }
 
 // Listing is one folder as the TV shows it.
@@ -40,6 +45,9 @@ type Listing struct {
 	Entries []Entry `json:"entries"`
 	// Player is the program that plays the videos; empty when none is installed.
 	Player string `json:"player"`
+	// Continue are the videos that were begun and not finished, the one
+	// watched last first. Only in the listing of the top.
+	Continue []Entry `json:"continue,omitempty"`
 }
 
 // ErrNotFound is returned for a folder or a video that is not there, or not
@@ -126,6 +134,14 @@ type Library struct {
 	Dir string
 	// LookPath finds a program; nil is the usual search.
 	LookPath func(string) (string, error)
+	// Covers is where the videos' covers are kept; empty for none.
+	Covers string
+	// Busy reports that a video is playing: no covers are made meanwhile.
+	Busy func() bool
+
+	coverOnce sync.Once
+	coverTurn chan struct{}
+	recentMu  sync.Mutex
 }
 
 // List returns one folder, without the subtitle files, and with a mark on
@@ -141,27 +157,21 @@ func (l *Library) List(ctx context.Context, folder string) (Listing, error) {
 	}
 	out.Player, _ = l.player()
 	for _, e := range all {
-		if e.subtitle {
+		if e.subtitle || e.picture {
 			continue
 		}
 		if !e.Folder && out.Player == "mpv" {
 			if target, err := l.Source.Target(ctx, e.Path); err == nil {
-				e.Started = l.started(target)
+				e.Position, e.Started = l.position(watchMark(target))
 			}
 		}
+		l.withCover(&e)
 		out.Entries = append(out.Entries, e)
 	}
-	return out, nil
-}
-
-// started reports whether mpv remembers where this video stopped.
-func (l *Library) started(target string) bool {
-	if l.Dir == "" {
-		return false
+	if top {
+		out.Continue = l.Continue(ctx)
 	}
-	sum := md5.Sum([]byte(target)) //nolint:gosec // see the import
-	_, err := os.Stat(filepath.Join(l.mpvDir(), "watch_later", strings.ToUpper(hex.EncodeToString(sum[:]))))
-	return err == nil
+	return out, nil
 }
 
 // Play returns the command that plays one video, and the name of the
@@ -176,9 +186,10 @@ func (l *Library) Play(ctx context.Context, file string) (argv []string, window 
 		return nil, "", err
 	}
 	title := ""
+	var entry Entry
 	for _, e := range siblings {
-		if e.Path == file && !e.Folder && !e.subtitle {
-			title = strings.TrimSuffix(e.Name, path.Ext(e.Name))
+		if e.Path == file && !e.Folder && !e.subtitle && !e.picture {
+			title, entry = strings.TrimSuffix(e.Name, path.Ext(e.Name)), e
 		}
 	}
 	if title == "" {
@@ -201,5 +212,6 @@ func (l *Library) Play(ctx context.Context, file string) (argv []string, window 
 	if name == "" {
 		return nil, "", errors.New("no program that plays videos is installed; on the Pi: sudo apt install mpv")
 	}
+	l.notePlayed(entry, target)
 	return l.command(name, exe, target, title, subs)
 }

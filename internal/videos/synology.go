@@ -296,6 +296,8 @@ func (s *Synology) List(ctx context.Context, folder string) (title, parent strin
 				entries = append(entries, Entry{Name: f.Name, Path: at, Size: f.Additional.Size})
 			case isSubtitle(f.Name):
 				entries = append(entries, Entry{Name: f.Name, Path: at, subtitle: true})
+			case isPicture(f.Name):
+				entries = append(entries, Entry{Name: f.Name, Path: at, picture: true})
 			}
 		}
 		if len(data.Files) < page || offset+len(data.Files) >= data.Total {

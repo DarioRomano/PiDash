@@ -1652,6 +1652,20 @@ On the page, folders come first and names are in the order people count
 opens in the folder that was open last. Files a NAS keeps for itself
 (`@eaDir`, `#recycle`) are left out.
 
+**Covers.** Every video has a picture on its card. It is the picture that
+lies beside the video under its name, as media libraries keep them
+(`Alien.jpg` or `Alien-poster.jpg` for `Alien.mkv`), or else a frame from a
+little way into the video, which the player takes out of it the first time
+the folder is looked at. That takes a second or two a video on a Pi, one
+after the other, so a folder fills in as you watch; afterwards the pictures
+are kept (`~/.cache/pidash/video-covers`), and none are made while a video
+plays. A file that is replaced gets a new one.
+
+**Carry on watching.** At the top of the first page are the videos that
+were begun and not finished, the one watched last first, each with the
+place it carries on at. A video that is watched to its end leaves that row
+by itself.
+
 Videos are played by **mpv**, which a Pi may need first:
 
 ```bash
@@ -1672,7 +1686,8 @@ mpv:
 | **0** | From the beginning |
 | **Back** | Stop, and remember where |
 
-A video that was stopped carries on where it stopped; the list marks it.
+A video that was stopped carries on where it stopped; its card says at
+what time, and it is under **Carry on watching** on the first page.
 Subtitles in a file of the same name beside the video (`Film.srt`,
 `Film.en.srt`) are loaded with it. While a video plays the dashboard is
 out of the way, as with an app; when it ends, the page is where it was.

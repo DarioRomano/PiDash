@@ -2106,6 +2106,8 @@ test("videos: folders to walk through, a video plays in the player, Back goes up
     fs.writeFileSync(path.join(films, rel), "x".repeat(2048));
   };
   for (const f of ["Series/Episode 10.mkv", "Series/Episode 2.mkv", "Series/Episode 2.srt", "Series/notes.txt", "Alien.mp4", "@eaDir/x.mp4"]) put(f);
+  // A picture beside a film, under its name: its cover.
+  fs.writeFileSync(path.join(films, "Alien-poster.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAKklEQVR42mM4oaFBU8QwasGoBaMWjFowasGoBaMWjFowasGoBaMWDBULABo2YD0ttAhSAAAAAElFTkSuQmCC", "base64"));
   const own = await startPiDash(APPS + `\n[videos]\nsource = "folder"\nfolders = ["${films}"]\n`);
   try {
     const { page, remote } = await ready(own.base);
@@ -2114,13 +2116,21 @@ test("videos: folders to walk through, a video plays in the player, Back goes up
     await remote.press("select");
     await page.waitForFunction(() => document.getElementById("grid-page").classList.contains("open"));
     let g = await grid(page);
-    assert.deepEqual([g.cards, g.at], [["Series", "Alien.mp4"], 0], "folders first; what a NAS keeps for itself is left out");
+    assert.deepEqual([g.cards, g.at], [["Series", "Alien"], 0], "folders first; what a NAS keeps for itself, and the picture, are left out");
     assert.match(g.subs[1], /MB/);
+    // The film has its cover: the picture that lies beside it. Nothing was begun yet, so there is nothing to carry on.
+    await page.waitForFunction(() => {
+      const img = document.querySelector("#grid-page .card:nth-of-type(2) .card-art img");
+      return img && img.complete && img.naturalWidth > 0;
+    });
+    assert.equal(await page.evaluate(() => document.querySelectorAll("#grid-page .grid-heading").length), 0);
 
     await remote.press("select");
     await page.waitForFunction(() => document.querySelector("#grid-page h2").textContent === "Series");
     g = await grid(page);
-    assert.deepEqual(g.cards, ["Episode 2.mkv", "Episode 10.mkv"], "episodes in the order people count, without the subtitles and the notes");
+    assert.deepEqual(g.cards, ["Episode 2", "Episode 10"], "episodes in the order people count, without the subtitles and the notes");
+    // No frame can be taken out of these (they are not videos at all): the card keeps its drawing.
+    await page.waitForFunction(() => document.querySelectorAll("#grid-page .card-art svg").length === 2, null, { timeout: 60000 });
     assert.match(await page.evaluate(() => document.querySelector("#grid-page .help-foot").textContent), /the folder above/);
 
     // OK plays: the player takes the screen like an app, with the subtitles that lie beside the video.
@@ -2136,11 +2146,31 @@ test("videos: folders to walk through, a video plays in the player, Back goes up
     await page.waitForFunction(async () => (await (await fetch("/api/apps")).json()).running === "");
     assert.equal((await grid(page)).title, "Series");
 
+    // It was stopped half-way: the player remembers where (here the test writes what mpv would).
+    const mark = require("node:crypto").createHash("md5").update(path.join(films, "Series", "Episode 2.mkv")).digest("hex").toUpperCase();
+    const later = path.join(own.dir, "data", "pidash", "videos", "mpv", "watch_later");
+    fs.mkdirSync(later, { recursive: true });
+    fs.writeFileSync(path.join(later, mark), "start=725.400000\n");
+
     // Back goes to the folder above, with the highlight on where one came from; then closes.
     await remote.press("back");
     await page.waitForFunction(() => document.querySelector("#grid-page h2").textContent !== "Series");
     g = await grid(page);
     assert.equal(g.cards[g.at], "Series");
+    // At the top, what was begun is offered first, with where it carries on.
+    assert.deepEqual(g.cards, ["Episode 2", "Series", "Alien"]);
+    assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll("#grid-page .grid-heading")].map((h) => h.textContent)), ["Carry on watching", "Everything"]);
+    assert.match(g.subs[0], /^Carries on at 12:05/);
+    // Up from the folder goes to it, across the heading; OK plays it from there.
+    await remote.press("up");
+    assert.equal((await grid(page)).at, 0);
+    await remote.press("select");
+    await page.waitForFunction(async () => (await (await fetch("/api/apps")).json()).running === "pidash-video");
+    assert.equal(JSON.parse(fs.readFileSync(path.join(own.dir, "run", "pidash-video.json"), "utf8")).at(-1), path.join(films, "Series", "Episode 2.mkv"));
+    await fetch(own.base + "/api/apps/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    await page.waitForFunction(async () => (await (await fetch("/api/apps")).json()).running === "");
+    await remote.press("down");
+    assert.equal((await grid(page)).at, 1, "and Down goes back under the heading");
     await remote.press("select");
     await page.waitForFunction(() => document.querySelector("#grid-page h2").textContent === "Series");
     await remote.press("menu"); // closes from anywhere
@@ -2157,8 +2187,9 @@ test("videos: folders to walk through, a video plays in the player, Back goes up
     await remote.press("select");
     await focusTile(page, remote, "Videos");
     await remote.press("select");
-    await page.waitForFunction(() => document.querySelectorAll("#grid-page .card").length === 1);
-    assert.deepEqual((await grid(page)).cards, ["Alien.mp4"]);
+    await page.waitForFunction(() => document.querySelector("#grid-page h2")?.textContent !== "Series" && document.querySelectorAll("#grid-page .card").length === 2);
+    // What was begun is still offered, though its folder has gone; choosing it says that it has.
+    assert.deepEqual((await grid(page)).cards, ["Episode 2", "Alien"]);
     assert.deepEqual(page.problems, []);
     await page.context().close();
 
@@ -2371,7 +2402,7 @@ test("after an update the TV says once what is new; a first start says nothing",
     await page.waitForFunction(() => document.getElementById("whatsnew").classList.contains("open"));
     const said = await page.evaluate(() => ({ title: document.querySelector("#whatsnew h2").textContent, lines: [...document.querySelectorAll("#whatsnew li")].map((l) => l.textContent) }));
     assert.equal(said.title, `New in ${version}`);
-    assert.ok(said.lines.length >= 3 && said.lines.some((l) => /rain radar goes on/.test(l)) && said.lines.some((l) => /Immich/.test(l)), String(said.lines));
+    assert.ok(said.lines.length >= 3 && said.lines.some((l) => /Videos have covers/.test(l)) && said.lines.some((l) => /Immich/.test(l)), String(said.lines));
     // Any button closes it, and does nothing else.
     await remote.press("select");
     assert.equal(await open(), false);

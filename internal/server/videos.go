@@ -1,11 +1,13 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/DarioRomano/PiDash/internal/config"
 	"github.com/DarioRomano/PiDash/internal/videos"
@@ -60,6 +62,26 @@ func (s *Server) handleVideos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, list)
+}
+
+// handleVideoCover serves the cover of one video: the picture beside it, or
+// a frame taken from it, made the first time it is asked for.
+func (s *Server) handleVideoCover(w http.ResponseWriter, r *http.Request) {
+	if s.videos == nil {
+		http.Error(w, "no videos are set up", http.StatusNotFound)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
+	file, err := s.videos.Cover(ctx, r.URL.Query().Get("path"))
+	if err != nil {
+		http.Error(w, "no cover", http.StatusNotFound)
+		return
+	}
+	// The address carries a mark that changes with the video's file.
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	w.Header().Set("Content-Type", "image/jpeg")
+	http.ServeFile(w, r, file)
 }
 
 // handleVideoPlay starts the player with one video. The player takes the
