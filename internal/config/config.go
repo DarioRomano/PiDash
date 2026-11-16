@@ -36,6 +36,8 @@ type Config struct {
 	Bluetooth Bluetooth `toml:"bluetooth"`
 	// Calendar shows the next events from calendars published as links.
 	Calendar Calendar `toml:"calendar"`
+	// Departures are the next trams, buses and trains from a stop nearby.
+	Departures Departures `toml:"departures"`
 	// Home shows and switches devices of a Home Assistant installation.
 	Home Home `toml:"homeassistant"`
 	// Update controls automatic updates.
@@ -58,6 +60,19 @@ type Calendar struct {
 	URLs []string `toml:"urls"`
 	// Days is how far ahead events are shown.
 	Days int `toml:"days"`
+}
+
+// Departures configures the next departures from a stop of public
+// transport. The timetable is that of Switzerland (transport.opendata.ch).
+type Departures struct {
+	// Stop is the stop's name as the timetable has it, like "Zürich,
+	// Bellevue", or its number there. Empty switches this off.
+	Stop string `toml:"stop"`
+	// Walk is how many minutes it takes to get to the stop: what leaves
+	// sooner is not shown.
+	Walk int `toml:"walk"`
+	// URL replaces the timetable service, for a mirror or for tests.
+	URL string `toml:"url"`
 }
 
 // Home is the connection to Home Assistant.
@@ -848,6 +863,12 @@ func (c *Config) Finish() error {
 	}
 	if c.Input.AppExitHold.Duration < 0 || c.Input.AppExitHold.Duration > 10*time.Second {
 		return fmt.Errorf("input.app_exit_hold must be between 0s and 10s")
+	}
+	if d := c.Departures; d.Walk < 0 || d.Walk > 60 || len(d.Stop) > 120 || strings.ContainsAny(d.Stop, "\r\n") {
+		return fmt.Errorf("departures: stop must be one line, and walk between 0 and 60 minutes")
+	}
+	if u := c.Departures.URL; u != "" && !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
+		return fmt.Errorf("departures.url must start with https:// or http://")
 	}
 	if name := c.Sound.SpeakerName; len(name) > 60 || strings.ContainsAny(name, "\r\n") {
 		return fmt.Errorf("sound.speaker_name must be one line of at most 60 characters")

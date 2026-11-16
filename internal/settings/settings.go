@@ -49,6 +49,8 @@ type File struct {
 	Radio *[]config.RadioStation `json:"radio,omitempty"`
 	// Videos is where the films and home videos are.
 	Videos *Videos `json:"videos,omitempty"`
+	// Departures is the stop whose next departures are shown.
+	Departures *Departures `json:"departures,omitempty"`
 	// TVInputs are the other devices on the TV that have a tile.
 	TVInputs *[]config.TVInput `json:"tvInputs,omitempty"`
 }
@@ -80,6 +82,12 @@ type Wifi struct {
 	Open bool `json:"open,omitempty"`
 	// PasswordSet is for the page.
 	PasswordSet bool `json:"passwordSet,omitempty"`
+}
+
+// Departures settings: the stop, and the minutes it takes to walk there.
+type Departures struct {
+	Stop string `json:"stop"`
+	Walk int    `json:"walk"`
 }
 
 // Calendar settings: the calendar links.
@@ -725,6 +733,9 @@ func applyPage(base config.Config, f File, installed []desktop.Entry) (config.Co
 	if v := f.Videos; v != nil {
 		cfg.Videos.Source, cfg.Videos.Folders = v.Source, append([]string{}, v.Folders...)
 	}
+	if d := f.Departures; d != nil {
+		cfg.Departures.Stop, cfg.Departures.Walk = strings.TrimSpace(d.Stop), d.Walk
+	}
 	if f.TVInputs != nil {
 		cfg.TV.Inputs = append([]config.TVInput{}, *f.TVInputs...)
 	}
@@ -965,18 +976,20 @@ func describe(app config.App) App {
 
 // View is what the settings page shows. It never contains a password.
 type View struct {
-	Weather  WeatherView           `json:"weather"`
-	Photos   PhotosView            `json:"photos"`
-	Screen   Screen                `json:"screen"`
-	Calendar Calendar              `json:"calendar"`
-	Home     Home                  `json:"home"`
-	System   System                `json:"system"`
-	Lock     Lock                  `json:"lock"`
-	Wifi     Wifi                  `json:"wifi"`
-	Videos   Videos                `json:"videos"`
-	TVInputs []config.TVInput      `json:"tvInputs"`
-	Radio    []config.RadioStation `json:"radio"`
-	Apps     []App                 `json:"apps"`
+	Weather  WeatherView `json:"weather"`
+	Photos   PhotosView  `json:"photos"`
+	Screen   Screen      `json:"screen"`
+	Calendar Calendar    `json:"calendar"`
+	Home     Home        `json:"home"`
+	System   System      `json:"system"`
+	Lock     Lock        `json:"lock"`
+	Wifi     Wifi        `json:"wifi"`
+	Videos   Videos      `json:"videos"`
+	// Departures is the stop of public transport, if one is set.
+	Departures Departures            `json:"departures"`
+	TVInputs   []config.TVInput      `json:"tvInputs"`
+	Radio      []config.RadioStation `json:"radio"`
+	Apps       []App                 `json:"apps"`
 	// HiddenTiles are the tiles of PiDash's own that are left out of the app row.
 	HiddenTiles []string `json:"hiddenTiles"`
 	Presets     []Preset `json:"presets"`
@@ -1084,6 +1097,7 @@ func (s *Store) View() View {
 		Lock:        Lock{Set: cfg.Remote.PIN != ""},
 		Wifi:        Wifi{Name: cfg.Wifi.Name, Hidden: cfg.Wifi.Hidden, PasswordSet: cfg.Wifi.Password != "", Open: cfg.Wifi.Name != "" && cfg.Wifi.Password == ""},
 		Videos:      Videos{Source: cfg.Videos.Source, Folders: append([]string{}, cfg.Videos.Folders...)},
+		Departures:  Departures{Stop: cfg.Departures.Stop, Walk: cfg.Departures.Walk},
 		TVInputs:    append([]config.TVInput{}, cfg.TV.Inputs...),
 		Radio:       append([]config.RadioStation{}, cfg.Radio...),
 		Apps:        []App{},
@@ -1276,19 +1290,20 @@ func (s *Store) RemoveApp(id string) error {
 
 type Update struct {
 	// Tiles lists the tiles of PiDash's own that are hidden.
-	Tiles    *[]string              `json:"hiddenTiles"`
-	Weather  *Weather               `json:"weather"`
-	Photos   *Photos                `json:"photos"`
-	Screen   *Screen                `json:"screen"`
-	Apps     *[]App                 `json:"apps"`
-	Calendar *Calendar              `json:"calendar"`
-	Home     *Home                  `json:"home"`
-	System   *System                `json:"system"`
-	Lock     *Lock                  `json:"lock"`
-	Wifi     *Wifi                  `json:"wifi"`
-	Radio    *[]config.RadioStation `json:"radio"`
-	Videos   *Videos                `json:"videos"`
-	TVInputs *[]config.TVInput      `json:"tvInputs"`
+	Tiles      *[]string              `json:"hiddenTiles"`
+	Weather    *Weather               `json:"weather"`
+	Photos     *Photos                `json:"photos"`
+	Screen     *Screen                `json:"screen"`
+	Apps       *[]App                 `json:"apps"`
+	Calendar   *Calendar              `json:"calendar"`
+	Home       *Home                  `json:"home"`
+	System     *System                `json:"system"`
+	Lock       *Lock                  `json:"lock"`
+	Wifi       *Wifi                  `json:"wifi"`
+	Radio      *[]config.RadioStation `json:"radio"`
+	Videos     *Videos                `json:"videos"`
+	Departures *Departures            `json:"departures"`
+	TVInputs   *[]config.TVInput      `json:"tvInputs"`
 }
 
 // SynologyPassword returns the stored NAS password, for "test connection"
@@ -1423,6 +1438,10 @@ func (s *Store) Save(u Update) error {
 	if u.TVInputs != nil {
 		inputs := append([]config.TVInput{}, *u.TVInputs...)
 		next.TVInputs = &inputs
+	}
+	if u.Departures != nil {
+		d := Departures{Stop: strings.TrimSpace(u.Departures.Stop), Walk: u.Departures.Walk}
+		next.Departures = &d
 	}
 	if v := u.Videos; v != nil {
 		videos := Videos{Source: v.Source, Folders: []string{}}

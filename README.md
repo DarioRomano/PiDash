@@ -207,6 +207,61 @@ home network, not for a port opened to the internet. A settings PIN
 
 The same mode without Docker is `pidash -standalone`.
 
+#### On a Synology NAS
+
+A Synology NAS with **Container Manager** (DSM 7.2 and newer; install it
+from Package Center) runs the container beside the photos it shows. In
+Container Manager, create a **Project**, give it a folder such as
+`docker/pidash`, and let it create the `compose.yaml` from this:
+
+```yaml
+services:
+  pidash:
+    image: ghcr.io/darioromano/pidash:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      TZ: Europe/Zurich
+    volumes:
+      - pidash-data:/data
+
+volumes:
+  pidash-data:
+```
+
+Start the project and open `http://<your NAS>:8080` on the tablet, the
+smart TV's browser or whatever is to show the dashboard. A fresh PiDash
+asks its [three questions](#the-first-start); for the photos there are two
+ways:
+
+- **Synology Photos** (the easier one): choose it under **Background
+  photos** and enter the address of the NAS itself, `http://<your NAS>:5000`,
+  with an account that may see the photos. Nothing needs mounting, and the
+  folder picker offers your folders and albums.
+- **A shared folder of pictures**, read as files: add it to the project,
+
+  ```yaml
+      volumes:
+        - ./data:/data
+        - /volume1/photo:/photos:ro
+      user: "1026:100"
+  ```
+
+  The container runs as a user without rights on the NAS, and a shared
+  folder lets only its own users in. `user:` runs it as one of them
+  instead: the number of a NAS user who may read the folder, and of that
+  user's group (the first user made on a NAS is usually 1026, the group
+  `users` 100; `id <name>` over SSH says). The same user must be able to
+  write PiDash's own folder, which is why `./data`, a folder inside the
+  project's folder, takes the place of the volume here: create it in File
+  Station as that user before the first start.
+
+Port 8080 must be free on the NAS and, if its firewall is on, allowed for
+the home network. A new version of PiDash is a new image: fetch
+`ghcr.io/darioromano/pidash:latest` again under **Image** (or **Registry**)
+and build the project anew; what is under `/data` stays.
+
 ## The first start
 
 The first time the dashboard opens on a freshly installed PiDash, it asks
@@ -513,6 +568,31 @@ The list is read again every 15 minutes.
 Whoever has such a link can read the calendar. PiDash stores it on the Pi in a
 file only your user can read, and the settings page never shows it again,
 only the name of the server it leads to.
+
+### Departures
+
+The next trams, buses and trains from a stop near you, beside the clock:
+the line, where it goes, and in how many minutes, with delays (`+2`) and
+counting down by itself. Under **Settings, Weather and calendar,
+Departures**, enter the stop's name and press **Look it up**; what is saved
+is the name the timetable has for it. **Minutes it takes to get there**
+leaves out what you could not catch any more. Four departures are shown at
+a time; beyond the hour, the time of day takes the place of the minutes.
+
+The timetable is that of [transport.opendata.ch](https://transport.opendata.ch),
+the open service for Swiss public transport, which needs no account. It
+knows every stop in Switzerland and none elsewhere, so this is for
+Switzerland. The Pi asks it every minute and a half, and it thereby learns
+which stop you look at, not more. If it cannot be reached, the last answer
+is used for as long as it has anything in it that has not left.
+
+In `config.toml`:
+
+```toml
+[departures]
+stop = "Zürich, Bellevue"   # or the stop's number in the timetable
+walk = 3                    # minutes to get there
+```
 
 ### Smart home
 
@@ -1838,9 +1918,10 @@ What it guards against, and what it does not:
   installed.
 - **What the Pi fetches from outside your home**, and from whom: the weather
   from Open-Meteo, the map beside photos from OpenStreetMap, the rain radar
-  from RainViewer, the paintings of art mode from the Art Institute of
-  Chicago, radio stations from the stations themselves, and updates from
-  GitHub. Each learns the Pi's address on the internet and what was asked
+  from RainViewer, departures from transport.opendata.ch, the paintings of
+  art mode from the Art Institute of Chicago, the cover of what a phone
+  plays through Spotify from Spotify, radio stations from the stations
+  themselves, and updates from GitHub. Each learns the Pi's address on the internet and what was asked
   for (a region, not your photos), and each has a switch in the settings.
   The dashboard's own pages load nothing from anywhere but the Pi.
 - **Videos** are listed, by name, to anyone on the home network who asks the

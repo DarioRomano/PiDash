@@ -31,6 +31,7 @@ import (
 	"github.com/DarioRomano/PiDash/internal/power"
 	"github.com/DarioRomano/PiDash/internal/providers"
 	"github.com/DarioRomano/PiDash/internal/providers/calendar"
+	"github.com/DarioRomano/PiDash/internal/providers/departures"
 	"github.com/DarioRomano/PiDash/internal/providers/system"
 	"github.com/DarioRomano/PiDash/internal/providers/weather"
 	"github.com/DarioRomano/PiDash/internal/radar"
@@ -204,6 +205,15 @@ func main() {
 		}
 		if len(cfg.Calendar.URLs) > 0 {
 			ps = append(ps, calendar.New(calendar.Options{URLs: cfg.Calendar.URLs, Days: cfg.Calendar.Days}))
+		}
+		switch d := cfg.Departures; {
+		case d.Stop == "":
+		case *mock && d.URL == "":
+			// Development: a stop where something always leaves soon.
+			ps = append(ps, departures.Mock{Stop: d.Stop, Walk: d.Walk})
+		default:
+			ps = append(ps, departures.New(departures.Options{Stop: d.Stop, Walk: d.Walk, URL: d.URL,
+				Agent: "PiDash/" + version + " (TV dashboard; https://github.com/DarioRomano/PiDash)"}))
 		}
 		return providers.NewRunner(log, publish, ps...)
 	}

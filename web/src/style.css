@@ -166,6 +166,16 @@ html, body {
 .agenda-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agenda-time { flex: 0 0 auto; min-width: 110px; text-align: right; color: var(--fg-dim); font-variant-numeric: tabular-nums; }
 .agenda-time:empty { display: none; }
+/* The next departures from the stop nearby: the line, where it goes, in how many minutes. */
+#departures { width: 540px; display: flex; flex-direction: column; gap: 8px; text-shadow: 0 2px 18px rgba(0, 0, 0, 0.55); transition: opacity 0.4s ease; }
+.dep-stop { font-size: 24px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--fg-dim); text-align: right; }
+.dep-row { display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; align-items: center; gap: 16px; font-size: 32px; line-height: 1.2; }
+.dep-line { justify-self: start; min-width: 62px; padding: 2px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.92); color: #10131a; font-size: 26px; font-weight: 700; text-align: center; text-shadow: none; }
+.dep-line.train { background: #d8232a; color: #fff; }
+.dep-line.bus { background: rgba(255, 255, 255, 0.2); color: var(--fg); }
+.dep-to { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dep-when { flex: 0 0 auto; min-width: 96px; text-align: right; font-variant-numeric: tabular-nums; }
+.dep-late { margin-right: 8px; font-size: 24px; color: #ffb454; }
 
 /* Where the clock sits, and how large it is. The calendar takes the bottom
    corner the clock leaves free. */
@@ -177,6 +187,7 @@ html, body {
 #stage[data-clock$="right"] #weather { text-align: left; }
 #stage[data-clock$="right"] .w-now { justify-content: flex-start; }
 #stage[data-clock$="right"] .w-hilo { margin-left: 0; margin-right: 22px; }
+#stage[data-clock$="right"] .dep-stop { text-align: left; }
 #stage[data-clock$="right"] .agenda-day { text-align: left; }
 #stage[data-clock$="right"] .agenda-event { justify-content: flex-start; flex-direction: row-reverse; }
 #stage[data-clock$="right"] .agenda-time { text-align: left; }
@@ -191,7 +202,7 @@ html, body {
 
 /* Night mode: a dim clock on black, nothing else. */
 #stage.night #backdrop, #stage.night #scrim, #stage.night #caption, #stage.night #weather,
-#stage.night #agenda, #stage.night #status, #stage.night #hud { opacity: 0; }
+#stage.night #agenda, #stage.night #departures, #stage.night #status, #stage.night #hud { opacity: 0; }
 #stage.night #overlay { opacity: 0.32; }
 #backdrop, #caption, #weather { transition: opacity 1.6s ease-in-out; }
 

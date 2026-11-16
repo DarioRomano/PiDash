@@ -36,6 +36,7 @@ import (
 	"github.com/DarioRomano/PiDash/internal/power"
 	"github.com/DarioRomano/PiDash/internal/providers"
 	"github.com/DarioRomano/PiDash/internal/providers/calendar"
+	"github.com/DarioRomano/PiDash/internal/providers/departures"
 	"github.com/DarioRomano/PiDash/internal/providers/weather"
 	"github.com/DarioRomano/PiDash/internal/radar"
 	"github.com/DarioRomano/PiDash/internal/radio"
@@ -110,10 +111,12 @@ type Server struct {
 	baseListen string
 	// weatherLookup replaces the weather service in tests.
 	weatherLookup func(ctx context.Context, location string) (string, error)
-	started       int64
-	restart       chan struct{}
-	restartOne    sync.Once
-	mux           *http.ServeMux
+	// stopLookup replaces the timetable service likewise.
+	stopLookup func(ctx context.Context, stop string) (string, error)
+	started    int64
+	restart    chan struct{}
+	restartOne sync.Once
+	mux        *http.ServeMux
 }
 
 // Deps are the services the HTTP server exposes.
@@ -278,6 +281,12 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 			}
 			return location + ", Sampleland", nil
 		}
+		s.stopLookup = func(_ context.Context, stop string) (string, error) {
+			if strings.EqualFold(stop, "nowhere") {
+				return "", errors.New("the timetable knows no stop called \"nowhere\"; it covers Switzerland")
+			}
+			return "Sampleville, " + stop, nil
+		}
 		s.mux.HandleFunc("POST /api/test/playing", func(w http.ResponseWriter, r *http.Request) {
 			var track *playing.Track
 			mock, ok := s.player.(*playing.Mock)
@@ -373,6 +382,7 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 	s.mux.HandleFunc("POST /api/settings/test-immich", s.handleTestImmich)
 	s.mux.HandleFunc("POST /api/settings/test-share", s.handleTestShare)
 	s.mux.HandleFunc("POST /api/settings/test-weather", s.handleTestWeather)
+	s.mux.HandleFunc("POST /api/settings/test-departures", s.handleTestDepartures)
 	s.mux.HandleFunc("POST /api/settings/test-calendar", s.handleTestCalendar)
 	s.mux.HandleFunc("POST /api/settings/home-entities", s.handleHomeEntities)
 	s.mux.HandleFunc("POST /api/home/activate", s.handleHomeActivate)
@@ -1110,6 +1120,33 @@ func (s *Server) handleTestCalendar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"ok": true, "events": n, "days": days})
+}
+
+// handleTestDepartures looks a stop up in the timetable, to confirm it
+// before saving: the answer is its name as the timetable has it.
+func (s *Server) handleTestDepartures(w http.ResponseWriter, r *http.Request) {
+	if !s.pin.allow(w, r) {
+		return
+	}
+	var req struct {
+		Stop string `json:"stop"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil || strings.TrimSpace(req.Stop) == "" {
+		http.Error(w, "Enter the name of a stop first.", http.StatusUnprocessableEntity)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	lookup := s.stopLookup
+	if lookup == nil {
+		lookup = departures.New(departures.Options{URL: s.cfg.Departures.URL, Agent: "PiDash/" + s.version}).Lookup
+	}
+	name, err := lookup(ctx, strings.TrimSpace(req.Stop))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "stop": name})
 }
 
 // handleTestWeather looks a place name up, to confirm it before saving.

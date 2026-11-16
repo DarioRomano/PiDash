@@ -199,6 +199,34 @@
         <p id="cal-result" class="result"></p>
       </section>
 
+      <section class="card" data-group="info">
+        <h2>Departures</h2>
+        <p class="hint">
+          The next trams, buses and trains from a stop near you, beside the clock, with their delays. The timetable
+          is Switzerland's: it knows every stop there, and none elsewhere.
+        </p>
+        <label class="field">
+          <span>Stop</span>
+          <input id="dep-stop" type="text" autocomplete="off" placeholder="Zürich, Bellevue" />
+        </label>
+        <button id="dep-test" type="button" class="secondary wide">Look it up</button>
+        <p id="dep-result" class="result"></p>
+        <label class="field">
+          <span>Minutes it takes to get there</span>
+          <select id="dep-walk">
+            <option value="0">0: show everything</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="5">5</option>
+            <option value="7">7</option>
+            <option value="10">10</option>
+            <option value="15">15</option>
+            <option value="20">20</option>
+          </select>
+        </label>
+        <p class="hint">What leaves sooner than you can be at the stop is left out. An empty stop switches this off.</p>
+      </section>
+
       <section class="card" data-group="home">
         <h2>Smart home</h2>
         <p class="hint">Lights, plugs, scenes and sensors from Home Assistant, as tiles in the app row.</p>

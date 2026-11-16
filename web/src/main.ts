@@ -13,6 +13,7 @@
 //   hud, screen                   mouse and touch; fitting the screen and keeping it awake
 //   notify                        the line of text at the bottom, and requests to the Pi
 import { Agenda } from "./agenda";
+import { Departures, type DeparturesState } from "./departures";
 import { reportAlive } from "./alive";
 import { Ambient, iconPalette } from "./ambient";
 import { captionOf } from "./caption";
@@ -942,6 +943,7 @@ function applyConfig(cfg: ClientConfig) {
   weather.onRadar = cfg.radar ? (place) => radar.open(place) : null;
   dateLocale = locale || undefined;
   agenda.configure(d.clock_24h, locale || undefined);
+  departures.configure(d.clock_24h, locale || undefined);
   input.setKeyMap(cfg.keys);
   input.setDebugElement(d.debug_keys ? debug : null);
   if (!d.debug_keys) debug.hidden = true;
@@ -957,6 +959,7 @@ function applyConfig(cfg: ClientConfig) {
 // --- Calendar ---------------------------------------------------------------------
 
 const agenda = new Agenda($("#agenda"));
+const departures = new Departures($("#departures"));
 window.setInterval(() => weather.tick(), 30_000);
 
 // --- State ------------------------------------------------------------------
@@ -983,6 +986,9 @@ function onState(entry: StateEntry) {
       break;
     case "calendar":
       agenda.setEvents((entry.data as CalendarState | null)?.events ?? []);
+      break;
+    case "departures":
+      departures.update(entry.data as DeparturesState | null, entry.stale);
       break;
     case "weather":
       weather.update(entry.data as WeatherState | null, entry.stale);

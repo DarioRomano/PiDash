@@ -75,6 +75,7 @@ interface Info {
   };
   screen: { nightStart: string; nightEnd: string; language: string; clockPosition: string; clockSize: string; clockStyle?: string; eveningDim?: string; view: string; caption?: string; weatherDetail?: string; lockView?: boolean; background: string; performance?: string; tiles?: string; backgroundFps?: number; sounds?: boolean };
   calendar: { links: CalendarLink[] };
+  departures?: { stop: string; walk: number };
   home: { url: string; tokenSet: boolean; entities: string[] };
   system: { autoUpdate: boolean; cooling?: boolean; soundFollows?: boolean; spotifySpeaker?: boolean; airplaySpeaker?: boolean; speakerName?: string; resolution?: string; idleOffMinutes?: number; bluetoothOff?: boolean; games?: boolean; gamesPage?: boolean; gamesOnController?: boolean };
   hiddenTiles?: string[];
@@ -221,6 +222,7 @@ function readForm() {
     },
     apps: apps.map(({ detail: _detail, missing: _missing, ...rest }) => rest),
     calendar: { links: calendars.map((l) => (l.url ? { url: l.url } : { key: l.key })) },
+    departures: { stop: val("dep-stop").trim(), walk: Number(val("dep-walk")) || 0 },
     home: { url: val("h-url").trim(), token: val("h-token").trim(), entities: homeTiles },
     hiddenTiles: ownTiles.filter((b) => !b.checked).map((b) => b.dataset.tile ?? ""),
     system: {
@@ -351,6 +353,12 @@ function fill(i: Info) {
   renderApps();
 
   calendars = i.calendar.links.map((l) => ({ ...l }));
+  $<HTMLInputElement>("dep-stop").value = i.departures?.stop ?? "";
+  const walk = $<HTMLSelectElement>("dep-walk");
+  const toStop = String(i.departures?.walk ?? 0);
+  // A number set by hand in config.toml that is not on the list is offered as it is.
+  if (![...walk.options].some((o) => o.value === toStop)) walk.add(new Option(toStop, toStop));
+  walk.value = toStop;
   renderCalendars();
   $<HTMLInputElement>("h-url").value = i.home.url;
   const token = $<HTMLInputElement>("h-token");
@@ -710,6 +718,22 @@ function hostOf(link: string): string {
     return link;
   }
 }
+
+$("dep-test").addEventListener("click", async () => {
+  const out = $("dep-result");
+  setResult(out, "Looking it up…");
+  try {
+    const res = await send("POST", "/api/settings/test-departures", { stop: val("dep-stop") });
+    if (!res.ok) return setResult(out, (await res.text()).trim(), "error");
+    // The name as the timetable has it is what is saved: that is what it answers to.
+    const name: string = (await res.json()).stop;
+    $<HTMLInputElement>("dep-stop").value = name;
+    setResult(out, t("Found: {place}", { place: name }), "ok");
+    refresh();
+  } catch {
+    setResult(out, "The Pi did not answer.", "error");
+  }
+});
 
 $("cal-test").addEventListener("click", async () => {
   const out = $("cal-result");
@@ -1227,7 +1251,7 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
-for (const id of ["w-location", "w-units", "w-radar", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "i-url", "i-key", "i-tls", "i-quality", "sh-host", "sh-name", "sh-folder", "sh-user", "sh-pass", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "p-map", "n-start", "n-end", "h-url", "h-token", "sys-auto", "tv-idle", "bt-off", "p-odd", "p-art", "sys-resolution", "sys-cool", "snd-follow", "spk-spotify", "spk-airplay", "spk-name", "sys-games", "sys-games-page", "sys-games-pad", "v-source", "v-folders", "l-pin", "wf-name", "wf-pass", "wf-open", "wf-hidden", "d-language", "d-position", "d-size", "d-style", "d-dim", "d-caption", "d-weather", "d-lock", "d-background", "d-performance", "d-tiles", "d-fps", "d-sounds"]) {
+for (const id of ["w-location", "w-units", "w-radar", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "i-url", "i-key", "i-tls", "i-quality", "sh-host", "sh-name", "sh-folder", "sh-user", "sh-pass", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "p-map", "n-start", "n-end", "h-url", "h-token", "sys-auto", "tv-idle", "bt-off", "p-odd", "p-art", "sys-resolution", "sys-cool", "snd-follow", "spk-spotify", "spk-airplay", "spk-name", "dep-stop", "dep-walk", "sys-games", "sys-games-page", "sys-games-pad", "v-source", "v-folders", "l-pin", "wf-name", "wf-pass", "wf-open", "wf-hidden", "d-language", "d-position", "d-size", "d-style", "d-dim", "d-caption", "d-weather", "d-lock", "d-background", "d-performance", "d-tiles", "d-fps", "d-sounds"]) {
   $(id).addEventListener("input", refresh);
   $(id).addEventListener("change", refresh);
 }

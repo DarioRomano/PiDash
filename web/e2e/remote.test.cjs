@@ -175,12 +175,12 @@ test("settings on the TV: categories at the left, shown as the highlight moves a
   await remote.press("down");
   assert.deepEqual([await category(), await shown()], ["Photos", ["Background photos"]]);
   await remote.press("down");
-  assert.deepEqual([await category(), await shown()], ["Weather and calendar", ["Weather", "Calendar"]]);
+  assert.deepEqual([await category(), await shown()], ["Weather and calendar", ["Weather", "Calendar", "Departures"]]);
   assert.match(page.url(), /#info$/, "the address remembers the category");
   for (let i = 0; i < 6; i++) await remote.press("down");
   assert.deepEqual([await category(), await shown()], ["System", ["Lock", "Updates", "Backup"]]);
   for (let i = 0; i < 4; i++) await remote.press("up");
-  assert.deepEqual([await category(), await shown()], ["Weather and calendar", ["Weather", "Calendar"]]);
+  assert.deepEqual([await category(), await shown()], ["Weather and calendar", ["Weather", "Calendar", "Departures"]]);
 
   // Right goes in. Up and Down stay inside, however close the bar is.
   await remote.press("right");
@@ -3194,6 +3194,68 @@ test("a first start's questions can be waved away, and are then not asked again"
     assert.equal(cfg.setup, false);
     // Nothing was set: no weather, the language as it was.
     assert.equal((await (await fetch(own.base + "/api/settings")).json()).weather.location, "");
+    assert.deepEqual(page.problems, []);
+    await page.context().close();
+  } finally {
+    await own.stop();
+  }
+});
+
+test("departures from a stop: set up on the settings page, then beside the clock, counting down", async () => {
+  const own = await startPiDash(APPS);
+  try {
+    // Without a stop there is nothing of it on the dashboard.
+    const first = await openPage(own.base);
+    await first.waitForFunction(() => document.getElementById("backdrop").classList.contains("has-photo"), null, { timeout: 20000 });
+    assert.equal(await first.evaluate(() => document.getElementById("departures").hidden), true);
+    await first.context().close();
+
+    // The stop is looked up, and saved under the name the timetable has for it.
+    const settings = await openPage(own.base, "/settings#info");
+    await settings.waitForSelector("#main:not([hidden])");
+    await settings.fill("#dep-stop", "nowhere");
+    await settings.click("#dep-test");
+    await settings.waitForFunction(() => /knows no stop/.test(document.getElementById("dep-result").textContent));
+    await settings.fill("#dep-stop", "Lake");
+    await settings.click("#dep-test");
+    await settings.waitForFunction(() => /Found: Sampleville, Lake/.test(document.getElementById("dep-result").textContent));
+    assert.equal(await settings.evaluate(() => document.getElementById("dep-stop").value), "Sampleville, Lake");
+    await settings.selectOption("#dep-walk", "3");
+    await settings.click("#save");
+    for (let i = 0; i < 100; i++) {
+      try {
+        if ((await (await fetch(own.base + "/api/settings")).json()).departures.stop === "Sampleville, Lake") break;
+      } catch {
+        /* restarting */
+      }
+      assert.ok(i < 99, "the stop was never saved");
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.deepEqual((await (await fetch(own.base + "/api/settings")).json()).departures, { stop: "Sampleville, Lake", walk: 3 });
+    assert.deepEqual(settings.problems, []);
+    await settings.context().close();
+
+    // On the dashboard: the stop, and what leaves, soonest first; what leaves
+    // sooner than one can be there (three minutes) is left out.
+    const page = await openPage(own.base);
+    await page.waitForFunction(() => !document.getElementById("departures").hidden, null, { timeout: 20000 });
+    const shown = await page.evaluate(() => ({
+      stop: document.querySelector("#departures .dep-stop").textContent,
+      rows: [...document.querySelectorAll("#departures .dep-row")].map((r) => ({
+        line: r.querySelector(".dep-line").textContent,
+        kind: r.querySelector(".dep-line").className.replace("dep-line ", ""),
+        to: r.querySelector(".dep-to").textContent,
+        when: r.querySelector(".dep-when").textContent,
+      })),
+    }));
+    assert.equal(shown.stop, "Sampleville, Lake");
+    assert.equal(shown.rows.length, 4, "four at a time");
+    // The tram that leaves in a minute is not offered; the first shown is the 11, two minutes late.
+    assert.deepEqual([shown.rows[0].line, shown.rows[0].kind, shown.rows[0].to], ["11", "tram", "Lake"], "the town's name is left off a place in the same town");
+    assert.match(shown.rows[0].when, /^\+2[56]′$/, `late by two, in five or six minutes: ${shown.rows[0].when}`);
+    assert.deepEqual(shown.rows.map((r) => r.line), ["11", "31", "S12", "4"]);
+    assert.equal(shown.rows[2].kind, "train");
+    for (const r of shown.rows.slice(1)) assert.match(r.when, /^\d+′$/);
     assert.deepEqual(page.problems, []);
     await page.context().close();
   } finally {

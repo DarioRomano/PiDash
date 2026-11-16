@@ -131,6 +131,14 @@ name = ""
 password = ""
 hidden = false
 
+# --- Departures -------------------------------------------------------------------
+# The next trams, buses and trains from a stop near you, beside the clock.
+# The timetable is Switzerland's (transport.opendata.ch): it knows no stops
+# elsewhere. Also on the settings page, where the stop can be looked up.
+[departures]
+stop = ""    # like "Zürich, Bellevue"; empty: off
+walk = 0     # minutes it takes to get there: what leaves sooner is left out
+
 # --- Sound ----------------------------------------------------------------------
 # The output and its volume are chosen under Settings, Sound.
 [sound]
