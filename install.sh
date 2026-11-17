@@ -20,6 +20,7 @@
 #   PIDASH_VERSION   a release tag such as v0.2.0 (default: the latest release)
 #   PIDASH_REPO      owner/name of the GitHub repository (default: DarioRomano/PiDash)
 #   PIDASH_BASE_URL  download from this address instead of GitHub (mirrors, testing)
+#   (PiDash itself asks PIDASH_LATEST_URL, if set, which release is the newest.)
 set -euo pipefail
 
 # Everything is inside main, called on the last line, so that a download cut

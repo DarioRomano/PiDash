@@ -70,13 +70,18 @@ jobs:
         run: cd web && npm ci && npm run build
 
       - name: Test
-        run: go test ./...
+        run: make test
 
       - name: End-to-end tests (the TV remote on the real pages)
         run: |
           go build -o bin/pidash ./cmd/pidash
           (cd web && npm install --no-save playwright && npx playwright install --with-deps chromium)
           make e2e
+
+      # What is about to be published, tried as it is shipped: installed,
+      # updated and removed by the real installer; the image; a real share.
+      - name: Integration tests
+        run: make integration
 
       - name: Build the release packages
         run: scripts/dist.sh "$TAG"

@@ -30,9 +30,11 @@ jobs:
       - name: Lint
         run: make lint
 
-      # A stand-in for the Bluetooth service, for the tests of internal/bluetooth.
-      - name: Install the Bluetooth stand-in
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dbus-daemon python3-dbusmock
+      # A stand-in for the Bluetooth service, for the tests of internal/bluetooth;
+      # and the real video player, for the tests that play and take frames
+      # out of a real video (they are skipped where it is missing).
+      - name: Install the Bluetooth stand-in and the video player
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dbus-daemon python3-dbusmock mpv ffmpeg
 
       - name: Test
         run: go test -race ./...
@@ -52,22 +54,27 @@ jobs:
           path: dist/
           retention-days: 7
 
-  # The container image still builds, and what is built starts and answers.
-  image:
+  # PiDash as it is shipped: the packages installed, updated and removed by
+  # the real installer; the container image; a share on a real Samba server.
+  integration:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build the image
-        run: docker build -t pidash:ci --build-arg VERSION=ci .
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
 
-      - name: Start it and wait until it reports healthy
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build
         run: |
-          docker run -d --name pidash -p 8080:8080 pidash:ci
-          for i in $(seq 1 45); do
-            [ "$(docker inspect --format '{{.State.Health.Status}}' pidash)" = healthy ] && break
-            sleep 2
-          done
-          docker logs pidash
-          [ "$(docker inspect --format '{{.State.Health.Status}}' pidash)" = healthy ]
-          curl -fsS http://127.0.0.1:8080/api/config | grep -q '"standalone":true'
+          (cd web && npm ci && npm run build)
+          go build -o bin/pidash ./cmd/pidash
+
+      - name: Integration tests
+        run: make integration

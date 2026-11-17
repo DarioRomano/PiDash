@@ -10,6 +10,10 @@
 # every release the same download address under .../releases/latest/download/.
 #
 # Usage: scripts/dist.sh [version]      (run from the repository root)
+#
+# Environment, for the tests that install from packages built here:
+#   PIDASH_DIST_DIR     where to put them (default: dist)
+#   PIDASH_DIST_ARCHES  which to build, of "arm64 armv6 amd64" (default: all)
 set -euo pipefail
 
 VERSION="${1:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
@@ -21,26 +25,33 @@ if [ ! -f web/dist/index.html ]; then
   exit 1
 fi
 
-rm -rf dist
-mkdir -p dist/stage
+DIST="${PIDASH_DIST_DIR:-dist}"
+ARCHES="${PIDASH_DIST_ARCHES:-arm64 armv6 amd64}"
+rm -rf "${DIST:?}"
+mkdir -p "$DIST/stage"
 
 build() { # name GOARCH [GOARM]
-  local name="$1" dir="dist/stage/pidash_linux_$1"
+  local name="$1" dir="$DIST/stage/pidash_linux_$1"
   mkdir -p "$dir"
   CGO_ENABLED=0 GOOS=linux GOARCH="$2" GOARM="${3:-}" \
     go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o "$dir/pidash" ./cmd/pidash
   cp -r deploy config.example.toml install.sh README.md LICENSE "$dir/"
   echo "$VERSION" > "$dir/VERSION"
   # Fixed ownership and order keep the archive independent of who built it.
-  tar -C dist/stage --owner=0 --group=0 --numeric-owner --sort=name -czf "dist/pidash_linux_$name.tar.gz" "pidash_linux_$name"
-  echo "  dist/pidash_linux_$name.tar.gz"
+  tar -C "$DIST/stage" --owner=0 --group=0 --numeric-owner --sort=name -czf "$DIST/pidash_linux_$name.tar.gz" "pidash_linux_$name"
+  echo "  $DIST/pidash_linux_$name.tar.gz"
 }
 
 echo "Packaging PiDash $VERSION"
-build arm64 arm64
-build armv6 arm 6
-build amd64 amd64
+for arch in $ARCHES; do
+  case "$arch" in
+    arm64) build arm64 arm64 ;;
+    armv6) build armv6 arm 6 ;;
+    amd64) build amd64 amd64 ;;
+    *) echo "no package is built for '$arch'" >&2; exit 1 ;;
+  esac
+done
 
-rm -rf dist/stage
-(cd dist && sha256sum pidash_linux_*.tar.gz > SHA256SUMS)
-echo "  dist/SHA256SUMS"
+rm -rf "$DIST/stage"
+(cd "$DIST" && sha256sum pidash_linux_*.tar.gz > SHA256SUMS)
+echo "  $DIST/SHA256SUMS"

@@ -1,0 +1,123 @@
+{
+  "weather": {
+    "location": "Zurich",
+    "name": "Home",
+    "units": "metric",
+    "radar": true
+  },
+  "photos": {
+    "source": "immich",
+    "intervalSeconds": 45,
+    "motion": "whole",
+    "pairPortraits": true,
+    "onThisDay": true,
+    "videos": false,
+    "map": true,
+    "art": true,
+    "skipOdd": true,
+    "synology": {
+      "url": "http://192.168.1.20:5000",
+      "username": "tv",
+      "password": "nas-secret",
+      "insecureTls": false,
+      "quality": "original"
+    },
+    "immich": {
+      "url": "http://192.168.1.21:2283",
+      "apiKey": "immich-key",
+      "insecureTls": false,
+      "quality": "preview"
+    },
+    "share": {
+      "host": "nas.local",
+      "name": "photo",
+      "folder": "Holidays",
+      "username": "tv",
+      "password": "share-secret"
+    }
+  },
+  "screen": {
+    "nightStart": "23:00",
+    "nightEnd": "06:30",
+    "language": "de",
+    "clockPosition": "bottom-left",
+    "clockSize": "large",
+    "clockStyle": "bold",
+    "eveningDim": "light",
+    "view": "details",
+    "caption": "on",
+    "weatherDetail": "full"
+  },
+  "apps": [
+    {
+      "kind": "preset",
+      "id": "",
+      "name": "",
+      "preset": "youtube"
+    },
+    {
+      "kind": "preset",
+      "id": "",
+      "name": "",
+      "preset": "spotify",
+      "zoom": 1.5
+    },
+    {
+      "kind": "preset",
+      "id": "",
+      "name": "",
+      "preset": "jellyfin",
+      "url": "http://192.168.1.22:8096"
+    },
+    {
+      "kind": "web",
+      "id": "",
+      "name": "A shop",
+      "url": "https://example.org/",
+      "arrows": true
+    }
+  ],
+  "system": {
+    "autoUpdate": true,
+    "cooling": true,
+    "soundFollows": true,
+    "spotifySpeaker": true,
+    "airplaySpeaker": false,
+    "speakerName": "Living room",
+    "resolution": "1080p",
+    "idleOffMinutes": 30,
+    "bluetoothOff": true,
+    "games": true,
+    "gamesPage": true,
+    "gamesOnController": true
+  },
+  "lock": {
+    "pin": "4711"
+  },
+  "quick": {
+    "hiddenTiles": [
+      "wifi",
+      "desktop"
+    ]
+  },
+  "wifi": {
+    "name": "Guests",
+    "password": "guest-secret"
+  },
+  "radio": [
+    {
+      "name": "A station",
+      "url": "https://example.org/stream.mp3"
+    }
+  ],
+  "departures": {
+    "stop": "Zürich, Bellevue",
+    "walk": 3
+  },
+  "tvInputs": [
+    {
+      "name": "Console",
+      "port": 2
+    }
+  ]
+}

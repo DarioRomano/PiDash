@@ -2247,14 +2247,38 @@ launches, so everything can be worked on without a Pi, a NAS or a TV. Arrow
 keys, Enter, Escape and the mouse work as on the TV; hold Escape for two
 seconds to trigger "exit to desktop".
 
-**Tests.** `make test` runs the Go tests. `make e2e` starts PiDash with sample
-data and drives the real pages in a browser with the buttons of a TV remote:
-the dashboard, the app row, the settings and their on-screen keyboard. Every
-button press is tried the three ways it can arrive on a Pi: read from the
-remote by the backend, as a key in the browser, and both at once, which must
-count as one press. It needs `make build` first and Playwright's Chromium
-(`cd web && npm install --no-save playwright && npx playwright install
-chromium`). Both run on every push and before every release.
+**Tests.** There are three kinds, and all of them run on every push and
+before every release.
+
+- `make test` runs the Go tests, with the race detector. Where a test needs
+  a real program and finds it, it uses it: with `mpv` and `ffmpeg` installed,
+  a real video is played and frames are taken out of it.
+- `make e2e` starts PiDash with sample data and drives the real pages in a
+  browser with the buttons of a TV remote: the dashboard, the app row, the
+  settings and their on-screen keyboard. Every button press is tried the
+  three ways it can arrive on a Pi: read from the remote by the backend, as
+  a key in the browser, and both at once, which must count as one press. It
+  needs `make build` first and Playwright's Chromium (`cd web && npm install
+  --no-save playwright && npx playwright install chromium`).
+- `make integration` tries PiDash as it is shipped (`test/integration`). It
+  builds the release's packages and has the real installer install one into
+  a throwaway home, with stand-ins only for what would change the machine
+  (`sudo`, `systemctl`); updates it through the running backend, as the
+  settings page's button does; checks that a damaged package is refused;
+  and removes it again. It builds the container image and runs it, and it
+  starts a Samba server to read a share from. The last two need Docker and
+  are skipped without it.
+
+What these cannot try is the hardware: a TV on an HDMI cable, a remote, a
+sound card. For those there are stand-ins that behave as the real things are
+documented to, which is not the same as the real things.
+
+Two kinds of files guard updates. `internal/settings/testdata` holds
+settings as earlier versions saved them, and `internal/config/testdata` the
+settings file as earlier versions installed it; every version must still
+read them all. A release that changes how something is stored adds its own
+file there; the old ones are never edited. And a fault that was found gets
+a test that fails without its fix, named after what went wrong.
 
 To try a change on your own Pi straight from the checkout, without making a
 release:

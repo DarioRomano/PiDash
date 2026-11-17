@@ -28,7 +28,7 @@ LDFLAGS   = -s -w -X main.version=$(VERSION)
 INSTALL_FLAGS ?=
 APP_DIR   = .local/share/pidash
 
-.PHONY: dev dev-backend dev-web build build-web build-pi deploy install install-local uninstall lint test e2e clean dist release site-shots
+.PHONY: dev dev-backend dev-web build build-web build-pi deploy install install-local uninstall lint test e2e integration clean dist release site-shots
 
 dev:
 	@$(MAKE) -j2 dev-backend dev-web
@@ -69,12 +69,23 @@ uninstall:
 
 lint:
 	go vet ./...
+	go vet -tags integration ./test/...
 	@test -z "$$(gofmt -l .)" || (echo "gofmt needed:"; gofmt -l .; exit 1)
 	cd web && npx tsc --noEmit
 	@if command -v shellcheck >/dev/null 2>&1; then shellcheck -S warning install.sh deploy/*.sh scripts/*.sh; else echo "shellcheck not installed, skipping the shell scripts"; fi
 
+# With the race detector, as CI runs them: a test that passes without it
+# and fails with it has failed there before.
 test:
-	go test ./...
+	go test -race ./...
+
+# Tries PiDash as it is shipped: the release's packages installed by the real
+# installer into a throwaway home, updated and removed again; the container
+# image; a share on a real Samba server. Takes a few minutes; needs bash,
+# curl and, for the last two, Docker (they are skipped without it).
+integration:
+	@test -x bin/pidash || (echo 'bin/pidash is missing: run "make build" first'; exit 1)
+	go test -tags integration -count=1 -timeout 30m ./test/integration/
 
 # Drives the real pages with the buttons of a TV remote. See web/e2e/.
 e2e:

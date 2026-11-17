@@ -354,7 +354,10 @@ func main() {
 	}
 	updater := update.New(update.Options{
 		Current: version, Auto: cfg.Update.Auto, Log: log, Fixed: updateNote,
-		Busy: func() bool { return appManager.Status().Running != "" },
+		// Where the newest release is asked for, when not on GitHub: a mirror,
+		// or a test. The updater's script takes PIDASH_BASE_URL likewise.
+		LatestURL: os.Getenv("PIDASH_LATEST_URL"),
+		Busy:      func() bool { return appManager.Status().Running != "" },
 	})
 
 	// Starts the browser on the TV again if the dashboard in it freezes.

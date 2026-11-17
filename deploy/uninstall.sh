@@ -53,12 +53,13 @@ rm -f "$HOME/.local/share/pidash/pidash" \
 rmdir "$HOME/.local/share/pidash" 2>/dev/null
 
 if [ "$PURGE" -eq 1 ]; then
-  rm -f "$HOME/.config/pidash/config.toml"
-  rmdir "$HOME/.config/pidash" 2>/dev/null
-  rm -rf "$HOME/.cache/pidash-chromium" "$HOME/.cache/pidash" "$HOME/.local/share/pidash/profiles"
-  rm -f "$HOME/.local/share/pidash/photos-selection.json"
-  rmdir "$HOME/.local/share/pidash" 2>/dev/null
-  echo "PiDash removed, including settings and the browser profile."
+  # Everything PiDash kept: the settings file and what was saved on the
+  # settings page; what it chose, remembered and logged in to; and what it
+  # can make again (prepared photos, covers, the browser's own cache).
+  rm -rf "${HOME:?}/.config/pidash" "${HOME:?}/.local/share/pidash" \
+         "${HOME:?}/.cache/pidash" "${HOME:?}/.cache/pidash-chromium" \
+         "${HOME:?}/snap/chromium/common/pidash" "${HOME:?}/snap/chromium/common/pidash-chromium"
+  echo "PiDash removed, including settings, app logins and everything it kept."
 else
   echo "PiDash removed. Settings (~/.config/pidash) and app logins (~/.local/share/pidash/profiles) kept; use --purge to delete them too."
 fi

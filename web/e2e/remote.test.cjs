@@ -2629,7 +2629,9 @@ test("other devices on the TV are tiles that switch the TV's input; a controller
     await remote.press("left");
     await page.waitForFunction(() => /OK open .* Back close/.test(document.getElementById("rail-hint").textContent));
 
-    // OK on a device: the TV is told to show it.
+    // OK on a device: the TV is told to show it. Until then it shows the Pi, as far as it has said.
+    const tvShows = async () => (await (await fetch(own.base + "/api/status")).json()).tv.elsewhere === true;
+    assert.equal(await tvShows(), false);
     await focusTile(page, remote, "PlayStation");
     await remote.press("select");
     await page.waitForFunction(() => /Switching the TV to PlayStation/.test(document.getElementById("toast").textContent));
@@ -2639,6 +2641,9 @@ test("other devices on the TV are tiles that switch the TV's input; a controller
     await page.waitForFunction(() => /Set-top box/.test(document.getElementById("toast").textContent));
     await page.waitForTimeout(300);
     assert.equal(await (await fetch(own.base + "/api/test/tv")).text(), "show 2.0.0.0\nshow 1.2.0.0");
+    // From then on the TV shows something else, and PiDash knows: that is
+    // what keeps it from switching the TV off under whoever watches there.
+    assert.equal(await tvShows(), true, "the status says the TV shows something else");
 
     // A controller switches the TV on: what comes up is the games, whatever was open.
     await remote.press("select");
@@ -3006,7 +3011,17 @@ exec sleep 600
     await page.context().close();
   } finally {
     await own.stop();
+    // The speaker ends with PiDash: left running, it would be in the way of
+    // the one PiDash starts next time, under the same name.
+    const { spawnSync } = require("node:child_process");
+    let left = "";
+    for (let i = 0; i < 30; i++) {
+      left = spawnSync("pgrep", ["-f", bin], { encoding: "utf8" }).stdout.trim();
+      if (left === "") break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
     fs.rmSync(bin, { recursive: true, force: true });
+    assert.equal(left, "", "the speaker's program was left running after PiDash ended");
   }
 });
 
@@ -3252,7 +3267,8 @@ test("departures from a stop: set up on the settings page, then beside the clock
     assert.equal(shown.rows.length, 4, "four at a time");
     // The tram that leaves in a minute is not offered; the first shown is the 11, two minutes late.
     assert.deepEqual([shown.rows[0].line, shown.rows[0].kind, shown.rows[0].to], ["11", "tram", "Lake"], "the town's name is left off a place in the same town");
-    assert.match(shown.rows[0].when, /^\+2[56]′$/, `late by two, in five or six minutes: ${shown.rows[0].when}`);
+    // Two minutes late, and some four to six minutes away: the sample timetable is up to a minute old.
+    assert.match(shown.rows[0].when, /^\+2[3-6]′$/, `late by two, a few minutes away: ${shown.rows[0].when}`);
     assert.deepEqual(shown.rows.map((r) => r.line), ["11", "31", "S12", "4"]);
     assert.equal(shown.rows[2].kind, "train");
     for (const r of shown.rows.slice(1)) assert.match(r.when, /^\d+′$/);
@@ -3260,5 +3276,56 @@ test("departures from a stop: set up on the settings page, then beside the clock
     await page.context().close();
   } finally {
     await own.stop();
+  }
+});
+
+// A page of cards with more rows than fit on the screen once squeezed the
+// rows together until the names under the pictures were cut off.
+test("a page with many cards keeps every card whole, and moves to the one that is chosen", async () => {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+  const films = fs.mkdtempSync(path.join(os.tmpdir(), "pidash-many-"));
+  for (let i = 1; i <= 18; i++) fs.writeFileSync(path.join(films, `Holiday film ${String(i).padStart(2, "0")}.mp4`), "x".repeat(2048));
+  const own = await startPiDash(APPS + `\n[videos]\nsource = "folder"\nfolders = ["${films}"]\n`);
+  try {
+    const { page, remote } = await ready(own.base);
+    await remote.press("select");
+    await focusTile(page, remote, "Videos");
+    await remote.press("select");
+    await page.waitForFunction(() => document.querySelectorAll("#grid-page .card").length === 18);
+    const layout = () =>
+      page.evaluate(() => {
+        const box = document.querySelector("#grid-page .grid").getBoundingClientRect();
+        const cards = [...document.querySelectorAll("#grid-page .card")];
+        return {
+          // A card is whole when its name lies inside it.
+          cut: cards.filter((c) => c.querySelector(".card-words").getBoundingClientRect().bottom > c.getBoundingClientRect().bottom + 1 || c.querySelector(".card-title").getBoundingClientRect().height < 10).length,
+          tops: [...new Set(cards.map((c) => Math.round(c.getBoundingClientRect().top + document.querySelector("#grid-page .grid").scrollTop)))].length,
+          at: cards.findIndex((c) => c.classList.contains("focused")),
+          inView: (() => {
+            const r = document.querySelector("#grid-page .card.focused").getBoundingClientRect();
+            return r.top >= box.top - 1 && r.bottom <= box.bottom + 1;
+          })(),
+        };
+      });
+    let l = await layout();
+    assert.equal(l.cut, 0, "no card's name is cut off");
+    assert.equal(l.tops, 5, "eighteen films, four to a row");
+    assert.deepEqual([l.at, l.inView], [0, true]);
+    // Down the page: the chosen card is always in view, and whole; Down from the last full row goes to the last card.
+    for (const want of [4, 8, 12, 16, 16]) {
+      await remote.press("down");
+      l = await layout();
+      assert.deepEqual([l.at, l.inView, l.cut], [want, true, 0]);
+    }
+    await remote.press("right");
+    await remote.press("up");
+    assert.deepEqual([(await layout()).at, (await layout()).inView], [13, true]);
+    assert.deepEqual(page.problems, []);
+    await page.context().close();
+  } finally {
+    await own.stop();
+    fs.rmSync(films, { recursive: true, force: true });
   }
 });

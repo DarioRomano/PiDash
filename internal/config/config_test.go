@@ -366,3 +366,31 @@ auto = true
 		t.Errorf("the page is told of videos or other devices: %+v", client)
 	}
 }
+
+// The settings file the installer wrote stays on the Pi through every
+// update: what a version installed, every later version must accept. The
+// files in testdata are config.example.toml as earlier versions shipped it;
+// they are never edited, and each release adds its own.
+func TestSettingsFilesInstalledByEarlierVersionsStillLoad(t *testing.T) {
+	files, _ := filepath.Glob(filepath.Join("testdata", "installed-by-*.toml"))
+	if len(files) == 0 {
+		t.Fatal("no installed settings files to try")
+	}
+	for _, file := range files {
+		cfg, err := Load(file)
+		if err != nil {
+			t.Errorf("%s is refused by this version: %v", filepath.Base(file), err)
+			continue
+		}
+		// A setting that was since taken away is named and ignored, never an
+		// error; the apps that file set up are still there.
+		if len(cfg.Apps) == 0 {
+			t.Errorf("%s: its apps are gone", filepath.Base(file))
+		}
+	}
+	// The file this version installs has nothing in it that it does not know.
+	now, err := Load(filepath.Join("..", "..", "config.example.toml"))
+	if err != nil || len(now.Unknown) != 0 {
+		t.Errorf("config.example.toml: %v, unknown settings %v", err, now.Unknown)
+	}
+}
