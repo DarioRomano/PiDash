@@ -75,7 +75,10 @@ leads to a page and a heading that exist.
 The wiki has to exist before anything can be published to it: once, under
 the repository's **Settings, Features**, tick **Wikis**, and save a first
 page on the **Wiki** tab (GitHub only then creates the place the pages are
-published to; what the page says does not matter, it is replaced).
+published to; what the page says does not matter, it is replaced). The
+wiki keeps no history of its own: each time, it becomes a single commit made
+by the workflow, so the hand-saved first page, with the name and address of
+whoever saved it, does not stay in it.
 
 ## The project page
 
