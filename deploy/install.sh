@@ -161,7 +161,7 @@ if [ "$PHONE_INPUT" -eq 1 ]; then
 fi
 if [ "$SPEAKERS" -eq 1 ]; then
   command -v shairport-sync >/dev/null 2>&1 || want airplay "shairport-sync, the AirPlay speaker"
-  command -v librespot >/dev/null 2>&1 || want spotify "librespot, the Spotify speaker: see \"Speaker for phones\" in the README for where to get it"
+  command -v librespot >/dev/null 2>&1 || want spotify "librespot, the Spotify speaker: where to get it: https://github.com/DarioRomano/PiDash/wiki/Music-and-sound"
 fi
 if [ ${#missing[@]} -gt 0 ]; then
   echo "    installing: ${missing[*]} (needs sudo)"

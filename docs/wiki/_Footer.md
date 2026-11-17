@@ -1,0 +1,1 @@
+These pages are published from [`docs/wiki`](https://github.com/DarioRomano/PiDash/tree/main/docs/wiki) in the repository. A change made here on the wiki is replaced the next time they are published: propose it there instead.

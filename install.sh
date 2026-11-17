@@ -46,7 +46,7 @@ main() {
       ;;
   esac
   if [ "$(uname -s)" != "Linux" ]; then
-    echo "PiDash runs on Linux: Raspberry Pi OS above all. Elsewhere there is the container, see the README." >&2
+    echo "PiDash runs on Linux: Raspberry Pi OS above all. Elsewhere there is the container: https://github.com/DarioRomano/PiDash/wiki/Container" >&2
     exit 1
   fi
 

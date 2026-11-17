@@ -15,15 +15,22 @@ const OUT = path.join(__dirname, "..", "site", "img");
 const PHOTOS = fs.mkdtempSync(path.join(os.tmpdir(), "pidash-samples-"));
 execFileSync("python3", [path.join(__dirname, "sample_photos.py"), PHOTOS], { stdio: "inherit" });
 
-// Films and folders for the Videos page: names only, with nothing in them.
+// Films and folders for the Videos page: names with nothing in them, and
+// beside each film a picture under its name, which is its cover.
 const FILMS_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "pidash-films-"));
 const FILMS = path.join(FILMS_ROOT, "Videos"); // the page is headed by the folder's name
 fs.mkdirSync(FILMS);
-for (const [name, gb] of [["Big Buck Bunny.mkv", 1.4], ["Elephants Dream.mkv", 0.9], ["Sintel.mkv", 2.1], ["Spring.mkv", 0.6], ["Tears of Steel.mkv", 3.2], ["The Daily Dweebs.mp4", 0.2]]) {
+const SAMPLES = fs
+  .readdirSync(PHOTOS, { recursive: true })
+  .filter((f) => /\.jpe?g$/i.test(f))
+  .sort()
+  .map((f) => path.join(PHOTOS, f));
+[["Big Buck Bunny.mkv", 1.4], ["Elephants Dream.mkv", 0.9], ["Sintel.mkv", 2.1], ["Spring.mkv", 0.6], ["Tears of Steel.mkv", 3.2], ["The Daily Dweebs.mp4", 0.2]].forEach(([name, gb], i) => {
   fs.closeSync(fs.openSync(path.join(FILMS, name), "w"));
   fs.truncateSync(path.join(FILMS, name), Math.round(gb * 2 ** 30));
-}
-for (const folder of ["Concerts", "Holidays 2024", "Home videos", "Series"]) fs.mkdirSync(path.join(FILMS, folder));
+  fs.copyFileSync(SAMPLES[(i * 5 + 2) % SAMPLES.length], path.join(FILMS, name.replace(/\.\w+$/, ".jpg")));
+});
+for (const folder of ["Concerts", "Holidays 2024"]) fs.mkdirSync(path.join(FILMS, folder));
 
 const CONFIG = `
 clock_position = "bottom-left"
@@ -117,18 +124,23 @@ async function shot(page, name) {
     await shot(page, "status");
     await remote.press("back");
 
-    // The Videos page, with one film begun.
+    // The Videos page, with one film begun: it was started, and the player
+    // remembers where it stopped (here the script writes what mpv would).
+    await fetch(pi.base + "/api/videos/play", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "0:Sintel.mkv" }) });
+    await fetch(pi.base + "/api/apps/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    const later = path.join(pi.dir, "data", "pidash", "videos", "mpv", "watch_later");
+    fs.mkdirSync(later, { recursive: true });
+    const mark = require("node:crypto").createHash("md5").update(path.join(FILMS, "Sintel.mkv")).digest("hex").toUpperCase();
+    fs.writeFileSync(path.join(later, mark), "start=2275.0\n");
+    await page.evaluate(() => localStorage.removeItem("pidash-videos-at"));
     await remote.press("select");
     await focusTile("Videos");
     await remote.press("select");
     await page.waitForFunction(() => document.querySelectorAll("#grid-page .card").length >= 8);
-    for (let i = 0; i < 6; i++) await remote.press("right");
-    await page.evaluate(() => {
-      // As if this film had been stopped half way: the mark a begun film carries.
-      const card = document.querySelector("#grid-page .card.focused");
-      card.classList.add("on");
-      card.querySelector(".card-sub").textContent += "  ·  Carries on where it stopped";
-    });
+    await page.waitForFunction(() => [...document.querySelectorAll("#grid-page .card-art img")].every((i) => i.complete), null, { timeout: 60000 });
+    await remote.press("down");
+    await remote.press("right");
+    await remote.press("right");
     await shot(page, "videos");
     await remote.press("menu");
 
