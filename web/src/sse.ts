@@ -8,7 +8,7 @@ export interface SSEHandlers {
   onPhotos(status: PhotosStatus): void;
   /** The state of the paintings that can stand in for the photos. */
   onArt(status: PhotosStatus): void;
-  onTV(status: { asleep: boolean; available?: boolean; sleepAt?: string; sleepMinutes?: number; idle?: boolean }): void;
+  onTV(status: { asleep: boolean; elsewhere?: boolean; available?: boolean; sleepAt?: string; sleepMinutes?: number; idle?: boolean }): void;
   /** A PC is being woken for a game. */
   onWaking(pc: { name: string }): void;
   /** The Pi asks for one of the dashboard's pages to be opened. */

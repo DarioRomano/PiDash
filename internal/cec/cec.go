@@ -57,6 +57,10 @@ type Controller struct {
 // that it shows the Pi, or that nothing is known.
 func (c *Controller) Elsewhere() bool { return c.seen.elsewhere.Load() }
 
+// OnElsewhere sets what is called whenever Elsewhere changes. It is called
+// from the goroutine that heard the TV, and must not block.
+func (c *Controller) OnElsewhere(fn func()) { c.seen.changed.Store(&fn) }
+
 // LastElsewhere returns when the TV last turned to something else, and when
 // it last came back to the Pi; zero times for never.
 func (c *Controller) LastElsewhere() (left, back time.Time) {

@@ -292,6 +292,7 @@ export class Slideshow {
     } else {
       this.move(incoming as HTMLImageElement);
     }
+    incoming.style.transition = "";
     incoming.classList.add("visible");
     this.backdrop.classList.add("has-photo");
     this.current = incoming;
@@ -299,6 +300,10 @@ export class Slideshow {
 
     window.setTimeout(() => {
       if (outgoing && outgoing !== this.current) {
+        // Covered by now: it goes at once. Faded out underneath the new
+        // one, nobody would see it go, but the screen would be drawn anew
+        // for every step of it.
+        outgoing.style.transition = "none";
         outgoing.classList.remove("visible");
         if (outgoing instanceof HTMLVideoElement) this.unload(outgoing);
       }

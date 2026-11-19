@@ -1526,6 +1526,58 @@ test("power saver: photos stand still; the settings offer the presets", async ()
   }
 });
 
+test("a new photo fades in over the old one, in steps; the old one then goes at once", async () => {
+  const own = await startPiDash(APPS + '\n[photos]\ninterval = "5s"\n');
+  try {
+    const { page } = await ready(own.base);
+    // Fifteen steps a second (24 over the 1.6 s fade) rather than every refresh.
+    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector("#backdrop img")).transitionTimingFunction), "steps(24)");
+    // The photo on top: while one fades in, both count as visible.
+    const shown = () => page.evaluate(() => [...document.querySelectorAll("#backdrop img.visible")].find((i) => i.style.zIndex === "2")?.src ?? "");
+    const changed = async () =>
+      page.waitForFunction((was) => ([...document.querySelectorAll("#backdrop img.visible")].find((i) => i.style.zIndex === "2")?.src ?? "") !== was, await shown(), { timeout: 10000 });
+    await changed();
+    // The fade is over a moment after 1.7 s: then nothing on the backdrop is
+    // still fading. Before, the covered photo was faded out underneath for
+    // another 1.6 s, and the screen drawn anew for it all the while.
+    await page.waitForTimeout(1900);
+    const fading = await page.evaluate(() => document.getAnimations().filter((a) => a.effect?.target?.closest?.("#backdrop") && a.playState === "running").map((a) => a.transitionProperty || a.animationName || "animation"));
+    assert.deepEqual(fading, [], "nothing on the backdrop is still fading");
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll("#backdrop img:not(.visible)")].every((i) => getComputedStyle(i).opacity === "0")), true, "the covered photo is gone");
+    // And the next photo fades in again, as the first did.
+    await changed();
+    await page.waitForTimeout(300);
+    const rising = await page.evaluate(() => Number(getComputedStyle([...document.querySelectorAll("#backdrop img.visible")].find((i) => i.style.zIndex === "2")).opacity));
+    assert.ok(rising > 0 && rising < 1, `the new photo is fading in: opacity ${rising}`);
+    assert.deepEqual(page.problems, []);
+    await page.context().close();
+  } finally {
+    await own.stop();
+  }
+});
+
+test("while the TV shows another input the dashboard rests, and carries on when the TV comes back", async () => {
+  const own = await startPiDash(APPS + '\n[photos]\ninterval = "5s"\n[[tv.inputs]]\nname = "PlayStation"\nport = 2\n', { PIDASH_PRETEND_TV: "1" });
+  try {
+    const { page, remote } = await ready(own.base);
+    const shown = () => page.evaluate(() => document.querySelector("#backdrop img.visible")?.src ?? "");
+    const switched = await fetch(own.base + "/api/tv/input", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ index: 0 }) });
+    assert.equal(switched.status, 204, await switched.text());
+    await page.waitForTimeout(1000); // the page has heard, and any fade is over
+    const resting = await shown();
+    // Longer than a photo is shown for: it stays, and nothing is fetched or drawn for nobody.
+    await page.waitForTimeout(8000);
+    assert.equal(await shown(), resting, "the photo stays while the TV shows the PlayStation");
+    // A button of the TV's remote reaches the Pi: the TV shows it again.
+    await remote.press("back");
+    await page.waitForFunction((was) => document.querySelector("#backdrop img.visible")?.src !== was, resting, { timeout: 10000 });
+    assert.deepEqual(page.problems, []);
+    await page.context().close();
+  } finally {
+    await own.stop();
+  }
+});
+
 // --- What the dashboard shows, set and kept --------------------------------------------
 
 test("the caption and the weather's detail are settings, and can be kept from the remote", async () => {
@@ -2402,7 +2454,7 @@ test("after an update the TV says once what is new; a first start says nothing",
     await page.waitForFunction(() => document.getElementById("whatsnew").classList.contains("open"));
     const said = await page.evaluate(() => ({ title: document.querySelector("#whatsnew h2").textContent, lines: [...document.querySelectorAll("#whatsnew li")].map((l) => l.textContent) }));
     assert.equal(said.title, `New in ${version}`);
-    assert.ok(said.lines.length >= 3 && said.lines.some((l) => /Videos have covers/.test(l)) && said.lines.some((l) => /Immich/.test(l)), String(said.lines));
+    assert.ok(said.lines.length >= 2 && said.lines.some((l) => /another input/.test(l)) && said.lines.some((l) => /fade into one another/.test(l)), String(said.lines));
     // Any button closes it, and does nothing else.
     await remote.press("select");
     assert.equal(await open(), false);

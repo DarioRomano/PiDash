@@ -71,12 +71,21 @@ type sight struct {
 	// When it last turned to something else, and when it last came back, in
 	// seconds since 1970; zero for never.
 	left, back atomic.Int64
+	// changed is called when elsewhere has changed; may be nil.
+	changed atomic.Pointer[func()]
+}
+
+func (s *sight) tell() {
+	if fn := s.changed.Load(); fn != nil {
+		(*fn)()
+	}
 }
 
 // away notes that the TV shows something else than the Pi.
 func (s *sight) away() {
 	if s != nil && !s.elsewhere.Swap(true) {
 		s.left.Store(time.Now().Unix())
+		s.tell()
 	}
 }
 
@@ -84,13 +93,14 @@ func (s *sight) away() {
 func (s *sight) here() {
 	if s != nil && s.elsewhere.Swap(false) {
 		s.back.Store(time.Now().Unix())
+		s.tell()
 	}
 }
 
 // forget is for when the TV went off: what it shows next is not known.
 func (s *sight) forget() {
-	if s != nil {
-		s.elsewhere.Store(false)
+	if s != nil && s.elsewhere.Swap(false) {
+		s.tell()
 	}
 }
 

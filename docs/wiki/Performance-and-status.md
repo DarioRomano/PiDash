@@ -5,11 +5,11 @@
 **Settings → Screen → Performance** chooses how much work the Pi does for the
 picture, which is what decides how much power it draws and how warm it gets:
 
-| Preset | Moving background | Photos | Video clips |
-|--------|-------------------|--------|-------------|
-| **Smooth** | 30 pictures a second | move as set, redrawn 30 times a second | shown |
-| **Balanced** (default) | 12 a second | move as set, redrawn 15 times a second | shown |
-| **Power saver** | 5 a second, drawn less finely | stand still | left out |
+| Preset | Moving background | Photos | Fade to the next photo | Video clips |
+|--------|-------------------|--------|------------------------|-------------|
+| **Smooth** | 30 pictures a second | move as set, redrawn 30 times a second | every refresh of the TV | shown |
+| **Balanced** (default) | 12 a second | move as set, redrawn 15 times a second | 15 steps a second | shown |
+| **Power saver** | 5 a second, drawn less finely | stand still | 7 steps a second | left out |
 
 **Menus are not slowed down by any of this.** The app row, the settings and
 every other menu are drawn as often as the TV shows a picture, and so is what
@@ -26,6 +26,22 @@ moving background 12 times a second. The clock changes once a minute, and one
 photo gives way to the next every half minute or so. So the work is all in
 what moves: photos that drift, the moving background, and the second or two
 in which a menu opens or a photo fades in.
+
+Measured in a browser without a graphics chip, where every picture is drawn
+the slow way, the browser's share of the processor was:
+
+| What is on screen | Before v0.15 | Since |
+|-------------------|--------------|-------|
+| A photo, a new one every 30 s | 13 % | 5 % |
+| A photo, a new one every 10 s | 38 % | 14 % |
+| Photos that move | 65 % | 65 % |
+| The TV shows another input, with photos or the moving background | 13 to 65 % | under 1 % |
+
+The fade to the next photo was drawn on every refresh of the TV, and then
+the photo underneath was faded out once more where nobody could see it. It
+is now drawn in 15 steps a second and the photo underneath goes at once.
+Photos that move are what costs most by far, because what is on screen
+really changes 15 times a second.
 
 **Is the Pi's graphics chip doing the drawing?** It should be, and the
 **Status** page says: **Graphics** names what the browser draws with. On a
@@ -116,6 +132,13 @@ It also stops drawing when nobody can see it:
   the radio stops. A button press, or the TV reporting that it is on again,
   brings everything back. This needs a TV that tells the truth about its
   power state; most do.
+- **While the TV shows something else**: another of its inputs, or its own
+  programme or apps. Photos stop changing and moving and the background
+  stands still, as while it is off; the radio plays on, in case it goes to
+  headphones. When the TV turns back to the Pi, or a button of its remote
+  arrives, everything carries on. The TV says when it switches over
+  HDMI-CEC; the **TV shows** line of the [status page](#status-page) tells
+  whether yours does.
 - **While an app is open**, and during [night mode](Using-the-dashboard#night-mode).
 
 - **While the Pi is hot.** From 75 °C the background stands still and photos

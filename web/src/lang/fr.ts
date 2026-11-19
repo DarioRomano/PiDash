@@ -898,6 +898,8 @@ const list: Record<string, string> = {
   "The TV as a speaker for phones: Spotify Connect and AirPlay (Settings, Sound and Bluetooth; the guide says what to install).": "Le téléviseur comme enceinte pour téléphones : Spotify Connect et AirPlay (Réglages, Son et Bluetooth ; le guide indique quoi installer).",
   "Photos from Immich, and from a shared folder on the network (Settings, Photos).": "Photos depuis Immich et depuis un dossier partagé sur le réseau (Réglages, Photos).",
   "Back pressed three times quickly leaves an app; in Spotify the remote's arrows move around the page.": "Trois appuis rapides sur Retour quittent une appli ; dans Spotify, les flèches de la télécommande parcourent la page.",
+  "While the TV shows another input or one of its own apps, the dashboard rests: photos stand still and the background stops until the TV comes back.": "Pendant que le téléviseur affiche une autre entrée ou l’une de ses propres applis, le tableau de bord se repose : les photos s’immobilisent et le fond s’arrête jusqu’au retour du téléviseur.",
+  "Photos fade into one another with far less work for the Pi.": "Les photos se fondent l’une dans l’autre avec bien moins de travail pour le Pi.",
   "Trips: the journeys your photos tell of, worked out from where and when they were taken.": "Voyages : les voyages que racontent vos photos, déduits du lieu et de la date des prises de vue.",
   "A photo quiz: which year was this, and where?": "Un quiz photo : c’était en quelle année, et où ?",
   "Art mode: paintings from a museum in place of the photos. Up on the dashboard switches.": "Mode art : des tableaux d’un musée à la place des photos. Haut sur le tableau de bord permet de changer.",

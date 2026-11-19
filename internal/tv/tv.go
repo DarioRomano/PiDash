@@ -176,6 +176,15 @@ func (s *Service) NoteActivity() {
 	fn(st)
 }
 
+// NoteElsewhere says that the TV has turned to something else, or back to
+// the Pi: the dashboard rests while nobody can see it.
+func (s *Service) NoteElsewhere() {
+	s.mu.Lock()
+	st, fn := s.statusLocked(), s.onChange
+	s.mu.Unlock()
+	fn(st)
+}
+
 // New returns a TV service.
 func New(opt Options) *Service {
 	if opt.AppRunning == nil {

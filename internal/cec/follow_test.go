@@ -159,3 +159,31 @@ func TestWhatTheTVSaysItShows(t *testing.T) {
 	}
 	bare.handle([]byte{0x0f, 0x86, 0x20, 0x00})
 }
+
+// The dashboard rests while the TV shows something else, so it is told at
+// once when that changes: once for each change, and not for what changes
+// nothing.
+func TestTheDashboardIsToldWhatTheTVShows(t *testing.T) {
+	r := newResponder()
+	told := 0
+	fn := func() { told++ }
+	r.seen.changed.Store(&fn)
+	for _, c := range []struct {
+		what string
+		msg  []byte
+		want int
+	}{
+		{"another input is chosen", []byte{0x0f, 0x86, 0x20, 0x00}, 1},
+		{"and another again: nothing new for the dashboard", []byte{0x0f, 0x86, 0x30, 0x00}, 1},
+		{"a button of the TV's remote reaches the Pi", []byte{0x04, 0x44, 0x01}, 2},
+		{"another, while it shows the Pi", []byte{0x04, 0x44, 0x02}, 2},
+		{"the TV turns to its own apps", []byte{0x0f, 0x82, 0x00, 0x00}, 3},
+		{"the TV goes off", []byte{0x0f, 0x36}, 4},
+		{"and is told to go off again", []byte{0x0f, 0x36}, 4},
+	} {
+		r.handle(c.msg)
+		if told != c.want {
+			t.Fatalf("%s: told %d times, want %d", c.what, told, c.want)
+		}
+	}
+}

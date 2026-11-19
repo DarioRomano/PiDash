@@ -184,3 +184,29 @@ func TestASleepTimerThatWasSetStillCounts(t *testing.T) {
 		t.Errorf("a sleep timer set by hand: standbys %d, want 1", fake.standbys)
 	}
 }
+
+// When the TV turns to something else or back, the dashboard hears of it
+// with the TV's status, which says so.
+func TestTheDashboardHearsWhenTheTVShowsSomethingElse(t *testing.T) {
+	p := &Pretend{}
+	s := New(Options{TV: p, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Elsewhere: p.Elsewhere})
+	heard := make(chan Status, 4)
+	s.OnChange(func(st Status) { heard <- st })
+	p.OnElsewhere = s.NoteElsewhere
+	if err := p.Show(context.Background(), "2.0.0.0"); err != nil {
+		t.Fatal(err)
+	}
+	if st := <-heard; !st.Elsewhere {
+		t.Errorf("after switching to another device: %+v", st)
+	}
+	p.Here()
+	if st := <-heard; st.Elsewhere {
+		t.Errorf("after a button of the TV's remote: %+v", st)
+	}
+	p.Here() // nothing changes: nothing to hear
+	select {
+	case st := <-heard:
+		t.Errorf("told without a change: %+v", st)
+	default:
+	}
+}

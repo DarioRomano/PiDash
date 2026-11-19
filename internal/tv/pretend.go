@@ -16,7 +16,25 @@ type Pretend struct {
 	did   []string
 	// elsewhere is true after it was told to show another device.
 	elsewhere bool
+	// OnElsewhere is called when elsewhere has changed; may be nil.
+	OnElsewhere func()
 }
+
+// setElsewhere notes what the TV shows, and says so if that changed.
+func (p *Pretend) setElsewhere(v bool) {
+	p.mu.Lock()
+	changed := p.elsewhere != v
+	p.elsewhere = v
+	fn := p.OnElsewhere
+	p.mu.Unlock()
+	if changed && fn != nil {
+		fn()
+	}
+}
+
+// Here notes that the TV shows the Pi again, as a button of its remote
+// that reaches the Pi tells.
+func (p *Pretend) Here() { p.setElsewhere(false) }
 
 // Elsewhere reports whether the TV shows something other than the Pi.
 func (p *Pretend) Elsewhere() bool {
@@ -54,8 +72,9 @@ func (p *Pretend) Standby(context.Context) error {
 func (p *Pretend) Wake(context.Context) error {
 	p.note("wake")
 	p.mu.Lock()
-	p.power, p.elsewhere = cec.PowerOn, false
+	p.power = cec.PowerOn
 	p.mu.Unlock()
+	p.setElsewhere(false)
 	return nil
 }
 
@@ -72,9 +91,7 @@ func (p *Pretend) PowerStatus(context.Context) (cec.Power, error) {
 // Show implements InputSwitcher.
 func (p *Pretend) Show(_ context.Context, address string) error {
 	p.note("show " + address)
-	p.mu.Lock()
-	p.elsewhere = true
-	p.mu.Unlock()
+	p.setElsewhere(true)
 	return nil
 }
 

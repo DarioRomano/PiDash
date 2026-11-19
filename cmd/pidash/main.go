@@ -314,6 +314,10 @@ func main() {
 	tvService := tv.New(tvOpts)
 	// What the TV says over HDMI tells whether anyone can see the dashboard.
 	cecControl.OnTVStandby = tvService.NoteStandby
+	cecControl.OnElsewhere(func() { go tvService.NoteElsewhere() })
+	if pretendTV != nil {
+		pretendTV.OnElsewhere = func() { go tvService.NoteElsewhere() }
+	}
 	cecControl.OnTVActive = tvService.NoteAwake
 
 	// The phone as mouse and keyboard, and the TV remote's long-press exit.

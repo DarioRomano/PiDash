@@ -206,7 +206,7 @@ async function setArt(on: boolean) {
 const ambient = new Ambient($<HTMLCanvasElement>("#ambient"), $("#grain"));
 let photoShowing = false;
 function updateAmbient() {
-  ambient.setActive(!photoShowing && appsStatus.running === "" && document.visibilityState === "visible" && !tvAsleep && !night.now);
+  ambient.setActive(!photoShowing && appsStatus.running === "" && document.visibilityState === "visible" && !tvAsleep && !tvElsewhere && !night.now);
 }
 
 let shownPhoto: PhotoItem | null = null;
@@ -239,12 +239,16 @@ function onPhotos(st: PhotosStatus) {
 }
 
 let tvAsleep = false;
+// The TV shows another of its inputs, or its own programme or apps: nobody
+// sees the dashboard, so photos stand still and the background stops, until
+// the TV comes back. (Radio plays on: it may go to headphones.)
+let tvElsewhere = false;
 
 function updateSuspended() {
   // Do not load photos while an app covers the dashboard, the page is hidden,
-  // the TV has been switched off for the night, or night mode shows only a clock.
+  // the TV has been switched off or shows something else, or night mode shows only a clock.
   // And while a photo is being read about, or something is being done with it, it stays.
-  slideshow.setSuspended(appsStatus.running !== "" || document.visibilityState !== "visible" || tvAsleep || night.now || photoInfo.isOpen || photoBar.isOpen || gridPage.isOpen || places.isOpen || quiz.isOpen);
+  slideshow.setSuspended(appsStatus.running !== "" || document.visibilityState !== "visible" || tvAsleep || tvElsewhere || night.now || photoInfo.isOpen || photoBar.isOpen || gridPage.isOpen || places.isOpen || quiz.isOpen);
   // An app brings its own sound, and a TV that is off needs none.
   if (appsStatus.running !== "" || tvAsleep) radio.stop();
   updateAmbient();
@@ -1256,6 +1260,7 @@ connect("/events", {
   onBattery: (n) => toast(t("{name} is running low: {n} % battery left.", { name: n.name, n: n.percent }), 12000),
   onTV: (st) => {
     tvAsleep = st.asleep;
+    tvElsewhere = !!st.elsewhere;
     sleep.update(st);
     rail.setItems(railItems());
     photoBar.setItems(photoItems());

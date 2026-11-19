@@ -90,9 +90,12 @@ html, body {
    texts on top of it into a single picture: nothing is then laid over
    anything, and a menu that opens moves over one sheet instead of two. */
 #backdrop[data-moving="yes"] img.visible, #backdrop video.visible { will-change: opacity, transform; }
-/* Power saver: one photo gives way to the next in a dozen steps a second
-   rather than sixty. */
-#stage[data-performance="saver"] #backdrop img { transition-timing-function: steps(20, end); }
+/* One photo gives way to the next in fifteen steps a second rather than
+   sixty: a fade draws the whole screen anew at every step, and a quarter of
+   the steps cannot be told apart at this pace. The power saver takes half as
+   many; only "smooth" fades at every refresh of the screen. */
+#stage[data-performance="balanced"] #backdrop img { transition-timing-function: steps(24, end); }
+#stage[data-performance="saver"] #backdrop img { transition-timing-function: steps(12, end); }
 /* A clip is shown whole, on black. */
 #backdrop video { object-fit: contain; background: #000; }
 

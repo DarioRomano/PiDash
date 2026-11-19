@@ -239,6 +239,10 @@ func New(cfg config.Config, log *slog.Logger, static fs.FS, d Deps) *Server {
 			case req.Repeat:
 				s.RemoteRepeat(req.Action)
 			default:
+				// A button of the TV's remote: the TV shows the Pi.
+				if d.PretendTV != nil {
+					d.PretendTV.Here()
+				}
 				s.RemoteAction(req.Action)
 			}
 			w.WriteHeader(http.StatusNoContent)
