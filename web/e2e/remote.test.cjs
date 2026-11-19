@@ -3288,14 +3288,21 @@ test("departures from a stop: set up on the settings page, then beside the clock
     await settings.waitForFunction(() => /Found: Sampleville, Lake/.test(document.getElementById("dep-result").textContent));
     assert.equal(await settings.evaluate(() => document.getElementById("dep-stop").value), "Sampleville, Lake");
     await settings.selectOption("#dep-walk", "3");
+    const startedBefore = (await (await fetch(own.base + "/api/config")).json()).started;
     await settings.click("#save");
+    // Saved settings take effect with a restart of the backend. Until the new
+    // one answers, the old one may still say what was saved; and a dashboard
+    // opened on the old one reloads itself once the new one is there, under
+    // the hands of the test.
     for (let i = 0; i < 100; i++) {
       try {
-        if ((await (await fetch(own.base + "/api/settings")).json()).departures.stop === "Sampleville, Lake") break;
+        const cfg = await (await fetch(own.base + "/api/config")).json();
+        const saved = (await (await fetch(own.base + "/api/settings")).json()).departures.stop === "Sampleville, Lake";
+        if (saved && cfg.started !== startedBefore) break;
       } catch {
         /* restarting */
       }
-      assert.ok(i < 99, "the stop was never saved");
+      assert.ok(i < 99, "the stop was never saved, or the backend did not start anew");
       await new Promise((r) => setTimeout(r, 100));
     }
     assert.deepEqual((await (await fetch(own.base + "/api/settings")).json()).departures, { stop: "Sampleville, Lake", walk: 3 });
