@@ -4,7 +4,9 @@
 // This checks, in a real browser, that the way it names them works: an
 // extension from a folder is loaded and acts on the pages it is made for.
 // Nothing leaves this machine: every request is answered here.
-const { test } = require("node:test");
+const nodeTest = require("node:test");
+// Each test fails by name after three minutes, rather than holding up the whole run.
+const test = (name, fn) => nodeTest.test(name, { timeout: 180_000 }, fn);
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");

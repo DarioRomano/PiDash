@@ -3,7 +3,10 @@
 // the dashboard, in the app row and on the settings page.
 //
 // Run with: make e2e
-const { test, before, after } = require("node:test");
+const nodeTest = require("node:test");
+const { before, after } = nodeTest;
+// Each test fails by name after three minutes, rather than holding up the whole run.
+const test = (name, fn) => nodeTest.test(name, { timeout: 180_000 }, fn);
 const assert = require("node:assert/strict");
 const { startPiDash, openPage, closeBrowser, remoteFor, startTileServer, startRadarServer } = require("./harness.cjs");
 
