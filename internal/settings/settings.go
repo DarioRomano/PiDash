@@ -649,7 +649,10 @@ func applyPage(base config.Config, f File, installed []desktop.Entry) (config.Co
 		if p.SkipOdd != nil {
 			cfg.Photos.SkipOdd = *p.SkipOdd
 		}
-		if p.Source == config.PhotoSourceSynology {
+		// Each source keeps its details, whichever one is chosen: switching
+		// to another, or to the moving background, and back again must not
+		// lose the NAS login. Only the chosen one is checked and used.
+		if p.Source == config.PhotoSourceSynology || p.Synology.URL != "" {
 			cfg.Photos.Synology.URL = p.Synology.URL
 			cfg.Photos.Synology.Username = p.Synology.Username
 			cfg.Photos.Synology.Password = p.Synology.Password
@@ -658,13 +661,13 @@ func applyPage(base config.Config, f File, installed []desktop.Entry) (config.Co
 				cfg.Photos.Synology.Quality = p.Synology.Quality
 			}
 		}
-		if m := p.Immich; m != nil && p.Source == config.PhotoSourceImmich {
+		if m := p.Immich; m != nil && (p.Source == config.PhotoSourceImmich || m.URL != "") {
 			cfg.Photos.Immich.URL, cfg.Photos.Immich.APIKey, cfg.Photos.Immich.InsecureTLS = m.URL, m.APIKey, m.InsecureTLS
 			if m.Quality != "" {
 				cfg.Photos.Immich.Quality = m.Quality
 			}
 		}
-		if sh := p.Share; sh != nil && p.Source == config.PhotoSourceShare {
+		if sh := p.Share; sh != nil && (p.Source == config.PhotoSourceShare || sh.Host != "") {
 			cfg.Photos.Share = config.SharePhotos{Host: sh.Host, Name: sh.Name, Folder: sh.Folder, Username: sh.Username, Password: sh.Password}
 		}
 	}
@@ -1398,7 +1401,7 @@ func (s *Store) Save(u Update) error {
 		}
 		// Only for where it was stored for (see sameAddress): a new
 		// address or user name needs its password typed again.
-		if p.Source == config.PhotoSourceSynology && p.Synology.Password == "" &&
+		if p.Synology.Password == "" &&
 			sameAddress(p.Synology.URL, stored.Synology.URL) && p.Synology.Username == stored.Synology.Username {
 			p.Synology.Password = stored.Synology.Password
 		}

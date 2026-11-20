@@ -986,3 +986,39 @@ func TestStoredPasswordsBelongToTheirAddress(t *testing.T) {
 		t.Error("the stored share password went along to another computer")
 	}
 }
+
+// Switching the photos to another source, or to the moving background, and
+// back again keeps every source's login. The page sends each source's
+// address and user name with every save, and its password fields empty.
+func TestSwitchingThePhotoSourceKeepsTheLogins(t *testing.T) {
+	s, _ := open(t)
+	nas := Synology{URL: "http://nas:5000", Username: "owner", Quality: "preview"}
+	immich := &Immich{URL: "http://immich:2283", Quality: "preview"}
+	share := &Share{Host: "nas", Name: "photo", Username: "owner"}
+	withPassword := nas
+	withPassword.Password = "NAS-PW"
+	if err := s.Save(Update{Photos: &Photos{Source: "synology", Synology: withPassword, Immich: immich, Share: share}}); err != nil {
+		t.Fatal(err)
+	}
+	keyed := *immich
+	keyed.APIKey = "IMMICH-KEY"
+	if err := s.Save(Update{Photos: &Photos{Source: "immich", Synology: nas, Immich: &keyed, Share: share}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, source := range []string{"", "immich", "", "synology", "immich"} {
+		if err := s.Save(Update{Photos: &Photos{Source: source, Synology: nas, Immich: immich, Share: share}}); err != nil {
+			t.Fatalf("switching to %q: %v", source, err)
+		}
+		cfg, err := s.Effective()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Photos.Synology.Password != "NAS-PW" || cfg.Photos.Synology.URL != "http://nas:5000" || cfg.Photos.Immich.APIKey != "IMMICH-KEY" {
+			t.Fatalf("after switching to %q: NAS %+v, Immich %+v", source, cfg.Photos.Synology, cfg.Photos.Immich)
+		}
+		v := s.View()
+		if !v.Photos.Synology.PasswordSet || v.Photos.Synology.URL != "http://nas:5000" || !v.Photos.Immich.KeySet {
+			t.Fatalf("after switching to %q the page is shown NAS %+v, Immich %+v", source, v.Photos.Synology, v.Photos.Immich)
+		}
+	}
+}
