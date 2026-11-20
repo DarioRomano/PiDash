@@ -217,10 +217,12 @@ func TestRealMpv(t *testing.T) {
 		_ = cmd.Process.Kill()
 		t.Fatalf("Back did not end mpv: %s", out.String())
 	}
-	// What the libraries under mpv say about graphics cards this machine lacks is not about the settings.
+	// What the libraries under mpv say about graphics cards this machine lacks
+	// is not about the settings; nor is its control connection, which the
+	// test holds, being cut off as mpv quits ("[ipc_0] Read error").
 	var said []string
 	for _, line := range strings.Split(out.String(), "\n") {
-		if !strings.HasPrefix(line, "[ffmpeg]") && !strings.HasPrefix(line, "[vaapi]") && !strings.HasPrefix(line, "[vdpau]") {
+		if !strings.HasPrefix(line, "[ffmpeg]") && !strings.HasPrefix(line, "[vaapi]") && !strings.HasPrefix(line, "[vdpau]") && !strings.HasPrefix(line, "[ipc") {
 			said = append(said, line)
 		}
 	}
