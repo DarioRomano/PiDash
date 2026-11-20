@@ -32,6 +32,9 @@ func (p *Pretend) setElsewhere(v bool) {
 	}
 }
 
+// Shown reports that the TV shows the Pi: a pretend TV always knows.
+func (p *Pretend) Shown() bool { return !p.Elsewhere() }
+
 // Here notes that the TV shows the Pi again, as a button of its remote
 // that reaches the Pi tells.
 func (p *Pretend) Here() { p.setElsewhere(false) }

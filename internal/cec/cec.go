@@ -57,7 +57,20 @@ type Controller struct {
 // that it shows the Pi, or that nothing is known.
 func (c *Controller) Elsewhere() bool { return c.seen.elsewhere.Load() }
 
-// OnElsewhere sets what is called whenever Elsewhere changes. It is called
+// Shown reports whether it is known that the TV shows the Pi: since the TV
+// was last switched on it said so, a button of its remote reached the Pi,
+// or PiDash had it show the Pi. False also when nothing is known.
+func (c *Controller) Shown() bool { return c.seen.shown.Load() }
+
+// Forget says that the TV went off: what it shows when it is back is not
+// known until it gives a sign.
+func (c *Controller) Forget() { c.seen.forget() }
+
+// NoteShown says that the TV shows the Pi, as a button of its remote that
+// reached the Pi tells.
+func (c *Controller) NoteShown() { c.seen.here() }
+
+// OnElsewhere sets what is called whenever Elsewhere or Shown changes. It is called
 // from the goroutine that heard the TV, and must not block.
 func (c *Controller) OnElsewhere(fn func()) { c.seen.changed.Store(&fn) }
 

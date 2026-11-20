@@ -68,6 +68,12 @@ type responder struct {
 // assumed.
 type sight struct {
 	elsewhere atomic.Bool
+	// shown is true once it is known that the TV shows the Pi: it said so,
+	// a button of its remote reached the Pi, or PiDash had it show the Pi.
+	// It is not known after the TV went off, until one of those happens: a
+	// TV switched on with its own remote may go straight to one of its own
+	// apps without a word that reaches the Pi.
+	shown atomic.Bool
 	// When it last turned to something else, and when it last came back, in
 	// seconds since 1970; zero for never.
 	left, back atomic.Int64
@@ -83,7 +89,11 @@ func (s *sight) tell() {
 
 // away notes that the TV shows something else than the Pi.
 func (s *sight) away() {
-	if s != nil && !s.elsewhere.Swap(true) {
+	if s == nil {
+		return
+	}
+	s.shown.Store(false)
+	if !s.elsewhere.Swap(true) {
 		s.left.Store(time.Now().Unix())
 		s.tell()
 	}
@@ -91,15 +101,25 @@ func (s *sight) away() {
 
 // here notes that the TV shows the Pi.
 func (s *sight) here() {
-	if s != nil && s.elsewhere.Swap(false) {
+	if s == nil {
+		return
+	}
+	known := s.shown.Swap(true)
+	if s.elsewhere.Swap(false) {
 		s.back.Store(time.Now().Unix())
+		s.tell()
+	} else if !known {
 		s.tell()
 	}
 }
 
 // forget is for when the TV went off: what it shows next is not known.
 func (s *sight) forget() {
-	if s != nil && s.elsewhere.Swap(false) {
+	if s == nil {
+		return
+	}
+	was := s.shown.Swap(false)
+	if s.elsewhere.Swap(false) || was {
 		s.tell()
 	}
 }

@@ -17,9 +17,19 @@ back to the Pi, which it says as well, and which any button of its remote
 arriving at the Pi shows in any case. A sleep timer set by hand still
 counts: that one means "off in half an hour, whatever is on".
 
+**After the TV was switched on, the time counts only once it is clear that
+the TV shows the Pi.** A TV switched on with its own remote often goes
+straight to its last app, Netflix say, without a word that reaches the Pi.
+So from the moment the TV goes off, what it shows is taken as not known,
+and the time without buttons does not count, until the TV says it shows
+the Pi, PiDash switches it to the Pi itself, or a button of the TV's
+remote arrives at the Pi. A TV that comes on with the dashboard and is then
+left alone untouched therefore stays on; one button press is enough for
+the switch-off to watch over it again.
+
 The [status page](Performance-and-status#status-page) says under **TV shows** what the TV has
-said: PiDash, or something else and since when, and the last time it showed
-something else. If you watch one of the TV's apps for a while and that line
+said: PiDash, something else and since when, or "not known" while it has
+said nothing since it came on, and the last time it showed something else. If you watch one of the TV's apps for a while and that line
 never mentions it, your TV keeps this to itself; nothing can then tell the
 two apart, and the idle switch-off is better left on "Never".
 

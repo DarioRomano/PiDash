@@ -430,6 +430,8 @@ const list: Record<string, string> = {
   "Memory": "Memoria",
   "Load": "Carico",
   "Processor": "Processore",
+  "A TV switched on with its own remote, straight into one of its apps, is no longer switched off for want of a button.": "Un televisore acceso con il suo telecomando, direttamente in una delle sue app, non viene più spento per mancanza di tasti premuti.",
+  "not known: since it was switched on, neither the TV nor a button of its remote has told. It is not switched off for want of a button until one does": "sconosciuto: da quando è stato acceso, né il televisore né un tasto del suo telecomando lo hanno indicato. Finché non accade, non viene spento per mancanza di tasti premuti",
   "The Status page says how busy the processor is in percent; the load average can still be chosen (Settings, Screen).": "La pagina di stato indica quanto è occupato il processore in percentuale; il carico medio si può ancora scegliere (Impostazioni, Schermo).",
   "{n} % busy": "occupato al {n} %",
   "load {load} of {cores} cores": "carico {load} su {cores} core",

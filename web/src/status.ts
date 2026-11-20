@@ -6,7 +6,7 @@ interface StatusReport {
   version: string;
   started: number;
   update?: { latest?: string; available: boolean; auto: boolean; possible: boolean; installing: boolean; error?: string };
-  tv?: { control: boolean; asleep: boolean; off?: string; on?: string; sleepAt?: string; elsewhere?: boolean; leftAt?: string; backAt?: string };
+  tv?: { control: boolean; asleep: boolean; off?: string; on?: string; sleepAt?: string; elsewhere?: boolean; unknown?: boolean; leftAt?: string; backAt?: string };
   remote?: { devices: string[]; last?: { device: string; key: string; action?: string; at: string }; keys?: string; focus: boolean };
   photos?: { source: string; count: number; indexing: boolean; hidden: number; error?: string };
   sources: { name: string; updatedAt: string; stale: boolean; error?: string }[];
@@ -270,6 +270,8 @@ export class StatusPanel {
         const at = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         let shows = t("PiDash, as far as the TV has said: it says when it turns to another input or to one of its own apps");
         if (r.tv.elsewhere) shows = t("something else since {time}: it is not switched off meanwhile", { time: r.tv.leftAt ? at(r.tv.leftAt) : "?" });
+        else if (r.tv.unknown)
+          shows = t("not known: since it was switched on, neither the TV nor a button of its remote has told. It is not switched off for want of a button until one does");
         else if (r.tv.leftAt && r.tv.backAt) shows = t("PiDash · something else last from {from} to {until}", { from: at(r.tv.leftAt), until: at(r.tv.backAt) });
         row(tv, "TV shows", shows);
       }

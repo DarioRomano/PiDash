@@ -101,7 +101,16 @@ type Options struct {
 	// LastElsewhere reports when the TV last turned to something else and
 	// when it last came back; zero times for never. May be nil.
 	LastElsewhere func() (left, back time.Time)
-	Log           *slog.Logger
+	// Shown reports that it is known that the TV shows this computer. A TV
+	// switched on with its own remote may go straight to one of its own
+	// apps without a word that reaches the Pi; until there is a sign that
+	// it shows the Pi, nobody is taken to be idle in front of it. Nil: it
+	// is taken to show the Pi.
+	Shown func() bool
+	// Unseen is told when the TV has gone off: what it shows when it comes
+	// back is not known. May be nil.
+	Unseen func()
+	Log    *slog.Logger
 }
 
 // Status is sent to the dashboard and the phone remote.
@@ -123,9 +132,12 @@ type Status struct {
 	// Elsewhere says the TV shows something other than this computer;
 	// LeftAt and BackAt are when it last turned to something else and when
 	// it last came back, where it ever said so.
-	Elsewhere bool       `json:"elsewhere,omitempty"`
-	LeftAt    *time.Time `json:"leftAt,omitempty"`
-	BackAt    *time.Time `json:"backAt,omitempty"`
+	Elsewhere bool `json:"elsewhere,omitempty"`
+	// Unknown says the TV is on but has given no sign of showing this
+	// computer since it came on: it is not switched off for want of a button.
+	Unknown bool       `json:"unknown,omitempty"`
+	LeftAt  *time.Time `json:"leftAt,omitempty"`
+	BackAt  *time.Time `json:"backAt,omitempty"`
 }
 
 // settle is how long a TV may take to report "standby" after being told to.
@@ -214,6 +226,7 @@ func (s *Service) statusLocked() Status {
 		st.SleepAt = &at
 	}
 	st.Elsewhere = s.opt.Elsewhere != nil && s.opt.Elsewhere()
+	st.Unknown = !st.Elsewhere && !s.asleep && s.opt.Shown != nil && !s.opt.Shown()
 	if s.opt.LastElsewhere != nil {
 		if left, back := s.opt.LastElsewhere(); !left.IsZero() {
 			st.LeftAt = &left
@@ -275,13 +288,15 @@ func (s *Service) Step(ctx context.Context, now time.Time) {
 	// listened to, the time does not count; nor while the TV shows something
 	// else, where the buttons that are pressed do not come here.
 	elsewhere := s.opt.Elsewhere != nil && s.opt.Elsewhere()
-	if s.active || s.lastActivity.IsZero() || s.asleep || elsewhere || (s.opt.AppRunning != nil && s.opt.AppRunning()) || (s.opt.Busy != nil && s.opt.Busy()) {
+	// Nor while it is not known that the TV shows the Pi at all.
+	unknown := !elsewhere && s.opt.Shown != nil && !s.opt.Shown()
+	if s.active || s.lastActivity.IsZero() || s.asleep || elsewhere || unknown || (s.opt.AppRunning != nil && s.opt.AppRunning()) || (s.opt.Busy != nil && s.opt.Busy()) {
 		s.lastActivity, s.active = now, false
 	}
 	// The minute's notice was running when the TV turned to something else:
 	// nobody saw it, and it is taken back.
 	withdrawn := false
-	if elsewhere && s.idleArmed && !s.sleepAt.IsZero() {
+	if (elsewhere || unknown) && s.idleArmed && !s.sleepAt.IsZero() {
 		s.sleepAt, s.sleepMinutes, s.idleArmed = time.Time{}, 0, false
 		sleepDue, withdrawn = false, true
 	}
@@ -369,8 +384,19 @@ func (s *Service) Step(ctx context.Context, now time.Time) {
 	st, fn := s.statusLocked(), s.onChange
 	s.mu.Unlock()
 	if changed {
+		if st.Asleep {
+			s.unseen()
+		}
 		s.opt.Log.Info("tv power changed", "asleep", st.Asleep)
 		fn(st)
+	}
+}
+
+// unseen notes that the TV went off: what it shows when it is back is not
+// known until it gives a sign.
+func (s *Service) unseen() {
+	if s.opt.Unseen != nil {
+		s.opt.Unseen()
 	}
 }
 
@@ -390,6 +416,7 @@ func (s *Service) NoteStandby() {
 	st, fn := s.statusLocked(), s.onChange
 	s.mu.Unlock()
 	if !was {
+		s.unseen()
 		s.opt.Log.Info("the TV announced standby; resting")
 		fn(st)
 	}
@@ -510,6 +537,9 @@ func (s *Service) setPower(ctx context.Context, on bool, now time.Time) error {
 	}
 	st, fn := s.statusLocked(), s.onChange
 	s.mu.Unlock()
+	if !on && err == nil {
+		s.unseen()
+	}
 	fn(st)
 	return err
 }

@@ -307,6 +307,11 @@ func main() {
 		return cecControl.Elsewhere()
 	}
 	tvOpts.LastElsewhere = cecControl.LastElsewhere
+	if pretendTV != nil {
+		tvOpts.Shown = pretendTV.Shown
+	} else {
+		tvOpts.Shown, tvOpts.Unseen = cecControl.Shown, cecControl.Forget
+	}
 	// Music behind the dashboard is something going on, though nobody
 	// presses anything for it: from an app, or from a phone.
 	var speakers *receivers.Service
@@ -469,7 +474,8 @@ func main() {
 			AppRunning: func() bool { return appManager.Status().Running != "" },
 			OnChannel:  func(up bool) bool { return srv != nil && srv.ChannelKey(up) },
 			OnAction: func(action string) {
-				tvService.NoteAwake() // a button of its remote: the TV is on
+				tvService.NoteAwake()  // a button of its remote: the TV is on,
+				cecControl.NoteShown() // and shows the Pi, where the button went
 				tvService.NoteActivity()
 				srv.RemoteAction(action)
 			},
@@ -481,6 +487,7 @@ func main() {
 			},
 			Tap: phoneInput.Tap,
 			OnAppKey: func() {
+				cecControl.NoteShown() // an app on the Pi got the button: the TV shows it
 				tvService.NoteActivity()
 				appManager.EnsureFocus()
 			},

@@ -210,3 +210,57 @@ func TestTheDashboardHearsWhenTheTVShowsSomethingElse(t *testing.T) {
 	default:
 	}
 }
+
+// The TV is switched on with its own remote and goes straight to one of its
+// own apps. Nothing about that reaches the Pi, and nothing is pressed here:
+// that is no reason to switch the TV off under whoever watches. Only once
+// there is a sign that it shows the Pi does the time without buttons count.
+func TestATVSwitchedOnByItselfIsNotSwitchedOffUnderAnApp(t *testing.T) {
+	fake := &fakeTV{power: cec.PowerStandby}
+	shown, unseen := true, 0
+	s := New(Options{
+		TV: fake, IdleOff: 5 * time.Minute, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		AppRunning: func() bool { return false },
+		Elsewhere:  func() bool { return false },
+		Shown:      func() bool { return shown },
+		Unseen:     func() { unseen++; shown = false },
+	})
+	ctx := context.Background()
+	clock := at(14, 20, 0)
+	step := func(d time.Duration) {
+		clock = clock.Add(d)
+		s.Step(ctx, clock)
+	}
+	// The TV is off: the service learns so, and what it shows next is not known.
+	step(0)
+	step(2 * time.Minute)
+	if !s.Status().Asleep || unseen != 1 || shown {
+		t.Fatalf("the TV is off: status %+v, unseen %d", s.Status(), unseen)
+	}
+	// Switched on with its own remote, straight into its own Netflix: an hour.
+	fake.power = cec.PowerOn
+	for i := 0; i < 120; i++ {
+		step(30 * time.Second)
+	}
+	if st := s.Status(); fake.standbys != 0 || st.SleepAt != nil || st.Asleep || !st.Unknown {
+		t.Fatalf("an hour of the TV's own app: standbys %d, status %+v", fake.standbys, st)
+	}
+	// A button of its remote reaches the Pi: the TV shows the dashboard, and
+	// from now on five minutes without a button switch it off.
+	shown = true
+	s.NoteActivity()
+	step(30 * time.Second)
+	if s.Status().Unknown {
+		t.Fatal("still unknown after a button reached the Pi")
+	}
+	for i := 0; i < 12 && fake.standbys == 0; i++ {
+		step(30 * time.Second)
+	}
+	if fake.standbys != 1 {
+		t.Fatalf("the dashboard left alone for six minutes: standbys %d, status %+v", fake.standbys, s.Status())
+	}
+	// Switched off by PiDash: unknown again, until the next sign.
+	if unseen != 2 || shown {
+		t.Errorf("after switching the TV off: unseen %d, shown %v", unseen, shown)
+	}
+}

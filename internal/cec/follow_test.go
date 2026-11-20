@@ -187,3 +187,36 @@ func TestTheDashboardIsToldWhatTheTVShows(t *testing.T) {
 		}
 	}
 }
+
+// Whether it is known that the TV shows the Pi: not before any sign, and not
+// again after it went off, until the TV says so or a button of its remote
+// arrives. Its going to another input or its own apps says it does not.
+func TestWhetherTheTVIsKnownToShowThePi(t *testing.T) {
+	r := newResponder()
+	shown := func() bool { return r.seen.shown.Load() }
+	for _, c := range []struct {
+		what string
+		msg  []byte
+		want bool
+	}{
+		{"nothing heard yet", nil, false},
+		{"the Pi's input is chosen", []byte{0x0f, 0x86, 0x10, 0x00}, true},
+		{"the TV goes off", []byte{0x0f, 0x36}, false},
+		{"it comes on and says something about its power", []byte{0x04, 0x90, 0x00}, false},
+		{"a button of its remote reaches the Pi", []byte{0x04, 0x44, 0x01}, true},
+		{"it turns to its own apps", []byte{0x0f, 0x82, 0x00, 0x00}, false},
+	} {
+		if c.msg != nil {
+			r.handle(c.msg)
+		}
+		if shown() != c.want {
+			t.Fatalf("%s: shown = %v, want %v", c.what, shown(), c.want)
+		}
+	}
+	// Told from outside: the TV service learnt that the TV went off.
+	r.seen.here()
+	r.seen.forget()
+	if shown() {
+		t.Error("still known to show the Pi after it went off")
+	}
+}
