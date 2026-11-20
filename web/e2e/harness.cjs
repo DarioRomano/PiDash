@@ -52,8 +52,19 @@ async function startPiDash(config = "", extraEnv = {}, extraArgs = []) {
     dir,
     log: () => log,
     stop: async () => {
-      child.kill();
-      await new Promise((r) => child.once("exit", r));
+      // One that has ended already sends no word of it any more; one that
+      // does not end when asked is ended, and said so, rather than waited
+      // for until the whole run is stopped from outside.
+      if (child.exitCode === null && child.signalCode === null) {
+        const ended = new Promise((r) => child.once("exit", r));
+        child.kill();
+        const late = setTimeout(() => {
+          console.error("PiDash did not stop within 10 s of being asked; its log:\n" + log.slice(-3000));
+          child.kill("SIGKILL");
+        }, 10000);
+        await ended;
+        clearTimeout(late);
+      }
       fs.rmSync(dir, { recursive: true, force: true });
     },
   };

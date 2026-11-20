@@ -59,18 +59,18 @@ func (p *Provider) Interval() time.Duration { return p.interval }
 
 // State is the JSON shape sent to the frontend.
 type State struct {
-	Hostname      string   `json:"hostname"`
-	UptimeSeconds float64  `json:"uptimeSeconds"`
-	Load1         float64  `json:"load1"`
+	Hostname      string  `json:"hostname"`
+	UptimeSeconds float64 `json:"uptimeSeconds"`
+	Load1         float64 `json:"load1"`
 	// CPUPercent is how busy the processor was since the last reading, as
 	// a share of all its cores together, 0 to 100; absent at the first.
 	CPUPercent *float64 `json:"cpuPercent,omitempty"`
 	// Cores is how many the processor has: a load of 1 is one of them busy.
-	Cores int `json:"cores"`
-	MemTotalMB    int64    `json:"memTotalMB"`
-	MemUsedMB     int64    `json:"memUsedMB"`
-	CPUTempC      *float64 `json:"cpuTempC"`
-	Addresses     []string `json:"addresses"`
+	Cores      int      `json:"cores"`
+	MemTotalMB int64    `json:"memTotalMB"`
+	MemUsedMB  int64    `json:"memUsedMB"`
+	CPUTempC   *float64 `json:"cpuTempC"`
+	Addresses  []string `json:"addresses"`
 	// Hot asks the dashboard to do less until the Pi has cooled down.
 	Hot bool `json:"hot"`
 }

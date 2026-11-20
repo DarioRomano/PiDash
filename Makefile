@@ -88,9 +88,11 @@ integration:
 	go test -tags integration -count=1 -timeout 30m ./test/integration/
 
 # Drives the real pages with the buttons of a TV remote. See web/e2e/.
+# A test that hangs fails after three minutes, by name, instead of holding
+# up the whole run.
 e2e:
 	@test -x bin/pidash || (echo 'bin/pidash is missing: run "make build" first'; exit 1)
-	node --test web/e2e/*.test.cjs
+	node --test --test-timeout=180000 web/e2e/*.test.cjs
 
 # Takes the screenshots of the project page (site/img) again, from the real
 # pages. Needs python3 with numpy and Pillow for the sample pictures.
