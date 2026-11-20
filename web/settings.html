@@ -363,6 +363,14 @@
             <option value="plain">Plain, which is less work at 4K</option>
           </select>
         </label>
+        <label class="field">
+          <span>How busy the processor is, on the Status page</span>
+          <select id="d-processor">
+            <option value="percent">In percent: how much of the time it was busy</option>
+            <option value="load">As the load average: 1 is one core's worth of work</option>
+            <option value="both">Both</option>
+          </select>
+        </label>
         <label class="check"><input id="sys-cool" type="checkbox" /><span>Pause movement while the Pi is hot</span></label>
         <p class="hint">The background stands still and photos stop moving until the Pi has cooled down.</p>
       </section>

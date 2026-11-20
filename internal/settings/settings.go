@@ -181,6 +181,8 @@ type Screen struct {
 	Background  string `json:"background,omitempty"`
 	Performance string `json:"performance,omitempty"`
 	Tiles       string `json:"tiles,omitempty"`
+	// Processor is how the status page shows how busy the processor is.
+	Processor string `json:"processor,omitempty"`
 	// BackgroundFPS is how many pictures a second the moving background
 	// gets; 0 leaves it to Performance, absent leaves config.toml in charge.
 	BackgroundFPS *int `json:"backgroundFps,omitempty"`
@@ -751,7 +753,7 @@ func applyPage(base config.Config, f File, installed []desktop.Entry) (config.Co
 			{sc.Language, &cfg.Display.Language}, {sc.ClockPosition, &cfg.Display.ClockPosition},
 			{sc.ClockSize, &cfg.Display.ClockSize}, {sc.View, &cfg.Display.View}, {sc.Background, &cfg.Display.Background},
 			{sc.ClockStyle, &cfg.Display.ClockStyle}, {sc.EveningDim, &cfg.Display.EveningDim},
-			{sc.Performance, &cfg.Display.Performance}, {sc.Tiles, &cfg.Display.Tiles},
+			{sc.Performance, &cfg.Display.Performance}, {sc.Tiles, &cfg.Display.Tiles}, {sc.Processor, &cfg.Display.Processor},
 			{sc.Caption, &cfg.Display.Caption}, {sc.WeatherDetail, &cfg.Display.WeatherDetail},
 		} {
 			if choice.from != "" {
@@ -1091,7 +1093,7 @@ func (s *Store) View() View {
 		},
 		Screen: Screen{NightStart: cfg.Display.NightStart, NightEnd: cfg.Display.NightEnd, Language: cfg.Display.Language,
 			ClockPosition: cfg.Display.ClockPosition, ClockSize: cfg.Display.ClockSize, ClockStyle: cfg.Display.ClockStyle, EveningDim: cfg.Display.EveningDim, View: cfg.Display.View, Background: cfg.Display.Background,
-			Performance: cfg.Display.Performance, BackgroundFPS: &cfg.Display.BackgroundFPS, Tiles: cfg.Display.Tiles,
+			Performance: cfg.Display.Performance, BackgroundFPS: &cfg.Display.BackgroundFPS, Tiles: cfg.Display.Tiles, Processor: cfg.Display.Processor,
 			Caption: cfg.Display.Caption, WeatherDetail: cfg.Display.WeatherDetail, LockView: &cfg.Display.LockView,
 			Sounds: boolPtr(cfg.Display.Sounds)},
 		Calendar:    Calendar{Links: []Link{}},

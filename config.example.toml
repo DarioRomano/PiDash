@@ -74,6 +74,10 @@ background_fps = 0
 # The tiles of the app row: "glow" (a glow in the icon's colour and soft
 # shadows) or "plain" (flat), which is less work for the Pi on a 4K screen.
 tiles = "glow"
+# How the Status page says how busy the processor is: "percent" (how much of
+# its cores' time was busy over the last seconds), "load" (the load average,
+# as Linux tells it: 1 is one core's worth of work), or "both".
+processor = "percent"
 # Tiles of PiDash's own to leave out of the app row: any of "weather",
 # "sound", "bluetooth", "sleep", "videos", "places", "trips", "quiz", "wifi",
 # "status", "desktop", "power".

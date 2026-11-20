@@ -75,3 +75,27 @@ func TestTheProcessorsTemperatureOnDifferentMachines(t *testing.T) {
 		}
 	}
 }
+
+// How busy the processor was is told by its counters: the time all cores
+// spent busy against the time that went by, between two readings.
+func TestHowBusyTheProcessorWas(t *testing.T) {
+	// user nice system idle iowait irq softirq steal, then four cores.
+	first := "cpu  100 0 50 800 50 0 0 0 0 0\ncpu0 1 0 0 0 0 0 0 0\ncpu1 1 0 0 0 0 0 0 0\ncpu2 1 0 0 0 0 0 0 0\ncpu3 1 0 0 0 0 0 0 0\nintr 5\n"
+	busy, total, cores := cpuTimes(first)
+	if busy != 150 || total != 1000 || cores != 4 {
+		t.Fatalf("busy %d, total %d, cores %d", busy, total, cores)
+	}
+	p := New(0)
+	if pct := p.busySince(busy, total); pct != nil {
+		t.Fatalf("the first reading has nothing to compare with: %v", *pct)
+	}
+	// 400 ticks later, 100 of them busy and 50 waiting for the disk: 25 %.
+	busy2, total2, _ := cpuTimes("cpu  180 0 70 1050 100 0 0 0 0 0\n")
+	if pct := p.busySince(busy2, total2); pct == nil || *pct != 25 {
+		t.Fatalf("want 25 %%, got %v", pct)
+	}
+	// Counters that went backwards (a restart): nothing is said.
+	if pct := p.busySince(10, 20); pct != nil {
+		t.Fatalf("after counters went back: %v", *pct)
+	}
+}

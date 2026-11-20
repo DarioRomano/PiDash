@@ -42,7 +42,7 @@ import { SleepTimer } from "./sleeptimer";
 import { Slideshow } from "./slideshow";
 import { SoundTile } from "./soundtile";
 import { connect } from "./sse";
-import { StatusPanel } from "./status";
+import { StatusPanel, processorLine } from "./status";
 import type { Action, AppsStatus, CalendarState, ClientConfig, HomeEntity, PhotoItem, PhotosStatus, StateEntry, SystemState, WeatherState } from "./types";
 import { UpdateNotice } from "./updatenotice";
 import { Videos } from "./videos";
@@ -349,10 +349,12 @@ const bluetooth: QuickBluetooth = new QuickBluetooth(
 // --- Status: how PiDash is doing, readable from the sofa -----------------------------
 
 let lastSystem: SystemState | null = null;
+let processorAs = "percent";
 const statusPanel: StatusPanel = new StatusPanel(
   $("#status-panel"),
   () => lastSystem,
   () => syncPanels(),
+  () => processorAs,
 );
 
 function openHelp() {
@@ -912,6 +914,7 @@ function applyConfig(cfg: ClientConfig) {
   slideshow.setMotionRate(d.performance === "smooth" ? 30 : 15);
   stage.dataset.performance = d.performance || "balanced";
   stage.dataset.tiles = d.tiles || "glow";
+  processorAs = d.processor || "percent";
   whatsNew.tell(cfg.version, cfg.whats_new ?? []);
   if (gamesOnPage !== !!cfg.games_page || videosSetUp !== !!cfg.videos || JSON.stringify(tvInputs) !== JSON.stringify(cfg.tv_inputs ?? [])) {
     gamesOnPage = !!cfg.games_page;
@@ -1017,7 +1020,7 @@ function renderSystem(s: SystemState | null) {
   const temp = s.cpuTempC == null ? "" : ` · ${s.cpuTempC.toFixed(0)}°C`;
   sysBadge.textContent =
     `${s.hostname} · ${s.addresses.join(", ") || "no network"}\n` +
-    `load ${s.load1.toFixed(2)} · ${s.memUsedMB}/${s.memTotalMB} MB${temp} · up ${up}`;
+    `${processorLine(s, processorAs)[1]} · ${s.memUsedMB}/${s.memTotalMB} MB${temp} · up ${up}`;
   sysBadge.style.whiteSpace = "pre";
 }
 

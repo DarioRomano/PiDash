@@ -23,6 +23,9 @@ type Provider struct {
 
 	mu  sync.Mutex
 	hot bool
+	// The processor's counters at the last reading, to tell how busy it
+	// was since.
+	lastBusy, lastTotal uint64
 }
 
 // coolBy is how far below CoolAbove the temperature has to fall before the
@@ -59,6 +62,11 @@ type State struct {
 	Hostname      string   `json:"hostname"`
 	UptimeSeconds float64  `json:"uptimeSeconds"`
 	Load1         float64  `json:"load1"`
+	// CPUPercent is how busy the processor was since the last reading, as
+	// a share of all its cores together, 0 to 100; absent at the first.
+	CPUPercent *float64 `json:"cpuPercent,omitempty"`
+	// Cores is how many the processor has: a load of 1 is one of them busy.
+	Cores int `json:"cores"`
 	MemTotalMB    int64    `json:"memTotalMB"`
 	MemUsedMB     int64    `json:"memUsedMB"`
 	CPUTempC      *float64 `json:"cpuTempC"`
@@ -81,6 +89,11 @@ func (p *Provider) Fetch(_ context.Context) (any, error) {
 		if f := strings.Fields(string(b)); len(f) > 0 {
 			s.Load1, _ = strconv.ParseFloat(f[0], 64)
 		}
+	}
+	if b, err := os.ReadFile("/proc/stat"); err == nil {
+		busy, total, cores := cpuTimes(string(b))
+		s.Cores = cores
+		s.CPUPercent = p.busySince(busy, total)
 	}
 	if f, err := os.Open("/proc/meminfo"); err == nil {
 		var total, avail int64
@@ -163,4 +176,48 @@ func cpuTemp(dir string) (float64, bool) {
 		return 0, false
 	}
 	return v / 1000, true
+}
+
+// cpuTimes reads /proc/stat: the time all cores together have spent busy and
+// in all, in the kernel's ticks since it started, and how many cores there are.
+func cpuTimes(stat string) (busy, total uint64, cores int) {
+	for _, line := range strings.Split(stat, "\n") {
+		f := strings.Fields(line)
+		if len(f) == 0 || !strings.HasPrefix(f[0], "cpu") {
+			continue
+		}
+		if f[0] != "cpu" {
+			cores++ // cpu0, cpu1, ...
+			continue
+		}
+		// user nice system idle iowait irq softirq steal: waiting for the
+		// disk (iowait) is not work, so it counts with idle.
+		for i, v := range f[1:] {
+			if i >= 8 {
+				break
+			}
+			n, _ := strconv.ParseUint(v, 10, 64)
+			total += n
+			if i != 3 && i != 4 {
+				busy += n
+			}
+		}
+	}
+	return busy, total, cores
+}
+
+// busySince turns two readings of the counters into how busy the processor
+// was between them, in percent; nil for the first reading, or when the
+// counters went backwards (they do not, unless the machine restarted).
+func (p *Provider) busySince(busy, total uint64) *float64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	lastBusy, lastTotal := p.lastBusy, p.lastTotal
+	p.lastBusy, p.lastTotal = busy, total
+	if lastTotal == 0 || total <= lastTotal || busy < lastBusy {
+		return nil
+	}
+	pct := 100 * float64(busy-lastBusy) / float64(total-lastTotal)
+	pct = max(0, min(100, pct))
+	return &pct
 }

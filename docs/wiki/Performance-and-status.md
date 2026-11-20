@@ -166,7 +166,7 @@ a 4K screen all day.
 keyboard and a terminal to find out:
 
 - **This Pi**: the PiDash version and whether a newer one exists, temperature,
-  memory, load, and the address to open on a phone.
+  memory, how busy the processor is, and the address to open on a phone.
 - **TV and remote**: whether the TV answers over HDMI, its timetable, which
   remotes, keyboards and controllers PiDash is listening to, and the **last
   button** it heard, with the device it came from. Press any button while the
@@ -176,6 +176,21 @@ keyboard and a terminal to find out:
   weather and the calendar were last fetched, or why that failed.
 - **Recent problems**: the latest warnings and errors since PiDash started,
   the same lines `journalctl --user -u pidash` would show.
+
+**Processor** says how much of the time the processor was busy over the
+last ten seconds, all its cores together: "12 % busy" while photos stand
+still, more while something moves or an app runs. Lastingly above 85 % is
+marked: the Pi has more to do than it can manage smoothly. Settings,
+Screen, *How busy the processor is* can show the **load average** instead,
+the number Linux and tools such as `top` give: roughly how many cores'
+worth of work there was over the last minute, so on a Pi with 4 cores, 1 is
+a quarter busy and above 4 is more than it can keep up with. *Both* shows
+the two side by side.
+
+```toml
+[display]
+processor = "percent"    # or "load", or "both"
+```
 
 Arrows do nothing on this page, so they can be tried out. **Back** closes it.
 It shows no passwords and no calendar addresses.

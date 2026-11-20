@@ -91,6 +91,8 @@ export class StatusPanel {
     private root: HTMLElement,
     private system: () => SystemState | null,
     private onToggle: (open: boolean) => void,
+    /** How the processor's work is told: "percent", "load" or "both". */
+    private processorAs: () => string = () => "percent",
   ) {}
 
   get isOpen() {
@@ -238,7 +240,8 @@ export class StatusPanel {
       }
       const share = sys.memTotalMB > 0 ? sys.memUsedMB / sys.memTotalMB : 0;
       row(pi, "Memory", t("{used} of {total} MB in use", { used: sys.memUsedMB, total: sys.memTotalMB }), share > 0.9 ? "warn" : "ok");
-      row(pi, "Load", sys.load1.toFixed(2), sys.load1 > 4 ? "warn" : "ok");
+      const [label, said, mark] = processorLine(sys, this.processorAs());
+      row(pi, label, said, mark);
       row(pi, "Switched on for", span(sys.uptimeSeconds));
       // Whether the browser draws with the Pi's graphics chip, and which.
       const chip = graphics();
@@ -326,4 +329,21 @@ export class StatusPanel {
     done.hidden = this.saved === "";
     this.root.replaceChildren(el("h2", "", "Status"), grid, done, foot);
   }
+}
+
+/**
+ * How busy the processor is, in words: the share of all its cores' time that
+ * was busy over the last seconds, or the load average beside the number of
+ * cores (a load of 1 is one core's worth of work), or both.
+ */
+export function processorLine(sys: SystemState, as: string): [label: string, said: string, mark: "ok" | "warn"] {
+  const cores = sys.cores || 1;
+  const load = t("load {load} of {cores} cores", { load: sys.load1.toFixed(2), cores });
+  const pct = sys.cpuPercent;
+  const busy = pct == null ? t("measured in a few seconds") : t("{n} % busy", { n: Math.round(pct) });
+  // Busy most of the time, or more work waiting than there are cores to do it.
+  const mark = (pct ?? 0) >= 85 || sys.load1 > cores ? "warn" : "ok";
+  if (as === "load") return ["Load", load, sys.load1 > cores ? "warn" : "ok"];
+  if (as === "both") return ["Processor", `${busy} · ${load}`, mark];
+  return ["Processor", busy, (pct ?? 0) >= 85 ? "warn" : "ok"];
 }

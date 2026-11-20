@@ -208,6 +208,10 @@ type Display struct {
 	// with a glow in the icon's colour and soft shadows, or "plain", flat,
 	// which is less work for the Pi on a 4K screen.
 	Tiles string `toml:"tiles" json:"tiles"`
+	// Processor is how the status page says how busy the processor is:
+	// "percent" (default), as a share of all its cores; "load", the load
+	// average as Linux has it, beside the number of cores; or "both".
+	Processor string `toml:"processor" json:"processor"`
 	// Performance trades smoothness for the work the Pi has to do, and so
 	// for the power it draws and the heat it makes: "smooth", "balanced"
 	// (default) or "saver".
@@ -967,6 +971,7 @@ func (c Config) validate() error {
 		{"background", &c.Display.Background, []string{"moving", "still"}},
 		{"performance", &c.Display.Performance, []string{"smooth", "balanced", "saver"}},
 		{"tiles", &c.Display.Tiles, []string{"glow", "plain"}},
+		{"processor", &c.Display.Processor, []string{"percent", "load", "both"}},
 	} {
 		if *choice.value != "" && !slices.Contains(choice.of, *choice.value) {
 			return fmt.Errorf("display.%s must be one of %s, got %q", choice.name, strings.Join(choice.of, ", "), *choice.value)

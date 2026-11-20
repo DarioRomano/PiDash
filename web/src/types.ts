@@ -27,6 +27,8 @@ export interface DisplayConfig {
   hidden_tiles?: string[];
   /** "glow" or "plain": how the tiles of the app row are drawn. */
   tiles?: string;
+  /** "percent", "load" or "both": how the status page says how busy the processor is. */
+  processor?: string;
   /** "smooth", "balanced" or "saver": how much work the Pi does for the picture. */
   performance?: string;
   /** Pictures a second for the moving background; 0 leaves it to performance. */
@@ -98,6 +100,10 @@ export interface SystemState {
   hostname: string;
   uptimeSeconds: number;
   load1: number;
+  /** How busy the processor was over the last seconds, 0 to 100; absent at first. */
+  cpuPercent?: number;
+  /** How many cores the processor has. */
+  cores?: number;
   memTotalMB: number;
   memUsedMB: number;
   cpuTempC: number | null;

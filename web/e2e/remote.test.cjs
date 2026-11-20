@@ -1996,6 +1996,55 @@ test("a still photo costs nothing: no pictures are asked for, and the screen is 
   }
 });
 
+test("the status page says how busy the processor is: in percent, as the load average, or both", async () => {
+  const shown = async (display) => {
+    // Readings every second, so the second one (the first with a percentage) comes soon.
+    const own = await startPiDash(display + APPS + '\n[system]\ninterval = "1s"\n');
+    try {
+      const page = await openPage(own.base);
+      await page.waitForFunction(() => document.getElementById("backdrop").classList.contains("has-photo"), null, { timeout: 20000 });
+      const remote = remoteFor(page, own.base);
+      await remote.press("select");
+      await focusTile(page, remote, "Status");
+      await remote.press("select");
+      await page.waitForFunction(() => /(Processor|Load)\s+(\d+ % busy|load )/.test(document.getElementById("status-panel").innerText), null, { timeout: 15000 });
+      const text = await page.evaluate(() => document.getElementById("status-panel").innerText);
+      assert.deepEqual(page.problems, []);
+      await page.context().close();
+      return text;
+    } finally {
+      await own.stop();
+    }
+  };
+  assert.match(await shown(""), /Processor\s+\d{1,3} % busy\n/, "by default, in percent");
+  assert.match(await shown('processor = "load"\n'), /Load\s+load \d+\.\d\d of \d+ cores/);
+  assert.match(await shown('processor = "both"\n'), /Processor\s+\d{1,3} % busy · load \d+\.\d\d of \d+ cores/);
+
+  // The settings page offers the choice.
+  const own = await startPiDash(APPS);
+  try {
+    const settings = await openPage(own.base, "/settings#screen");
+    await settings.waitForSelector("#main:not([hidden])");
+    assert.equal(await settings.inputValue("#d-processor"), "percent");
+    await settings.selectOption("#d-processor", "load");
+    await settings.click("#save");
+    let saved = "";
+    for (let i = 0; i < 50 && saved !== "load"; i++) {
+      await new Promise((r) => setTimeout(r, 200));
+      try {
+        saved = (await (await fetch(own.base + "/api/settings")).json()).screen?.processor ?? "";
+      } catch {
+        /* restarting */
+      }
+    }
+    assert.equal(saved, "load");
+    assert.deepEqual(settings.problems, []);
+    await settings.context().close();
+  } finally {
+    await own.stop();
+  }
+});
+
 test("the status page says what the browser draws with; the TV can be sent a smaller picture", async () => {
   const own = await startPiDash(APPS);
   try {

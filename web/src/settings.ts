@@ -73,7 +73,7 @@ interface Info {
     share?: { host: string; name: string; folder: string; username: string; passwordSet: boolean };
     folderPath: string;
   };
-  screen: { nightStart: string; nightEnd: string; language: string; clockPosition: string; clockSize: string; clockStyle?: string; eveningDim?: string; view: string; caption?: string; weatherDetail?: string; lockView?: boolean; background: string; performance?: string; tiles?: string; backgroundFps?: number; sounds?: boolean };
+  screen: { nightStart: string; nightEnd: string; language: string; clockPosition: string; clockSize: string; clockStyle?: string; eveningDim?: string; view: string; caption?: string; weatherDetail?: string; lockView?: boolean; background: string; performance?: string; tiles?: string; backgroundFps?: number; sounds?: boolean; processor?: string };
   calendar: { links: CalendarLink[] };
   departures?: { stop: string; walk: number };
   home: { url: string; tokenSet: boolean; entities: string[] };
@@ -217,6 +217,7 @@ function readForm() {
       background: val("d-background"),
       performance: val("d-performance"),
       tiles: val("d-tiles"),
+      processor: val("d-processor"),
       backgroundFps: Number(val("d-fps")) || 0,
       sounds: $<HTMLInputElement>("d-sounds").checked,
     },
@@ -336,6 +337,7 @@ function fill(i: Info) {
   $<HTMLSelectElement>("d-background").value = i.screen.background || "moving";
   $<HTMLSelectElement>("d-performance").value = i.screen.performance || "balanced";
   $<HTMLSelectElement>("d-tiles").value = i.screen.tiles || "glow";
+  $<HTMLSelectElement>("d-processor").value = i.screen.processor || "percent";
   const fps = $<HTMLSelectElement>("d-fps");
   const rate = String(i.screen.backgroundFps ?? 0);
   // A rate set by hand in config.toml that is not on the list is offered as it is.
@@ -1258,7 +1260,7 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
-for (const id of ["w-location", "w-units", "w-radar", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "i-url", "i-key", "i-tls", "i-quality", "sh-host", "sh-name", "sh-folder", "sh-user", "sh-pass", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "p-map", "n-start", "n-end", "h-url", "h-token", "sys-auto", "tv-idle", "bt-off", "p-odd", "p-art", "sys-resolution", "sys-cool", "snd-follow", "spk-spotify", "spk-airplay", "spk-name", "dep-stop", "dep-walk", "sys-games", "sys-games-page", "sys-games-pad", "v-source", "v-folders", "l-pin", "wf-name", "wf-pass", "wf-open", "wf-hidden", "d-language", "d-position", "d-size", "d-style", "d-dim", "d-caption", "d-weather", "d-lock", "d-background", "d-performance", "d-tiles", "d-fps", "d-sounds"]) {
+for (const id of ["w-location", "w-units", "w-radar", "p-source", "s-url", "s-user", "s-pass", "s-tls", "s-quality", "i-url", "i-key", "i-tls", "i-quality", "sh-host", "sh-name", "sh-folder", "sh-user", "sh-pass", "p-interval", "p-motion", "p-pairs", "p-today", "p-videos", "p-map", "n-start", "n-end", "h-url", "h-token", "sys-auto", "tv-idle", "bt-off", "p-odd", "p-art", "sys-resolution", "sys-cool", "snd-follow", "spk-spotify", "spk-airplay", "spk-name", "dep-stop", "dep-walk", "sys-games", "sys-games-page", "sys-games-pad", "v-source", "v-folders", "l-pin", "wf-name", "wf-pass", "wf-open", "wf-hidden", "d-language", "d-position", "d-size", "d-style", "d-dim", "d-caption", "d-weather", "d-lock", "d-background", "d-performance", "d-tiles", "d-processor", "d-fps", "d-sounds"]) {
   $(id).addEventListener("input", refresh);
   $(id).addEventListener("change", refresh);
 }
