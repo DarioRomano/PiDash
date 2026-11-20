@@ -21,6 +21,8 @@ export interface SSEHandlers {
   onBattery(notice: { name: string; percent: number }): void;
   /** The remote changed the volume of headphones or a speaker. */
   onVolume(now: { name: string; volume: number }): void;
+  /** A code for whoever looks at the TV to type elsewhere (a backup). Sent to the TV alone. */
+  onCode(c: { code: string }): void;
   onStatus(connected: boolean): void;
 }
 
@@ -48,6 +50,7 @@ export function connect(url: string, h: SSEHandlers): EventSource {
   es.addEventListener("battery", (e) => h.onBattery(JSON.parse((e as MessageEvent).data)));
   es.addEventListener("volume", (e) => h.onVolume(JSON.parse((e as MessageEvent).data)));
   es.addEventListener("tv", (e) => h.onTV(JSON.parse((e as MessageEvent).data)));
+  es.addEventListener("code", (e) => h.onCode(JSON.parse((e as MessageEvent).data)));
 
   return es;
 }

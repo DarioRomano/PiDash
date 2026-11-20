@@ -107,6 +107,13 @@ and the hidden photos. **Load a backup file** puts it back, on this Pi or
 another one. The file contains the passwords and links stored on the Pi, so
 keep it to yourself.
 
+Because of what it holds, not every device on the network can have it:
+with the [lock](#lock) set, saving a backup asks for the PIN. Without one,
+the TV shows a six-digit code for a couple of minutes, to type on the
+computer or phone. That way only someone who can see the TV gets the file.
+The code works once, and after five wrong ones there is a pause before the
+next. Settings opened on the TV itself save no files, so they need no code.
+
 ## Wi-Fi for visitors
 
 Under **Wi-Fi for visitors** in the settings, enter the name and password of

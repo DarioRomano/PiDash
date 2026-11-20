@@ -97,6 +97,8 @@ type Server struct {
 	problems   *logring.Ring
 	photoState string
 	pin        pinGuard
+	// tvCode guards the backup where no PIN does.
+	tvCode     tvCode
 	version    string
 	standalone bool
 	speakers   *receivers.Service
@@ -921,7 +923,7 @@ func (s *Server) handleTestImmich(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.APIKey == "" && s.settings != nil {
-		req.APIKey = s.settings.ImmichKey() // "unchanged"
+		req.APIKey = s.settings.ImmichKey(req.URL) // "unchanged", for the same server only
 	}
 	if strings.TrimSpace(req.URL) == "" || req.APIKey == "" {
 		http.Error(w, "Enter the address and the API key first.", http.StatusUnprocessableEntity)
@@ -948,7 +950,7 @@ func (s *Server) handleTestShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Password == "" && s.settings != nil {
-		req.Password = s.settings.SharePassword(req.Username) // "unchanged"
+		req.Password = s.settings.SharePassword(req.Host, req.Username) // "unchanged", for the same computer and user only
 	}
 	if strings.TrimSpace(req.Host) == "" || strings.TrimSpace(req.Name) == "" {
 		http.Error(w, "Enter the computer and the name of the share first.", http.StatusUnprocessableEntity)
@@ -975,7 +977,7 @@ func (s *Server) handleTestSynology(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Password == "" && s.settings != nil {
-		req.Password = s.settings.SynologyPassword() // "unchanged"
+		req.Password = s.settings.SynologyPassword(req.URL, req.Username) // "unchanged", for the same NAS and user only
 	}
 	if strings.TrimSpace(req.URL) == "" || req.Username == "" || req.Password == "" {
 		http.Error(w, "Enter the address, user name and password first.", http.StatusUnprocessableEntity)
@@ -1048,7 +1050,12 @@ func (s *Server) handleHomeEntities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.TrimSpace(req.Token) == "" {
-		req.Token = s.cfg.Home.Token
+		// The stored one, for the Home Assistant it was stored for only.
+		if s.settings != nil {
+			req.Token = s.settings.HomeToken(req.URL)
+		} else if strings.TrimRight(strings.TrimSpace(req.URL), "/") == strings.TrimRight(s.cfg.Home.URL, "/") {
+			req.Token = s.cfg.Home.Token
+		}
 	}
 	if strings.TrimSpace(req.URL) == "" || req.Token == "" {
 		http.Error(w, "Enter the address and the access token first.", http.StatusUnprocessableEntity)
@@ -1275,7 +1282,7 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "settings are not available", http.StatusNotFound)
 		return
 	}
-	if !s.pin.allow(w, r) {
+	if !s.pin.allow(w, r) || !s.codeFromTheTV(w, r) {
 		return
 	}
 	b := backup{PiDash: "backup", Version: s.version, Settings: s.settings.Export()}
@@ -1626,7 +1633,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	// then the TV remote's OK and Back do not reach them.
 	fmt.Fprint(w, "retry: 800\n\n")
 
-	ch := s.hub.subscribe()
+	ch := s.hub.subscribeFrom(fromThisPi(r))
 	defer s.hub.unsubscribe(ch)
 
 	write := func(name string, data []byte) error {

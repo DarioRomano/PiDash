@@ -531,7 +531,14 @@ $("b-tv").hidden = !onTV;
 $("b-save").addEventListener("click", async () => {
   const out = $("b-result");
   try {
-    const res = await send("POST", "/api/settings/backup", {});
+    let res = await send("POST", "/api/settings/backup", {});
+    // Without a PIN, the backup (it holds the passwords) asks for a code that the TV shows.
+    while (res.status === 428) {
+      const code = window.prompt(t("The TV now shows a code. Type it here:"));
+      if (!code) return setResult(out, "No backup was saved.", "error");
+      res = await fetch("/api/settings/backup", { method: "POST", headers: { "Content-Type": "application/json", "X-PiDash-Code": code.replace(/\D/g, "") }, body: "{}" });
+      if (res.status === 428) setResult(out, "That was not the code on the TV.", "error");
+    }
     if (!res.ok) return setResult(out, res.status === 401 ? "The PIN is needed for a backup." : (await res.text()).trim(), "error");
     const link = document.createElement("a");
     link.href = URL.createObjectURL(await res.blob());

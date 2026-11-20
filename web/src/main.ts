@@ -1258,6 +1258,8 @@ connect("/events", {
   onPlaying: (track) => playing.update(track),
   onSound: (st) => sound.update(st),
   onBattery: (n) => toast(t("{name} is running low: {n} % battery left.", { name: n.name, n: n.percent }), 12000),
+  // A phone or computer asks for the backup: whoever is in the room reads the code off the TV.
+  onCode: (c) => toast(t("Code for the backup: {code}", { code: c.code.replace(/^(\d{3})(\d{3})$/, "$1 $2") }), 120_000),
   onTV: (st) => {
     tvAsleep = st.asleep;
     tvElsewhere = !!st.elsewhere;

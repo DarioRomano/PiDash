@@ -935,3 +935,54 @@ func TestTheRemotesArrowsOnWebsitesMadeForAMouse(t *testing.T) {
 		}
 	}
 }
+
+// A password left empty on the page means "the one stored" only for the
+// NAS or computer, and the user, it was stored for.
+func TestStoredPasswordsBelongToTheirAddress(t *testing.T) {
+	for _, c := range []struct{ a, b string }{
+		{"http://nas:5000", "HTTP://NAS:5000/"},
+		{"http://immich:2283", "http://immich:2283/api"},
+		{" https://x.lan ", "https://x.lan"},
+	} {
+		if !sameAddress(c.a, c.b) {
+			t.Errorf("%q and %q are the same place", c.a, c.b)
+		}
+	}
+	for _, c := range []struct{ a, b string }{
+		{"http://nas:5000", "http://nas:5001"},
+		{"http://nas:5000", "https://nas:5000"},
+		{"http://nas:5000", "http://evil:5000"},
+		{"", ""},
+	} {
+		if sameAddress(c.a, c.b) {
+			t.Errorf("%q and %q are not the same place", c.a, c.b)
+		}
+	}
+	if !sameShareHost("//NAS/", "smb://nas") || !sameShareHost(`\\nas`, "nas") || sameShareHost("nas", "evil") || sameShareHost("", "") {
+		t.Error("share hosts are compared as typed")
+	}
+
+	s, _ := open(t)
+	if err := s.Save(Update{Photos: &Photos{Source: "synology", Synology: Synology{URL: "http://nas:5000", Username: "owner", Password: "NAS-PW"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if s.SynologyPassword("http://nas:5000/", "owner") != "NAS-PW" || s.SynologyPassword("http://evil:5000", "owner") != "" || s.SynologyPassword("http://nas:5000", "admin") != "" {
+		t.Error("the NAS password is for its NAS and user only")
+	}
+	if err := s.Save(Update{Photos: &Photos{Source: "synology", Synology: Synology{URL: "http://evil:5000", Username: "owner"}}}); err == nil {
+		t.Error("saved another NAS with the stored password")
+	}
+
+	if err := s.Save(Update{Photos: &Photos{Source: "share", Share: &Share{Host: "nas", Name: "photo", Username: "owner", Password: "SHARE-PW"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if s.SharePassword("//NAS", "owner") != "SHARE-PW" || s.SharePassword("evil", "owner") != "" {
+		t.Error("the share password is for its computer only")
+	}
+	if err := s.Save(Update{Photos: &Photos{Source: "share", Share: &Share{Host: "evil", Name: "photo", Username: "owner"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _ := s.Effective(); cfg.Photos.Share.Password != "" {
+		t.Error("the stored share password went along to another computer")
+	}
+}

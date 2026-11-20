@@ -1306,33 +1306,77 @@ type Update struct {
 	TVInputs   *[]config.TVInput      `json:"tvInputs"`
 }
 
+// A password, key or token left empty on the page means "the one stored".
+// That holds only for where it was stored for: the same server, under the
+// same name. Otherwise anyone on the network could have the Pi try the
+// stored password on a server of their own, which would then know it.
+
+// sameAddress reports whether two addresses of a server lead to the same
+// place, as people type them: with or without a slash at the end, in any
+// case, and for Immich with or without the "/api" its pages show.
+func sameAddress(a, b string) bool {
+	norm := func(s string) string {
+		s = strings.TrimSpace(s)
+		u, err := url.Parse(s)
+		if err != nil || u.Host == "" {
+			return strings.ToLower(strings.TrimRight(s, "/"))
+		}
+		path := strings.TrimSuffix(strings.TrimRight(u.Path, "/"), "/api")
+		return strings.ToLower(u.Scheme) + "://" + strings.ToLower(u.Host) + path
+	}
+	return strings.TrimSpace(a) != "" && norm(a) == norm(b)
+}
+
+// sameShareHost is sameAddress for the computer a shared folder is on, as
+// it is typed: "nas", "//nas", "smb://nas/", "\\nas".
+func sameShareHost(a, b string) bool {
+	norm := func(s string) string {
+		s = strings.ToLower(strings.TrimSpace(s))
+		s = strings.TrimPrefix(s, "smb://")
+		return strings.Trim(strings.ReplaceAll(s, `\`, "/"), "/")
+	}
+	return norm(a) != "" && norm(a) == norm(b)
+}
+
 // SynologyPassword returns the stored NAS password, for "test connection"
-// when the page leaves the password field empty to mean "unchanged".
-func (s *Store) SynologyPassword() string {
+// when the page leaves the password field empty to mean "unchanged": if it
+// was stored for that NAS and that user.
+func (s *Store) SynologyPassword(address, username string) string {
 	cfg, err := s.Effective()
-	if err != nil {
+	if err != nil || !sameAddress(address, cfg.Photos.Synology.URL) || username != cfg.Photos.Synology.Username {
 		return ""
 	}
 	return cfg.Photos.Synology.Password
 }
 
 // ImmichKey and SharePassword return the stored secrets of the other photo
-// sources, likewise for "test connection".
-func (s *Store) ImmichKey() string {
+// sources, likewise for "test connection", and likewise only for where
+// they were stored for.
+func (s *Store) ImmichKey(address string) string {
 	cfg, err := s.Effective()
-	if err != nil {
+	if err != nil || !sameAddress(address, cfg.Photos.Immich.URL) {
 		return ""
 	}
 	return cfg.Photos.Immich.APIKey
 }
 
-// SharePassword returns the stored password if it belongs to username.
-func (s *Store) SharePassword(username string) string {
+// SharePassword returns the stored password if it belongs to username on host.
+func (s *Store) SharePassword(host, username string) string {
 	cfg, err := s.Effective()
-	if err != nil || cfg.Photos.Share.Username != username {
+	if err != nil || cfg.Photos.Share.Username != username || !sameShareHost(host, cfg.Photos.Share.Host) {
 		return ""
 	}
 	return cfg.Photos.Share.Password
+}
+
+// HomeToken returns the stored Home Assistant token if it was stored for
+// the Home Assistant at address.
+func (s *Store) HomeToken(address string) string {
+	cfg, err := s.Effective()
+	if err != nil || !sameAddress(address, cfg.Home.URL) {
+		return ""
+	}
+	return cfg.Home.Token
 }
 
 // Save validates an update against config.toml and writes settings.json.
@@ -1352,12 +1396,15 @@ func (s *Store) Save(u Update) error {
 		if cur, err := apply(s.base, s.file, s.installed()); err == nil {
 			stored = cur.Photos
 		}
-		if p.Source == config.PhotoSourceSynology && p.Synology.Password == "" {
+		// Only for where it was stored for (see sameAddress): a new
+		// address or user name needs its password typed again.
+		if p.Source == config.PhotoSourceSynology && p.Synology.Password == "" &&
+			sameAddress(p.Synology.URL, stored.Synology.URL) && p.Synology.Username == stored.Synology.Username {
 			p.Synology.Password = stored.Synology.Password
 		}
 		if p.Immich != nil {
 			m := *p.Immich
-			if m.APIKey == "" {
+			if m.APIKey == "" && sameAddress(m.URL, stored.Immich.URL) {
 				m.APIKey = stored.Immich.APIKey
 			}
 			p.Immich = &m
@@ -1365,7 +1412,7 @@ func (s *Store) Save(u Update) error {
 		if p.Share != nil {
 			sh := *p.Share
 			// The password belongs to its user: a new name without one is a guest.
-			if sh.Password == "" && sh.Username == stored.Share.Username {
+			if sh.Password == "" && sh.Username == stored.Share.Username && sameShareHost(sh.Host, stored.Share.Host) {
 				sh.Password = stored.Share.Password
 			}
 			p.Share = &sh
@@ -1418,8 +1465,8 @@ func (s *Store) Save(u Update) error {
 		}
 		if u.Home != nil {
 			h := Home{URL: strings.TrimSpace(u.Home.URL), Token: strings.TrimSpace(u.Home.Token), Entities: u.Home.Entities}
-			if h.Token == "" {
-				h.Token = cur.Home.Token // unchanged
+			if h.Token == "" && sameAddress(h.URL, cur.Home.URL) {
+				h.Token = cur.Home.Token // unchanged, for the same Home Assistant
 			}
 			if h.URL == "" {
 				h.Token, h.Entities = "", nil
